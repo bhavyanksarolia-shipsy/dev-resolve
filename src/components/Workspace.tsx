@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { HealthBanner } from "./HealthBanner";
+import { Markdown } from "./Markdown";
+import { describeCall, fileLabel, hidePaths, resultSummary, scopeLabel, STEP_ICON, toolName } from "./labels";
 
 interface Step { seq: number; kind: string; tool: string | null; input: Record<string, unknown> | null; output: string | null; created_at: string }
 interface Proposal { id: number; account_slug: string; file: string; content: string; rationale: string; source: string; status: string }
@@ -34,7 +36,6 @@ interface Attachment {
 }
 const kb = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
-const short = (t: string | null) => (t ? t.replace(/^mcp__[^_]+(?:-[^_]+)*__/, "") : "");
 
 export function Workspace({ ticketId }: { ticketId: string }) {
   const [data, setData] = useState<TicketData | null>(null);
@@ -45,6 +46,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [rca, setRca] = useState("");
   const [rating, setRating] = useState(0);
+  const [rcaMode, setRcaMode] = useState<"preview" | "edit">("preview");
   const [busy, setBusy] = useState(false);
   const cursor = useRef<{ id: number | null; seq: number }>({ id: null, seq: -1 });
   const steps = trail.id === invId ? trail.steps : [];
@@ -136,30 +138,35 @@ export function Workspace({ ticketId }: { ticketId: string }) {
     <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
       {/* Left: ticket */}
       <section className="min-w-0">
-        <div className="mb-1 font-mono text-sm text-muted">{t.display_id} · {t.stage?.display_name ?? t.stage?.name} · {t.account?.display_name}</div>
-        <h1 className="mb-2 text-xl font-semibold">{t.title}</h1>
-        <a href={data.devrev_url} target="_blank" rel="noreferrer" className="mb-3 inline-block text-sm text-accent hover:underline">Open {t.display_id} in DevRev ↗</a>
-        <div className="mb-3 text-sm">
-          Routed to:{" "}
-          {data.routing.kind === "account" ? <b>{data.routing.name}</b>
-            : data.routing.kind === "ambiguous" ? <b className="text-warn">ambiguous — agent will pick from {data.routing.candidates?.join(", ")}</b>
-            : <b className="text-bad">{data.routing.kind} — add this DevRev account to config/projects.json</b>}
+        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+          <span className="rounded-md bg-accent-soft px-2 py-0.5 font-mono font-semibold text-accent-strong">{t.display_id}</span>
+          <span className="rounded-full bg-panel px-2 py-0.5 text-muted ring-1 ring-line">{t.stage?.display_name ?? t.stage?.name}</span>
+          <span className="text-muted">{t.account?.display_name}</span>
+        </div>
+        <h1 className="mb-2 text-2xl font-semibold leading-tight tracking-tight">{t.title}</h1>
+        <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+          <a href={data.devrev_url} target="_blank" rel="noreferrer" className="font-medium text-accent-strong hover:underline">Open in DevRev ↗</a>
+          <span className="text-muted">
+            Routed to{" "}
+            {data.routing.kind === "account" ? <b className="text-fg">{data.routing.name}</b>
+              : data.routing.kind === "ambiguous" ? <b className="text-warn">ambiguous — agent will pick from {data.routing.candidates?.join(", ")}</b>
+              : <b className="text-bad">{data.routing.kind} — add this DevRev account to config/projects.json</b>}
+          </span>
         </div>
         <HealthBanner account={data.routing.account} />
-        {t.body && <p className="mb-4 whitespace-pre-wrap rounded-md border border-line bg-panel p-3 text-sm">{t.body}</p>}
+        {t.body && (
+          <div className="card mb-5 p-4">
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Summary</div>
+            <Markdown>{t.body}</Markdown>
+          </div>
+        )}
         {data.attachments.length > 0 && <Attachments items={data.attachments} />}
-        <h2 className="mb-2 text-sm font-semibold text-muted">Timeline ({data.timeline.length})</h2>
-        <div className="max-h-[60vh] space-y-2 overflow-y-auto pr-1">
-          {data.timeline.slice().reverse().map((c) => (
-            <details key={c.id} className="rounded-md border border-line bg-panel p-2 text-sm">
-              <summary className="cursor-pointer text-muted">
-                <span className={c.visibility === "internal" ? "text-warn" : "text-accent"}>{c.visibility}</span> · {c.created_by?.display_name || c.created_by?.email} · {new Date(c.created_date).toLocaleString("en-IN")}
-                {(() => { const n = data.attachments.filter((a) => a.comment_id === c.id).length; return n ? <span className="ml-1">· 📎 {n}</span> : null; })()}
-              </summary>
-              <pre className="mt-2 whitespace-pre-wrap font-sans">{c.body}</pre>
-            </details>
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">Timeline · {data.timeline.length}</h2>
+        <ol className="space-y-3">
+          {data.timeline.slice().reverse().map((c, i) => (
+            <CommentCard key={c.id} c={c} attachments={data.attachments.filter((a) => a.comment_id === c.id).length} defaultOpen={i === 0} />
           ))}
-        </div>
+        </ol>
       </section>
 
       {/* Right: investigation */}
@@ -188,7 +195,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
         {connErrors.map((s) => (
           <div key={s.seq} className="mb-2 rounded-md border border-bad/40 bg-bad/5 px-3 py-2 text-sm">
             <b className="text-bad">{s.input?.tag === "VPN_REQUIRED" ? "Connect VPN" : s.input?.tag === "AUTH_FAILED" ? "Fix credentials" : "Not configured"}: {String(s.input?.connection)}</b>
-            <div className="text-muted">during {short(s.tool)} — the agent was told this search did not happen.</div>
+            <div className="text-muted">during “{describeCall(s.tool, null)}” — the agent was told this check did not happen.</div>
           </div>
         ))}
 
@@ -206,13 +213,29 @@ export function Workspace({ ticketId }: { ticketId: string }) {
               {inv.category && <code className="text-xs text-muted">{inv.category}</code>}
             </div>
             {inv.case_draft?.current_status && (
-              <div className={`mb-2 rounded-md border px-3 py-2 text-sm ${CURRENT_STATUS[inv.case_draft.current_status]?.[1] ?? ""}`}>
+              <div className={`mb-3 rounded-xl border px-4 py-3 text-sm leading-relaxed ${CURRENT_STATUS[inv.case_draft.current_status]?.[1] ?? ""}`}>
                 <b>Now: {CURRENT_STATUS[inv.case_draft.current_status]?.[0] ?? inv.case_draft.current_status}</b>
-                {inv.case_draft.current_status_detail && <span className="text-fg"> — {inv.case_draft.current_status_detail}</span>}
+                {inv.case_draft.current_status_detail && <span className="text-fg"> — {hidePaths(inv.case_draft.current_status_detail)}</span>}
               </div>
             )}
-            <textarea value={rca} onChange={(e) => setRca(e.target.value)} readOnly={currentPosted}
-              className="h-[45vh] w-full rounded-md border border-line bg-bg p-2 font-mono text-xs" />
+            {!currentPosted && (
+              <div className="mb-2 inline-flex rounded-lg border border-line bg-bg p-0.5 text-xs font-medium">
+                {(["preview", "edit"] as const).map((m) => (
+                  <button key={m} onClick={() => setRcaMode(m)}
+                    className={`rounded-md px-3 py-1 capitalize ${rcaMode === m ? "bg-panel text-accent-strong shadow-sm" : "text-muted hover:text-fg"}`}>
+                    {m === "edit" ? "Edit markdown" : "Preview"}
+                  </button>
+                ))}
+              </div>
+            )}
+            {currentPosted || rcaMode === "preview" ? (
+              <div className="max-h-[75vh] overflow-y-auto rounded-xl border border-line bg-panel px-5 py-4">
+                <Markdown>{hidePaths(rca)}</Markdown>
+              </div>
+            ) : (
+              <textarea value={rca} onChange={(e) => setRca(e.target.value)}
+                className="h-[60vh] w-full rounded-xl border border-line bg-bg p-3 font-mono text-xs leading-relaxed outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft" />
+            )}
             {!currentPosted && (
               <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
                 <span className="text-muted">Draft quality:</span>
@@ -231,7 +254,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
 
         {proposals.length > 0 && (
           <div className="mb-5">
-            <h2 className="mb-2 font-semibold">Knowledge proposals <span className="text-sm font-normal text-muted">— accepted ones are saved to knowledge/{inv?.account_slug}/</span></h2>
+            <h2 className="mb-2 font-semibold">Knowledge proposals <span className="text-sm font-normal text-muted">— accepted ones are added to this account&apos;s knowledge base</span></h2>
             <div className="space-y-2">
               {proposals.map((p) => <ProposalCard key={p.id} p={p} onDecide={decide} />)}
             </div>
@@ -242,7 +265,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
           <div>
             <h2 className="mb-2 font-semibold">Investigation trail</h2>
             <ol className="space-y-1.5 text-sm">
-              {steps.map((s) => <StepRow key={s.seq} s={s} />)}
+              {pairSteps(steps).map(({ s, result }) => <StepRow key={s.seq} s={s} result={result} />)}
               {running && <li className="animate-pulse text-muted">working…</li>}
             </ol>
           </div>
@@ -253,48 +276,85 @@ export function Workspace({ ticketId }: { ticketId: string }) {
   );
 }
 
-function StepRow({ s }: { s: Step }) {
-  if (s.kind === "text") return <li className="whitespace-pre-wrap rounded-md bg-panel p-2">{s.output}</li>;
-  if (s.kind === "user_message") return <li className="whitespace-pre-wrap rounded-md border border-accent/40 bg-accent/10 p-2"><b className="text-xs text-accent">{String(s.input?.by ?? "You")} (chat)</b><br />{s.output}</li>;
-  if (s.kind === "system") return <li className="text-xs text-muted">— {s.output}</li>;
-  if (s.kind === "tool_call") {
-    return (
-      <li className="rounded-md border border-line bg-panel p-2">
-        <span className="font-mono text-accent">{short(s.tool)}</span>
-        <pre className="mt-1 whitespace-pre-wrap break-all font-mono text-xs text-muted">{JSON.stringify(s.input, null, 1)}</pre>
-      </li>
-    );
+/**
+ * Parallel tool calls return their results later, in a batch. Attach each result to the earliest
+ * still-unanswered call of the same tool so every step shows its own outcome.
+ */
+function pairSteps(steps: Step[]): { s: Step; result?: Step }[] {
+  const out: { s: Step; result?: Step }[] = [];
+  const open: { s: Step; result?: Step }[] = [];
+  for (const st of steps) {
+    if (st.kind === "tool_result" || st.kind === "connection_error") {
+      const i = open.findIndex((o) => o.s.tool === st.tool);
+      if (i >= 0) { open[i].result = st; open.splice(i, 1); continue; }
+      out.push({ s: st }); // orphan result — still show it
+      continue;
+    }
+    const item = { s: st };
+    out.push(item);
+    if (st.kind === "tool_call") open.push(item);
   }
+  return out;
+}
+
+function StepRow({ s, result }: { s: Step; result?: Step }) {
+  if (s.kind === "text") return <li className="rounded-xl border border-line bg-panel px-4 py-3"><Markdown compact>{hidePaths(s.output)}</Markdown></li>;
+  if (s.kind === "user_message") return <li className="whitespace-pre-wrap rounded-xl border border-emerald-200 bg-accent-soft px-4 py-3 text-sm"><b className="text-xs text-accent-strong">{String(s.input?.by ?? "You")} (chat)</b><br />{s.output}</li>;
+  if (s.kind === "system") return <li className="px-1 text-xs text-muted">— {s.output}</li>;
+  const call = s.kind === "tool_call" ? s : null;
+  const res = call ? result : s;
+  const conn = res?.kind === "connection_error";
+  const r = res ? resultSummary(res.tool, res.output) : null;
   return (
-    <li>
-      <details className={`rounded-md border p-2 ${s.kind === "connection_error" ? "border-bad/40" : "border-line"}`}>
-        <summary className="cursor-pointer text-xs text-muted">{s.kind === "connection_error" ? "connection error" : "result"} · {short(s.tool)} · {(s.output || "").length} chars</summary>
-        <pre className="mt-1 max-h-96 overflow-auto whitespace-pre-wrap break-all font-mono text-xs">{s.output}</pre>
-      </details>
+    <li className="px-1">
+      {call && (
+        <div className="flex items-start gap-2 text-sm">
+          <span className="mt-0.5 w-5 shrink-0 text-center">{STEP_ICON[toolName(call.tool)] ?? "•"}</span>
+          <span className="text-fg">{describeCall(call.tool, call.input)}</span>
+          {call && !res && <span className="text-xs text-muted">…</span>}
+        </div>
+      )}
+      {res && (r?.summary || conn) && (
+        <div className="ml-7 mt-1">
+          {r?.showRaw || conn ? (
+            <details className={`rounded-lg border px-3 py-1.5 ${conn ? "border-red-200 bg-red-50" : "border-line bg-bg"}`}>
+              <summary className={`text-xs ${conn ? "text-bad" : "text-muted"}`}>{conn ? "Connection error — this check didn't run" : r?.summary} · show details</summary>
+              <pre className="mt-1 max-h-96 overflow-auto whitespace-pre-wrap break-all font-mono text-xs">{res.output}</pre>
+            </details>
+          ) : (
+            <span className="text-xs text-muted">↳ {r?.summary}</span>
+          )}
+        </div>
+      )}
     </li>
   );
 }
 
 function ProposalCard({ p, onDecide }: { p: Proposal; onDecide: (p: Proposal, a: "accept" | "reject", content?: string) => void }) {
   const [content, setContent] = useState(p.content);
+  const [editing, setEditing] = useState(false);
+  const statusStyle = p.status === "accepted" ? "bg-emerald-50 text-ok ring-emerald-200" : p.status === "rejected" ? "bg-red-50 text-bad ring-red-200" : "bg-amber-50 text-warn ring-amber-200";
   return (
-    <div className="rounded-md border border-line bg-panel p-2 text-sm">
-      <div className="mb-1 flex items-center gap-2">
-        <code className="text-xs">{p.account_slug}/{p.file}</code>
+    <div className="card p-4 text-sm">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="rounded-md bg-accent-soft px-2 py-0.5 text-xs font-semibold text-accent-strong">{fileLabel(p.file)}</span>
+        <span className="text-xs text-muted">{scopeLabel(p.account_slug)}</span>
         {p.source === "human_edit" && <span className="text-xs text-warn">from your edits</span>}
-        <span className={`ml-auto text-xs ${p.status === "accepted" ? "text-ok" : p.status === "rejected" ? "text-bad" : "text-muted"}`}>{p.status}</span>
+        <span className={`ml-auto rounded-full px-2 py-0.5 text-xs font-medium capitalize ring-1 ${statusStyle}`}>{p.status}</span>
       </div>
-      <div className="mb-1 text-xs text-muted">{p.rationale}</div>
-      {p.status === "pending" ? (
-        <>
-          <textarea value={content} onChange={(e) => setContent(e.target.value)} className="h-28 w-full rounded border border-line bg-bg p-1.5 font-mono text-xs" />
-          <div className="mt-1 flex gap-3">
-            <button onClick={() => onDecide(p, "accept", content)} className="text-ok">Accept{content !== p.content ? " edited" : ""}</button>
-            <button onClick={() => onDecide(p, "reject")} className="text-bad">Reject</button>
-          </div>
-        </>
+      <p className="mb-3 text-xs leading-relaxed text-muted"><b className="text-fg">Why:</b> {hidePaths(p.rationale)}</p>
+      {p.status === "pending" && editing ? (
+        <textarea value={content} onChange={(e) => setContent(e.target.value)}
+          className="h-40 w-full rounded-lg border border-line bg-bg p-2 font-mono text-xs outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft" />
       ) : (
-        <pre className="whitespace-pre-wrap font-mono text-xs">{p.content}</pre>
+        <div className="rounded-lg border border-line bg-bg px-3 py-2"><Markdown compact>{hidePaths(p.status === "pending" ? content : p.content)}</Markdown></div>
+      )}
+      {p.status === "pending" && (
+        <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium">
+          <button onClick={() => onDecide(p, "accept", content)} className="rounded-lg bg-accent px-3 py-1.5 text-white hover:bg-accent-strong">Accept{content !== p.content ? " edited" : ""}</button>
+          <button onClick={() => onDecide(p, "reject")} className="rounded-lg border border-line px-3 py-1.5 text-bad hover:border-red-300">Reject</button>
+          <button onClick={() => setEditing((e) => !e)} className="rounded-lg border border-line px-3 py-1.5 text-muted hover:text-fg">{editing ? "Done editing" : "Edit"}</button>
+        </div>
       )}
     </div>
   );
@@ -366,9 +426,12 @@ function Chat({ steps, busy, onSend, resumed }: { steps: Step[]; busy: boolean; 
             s.kind === "user_message" ? (
               <div key={s.seq} className="ml-10 whitespace-pre-wrap rounded-md bg-accent/10 px-3 py-2"><b className="text-xs text-accent">{String(s.input?.by ?? "You")}</b><br />{s.output}</div>
             ) : s.kind === "tool_call" ? (
-              <div key={s.seq} className="font-mono text-xs text-muted">↳ {short(s.tool)} {JSON.stringify(s.input).slice(0, 120)}</div>
+              <div key={s.seq} className="flex gap-2 pl-1 text-xs text-muted"><span>{STEP_ICON[toolName(s.tool)] ?? "•"}</span>{describeCall(s.tool, s.input)}</div>
             ) : (
-              <div key={s.seq} className={`mr-10 whitespace-pre-wrap rounded-md px-3 py-2 ${s.kind === "system" ? "bg-bad/5 text-bad" : "bg-bg"}`}><b className="text-xs text-muted">Dev Resolve</b><br />{s.output}</div>
+              <div key={s.seq} className={`mr-6 rounded-xl border px-4 py-3 ${s.kind === "system" ? "border-red-200 bg-red-50 text-bad" : "border-line bg-bg"}`}>
+                <div className="mb-1 text-xs font-semibold text-muted">Dev Resolve</div>
+                <Markdown compact>{hidePaths(s.output)}</Markdown>
+              </div>
             ),
           )}
           {busy && <div className="animate-pulse text-xs text-muted">Dev Resolve is checking…</div>}
@@ -399,5 +462,35 @@ function WorkspaceSkeleton() {
         <div className="card space-y-2 p-4">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="skeleton h-4" style={{ width: `${95 - i * 6}%` }} />)}</div>
       </div>
     </div>
+  );
+}
+
+function CommentCard({ c, attachments, defaultOpen }: {
+  c: TicketData["timeline"][number]; attachments: number; defaultOpen: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const who = c.created_by?.display_name || c.created_by?.email || "unknown";
+  const internal = c.visibility === "internal";
+  const long = (c.body || "").length > 600;
+  return (
+    <li className="card overflow-hidden">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-3 px-4 py-3 text-left">
+        <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-semibold ${internal ? "bg-amber-50 text-warn" : "bg-accent-soft text-accent-strong"}`}>
+          {who.replace(/[^a-zA-Z]/g, "").slice(0, 2).toUpperCase() || "?"}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium">{who}</span>
+          <span className="block text-xs text-muted">{new Date(c.created_date).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</span>
+        </span>
+        {attachments > 0 && <span className="text-xs text-muted">📎 {attachments}</span>}
+        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${internal ? "bg-amber-50 text-warn ring-amber-200" : "bg-accent-soft text-accent-strong ring-emerald-200"}`}>{c.visibility}</span>
+        <span className={`text-muted transition-transform ${open ? "rotate-90" : ""}`}>›</span>
+      </button>
+      {open && (
+        <div className={`border-t border-line px-4 py-3 ${long ? "max-h-[32rem] overflow-y-auto" : ""}`}>
+          {c.body?.trim() ? <Markdown compact>{hidePaths(c.body)}</Markdown> : <span className="text-sm text-muted">(no text)</span>}
+        </div>
+      )}
+    </li>
   );
 }

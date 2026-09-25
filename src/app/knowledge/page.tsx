@@ -3,6 +3,7 @@ import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { ROOT, getAccounts } from "@/lib/config";
 import { q } from "@/lib/db";
+import { fileLabel, hidePaths, scopeLabel } from "@/components/labels";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,8 @@ export default async function KnowledgePage() {
           {pending.map((p) => (
             <li key={p.id}>
               <Link className="font-mono text-accent" href={`/tickets/${p.ticket_display}`}>{p.ticket_display}</Link>{" "}
-              <code className="text-xs">{p.account_slug}/{p.file}</code> <span className="text-muted">— {p.rationale}</span>
+              <span className="rounded-md bg-accent-soft px-2 py-0.5 text-xs font-semibold text-accent-strong">{fileLabel(p.file)}</span>{" "}
+              <span className="text-xs text-muted">{scopeLabel(p.account_slug)}</span> <span className="text-muted">— {hidePaths(p.rationale)}</span>
             </li>
           ))}
         </ul>

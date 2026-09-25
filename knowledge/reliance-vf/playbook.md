@@ -37,3 +37,13 @@ The DC sees "Manifest closed successfully", but WMS invoice creation can fail in
 3. DB: `LOADING_SESSION.status` (5 = closed/invoiced, 1 = reverted open) + `vf_pgi_status_by_trip.sql`.
 4. Code: `outbound/views/manifest/loading.py` ~L630-665 (on failure → LoadingSessionItem status 1, LoadingSession 5→1, ManifestDetail status 1). Validations are in `outbound/views/invoice/create_invoice.py` L954 (excess qty vs order open qty) and L1231 (full-LPN packing).
 5. Excess-qty failures clear once SAP's Liink `PUT 'Sale Orders'` (status update) brings the order qty back in line with the loaded qty, then someone retries the close.
+
+
+<!-- proposal #8 · investigation #3 · accepted by admin 2026-09-25 -->
+## PGI triage — 3-minute decision (verified TKT-108646, TKT-111328, TKT-111615)
+1. Run `queries/vf_pgi_status_by_trip.sql` for the SD trip. One row per invoice/delivery on the trip — check **every** delivery, not just the one the DC names.
+2. Compare each invoice's `invoice_date` to `sap_doc_date/time` (IST) and to the ticket time:
+   - No invoice / loading_status 1 → WMS invoice-on-close failed (see TKT-111328 section).
+   - Invoice exists, hostDoc NULL or hostDoc later than ticket time → SAP-side PGI lag (normal lag at FREF/FRIA ≈ 2 min). Route to RIL SAP/Liink; no WMS action.
+3. `reliance_app` `manifest=<SD trip>` size 10 gives the whole WMS invoice trail (No pending items / No items met threshold / Invoice created ... sos_count).
+Note: a trip can have multiple invoices from scan-driven auto-invoice runs before close (TKT-111615: VF00051889 at 19:57 IST from a mid-loading run, VF00051995 at close 20:39 IST).
