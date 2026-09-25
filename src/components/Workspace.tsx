@@ -32,12 +32,6 @@ interface Attachment {
   artifact_id: string; part?: number; name: string; type: string; size: number; comment_id: string;
   comment_date: string; visibility?: string; from?: string; kind: "image" | "email" | "file"; url: string;
 }
-interface Run {
-  id: number; kind: "investigation" | "chat"; started_by: string | null; started_at: string; finished_at: string | null;
-  num_turns: number | null; cost_usd: number | null; input_tokens: number; output_tokens: number;
-  cache_read_tokens: number; cache_write_tokens: number;
-}
-const fmtTok = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n));
 const kb = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
 const short = (t: string | null) => (t ? t.replace(/^mcp__[^_]+(?:-[^_]+)*__/, "") : "");
@@ -49,7 +43,6 @@ export function Workspace({ ticketId }: { ticketId: string }) {
   const [inv, setInv] = useState<Investigation | null>(null);
   const [trail, setTrail] = useState<{ id: number | null; steps: Step[] }>({ id: null, steps: [] });
   const [proposals, setProposals] = useState<Proposal[]>([]);
-  const [runs, setRuns] = useState<Run[]>([]);
   const [rca, setRca] = useState("");
   const [rating, setRating] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -84,7 +77,6 @@ export function Workspace({ ticketId }: { ticketId: string }) {
     if (d.steps.length) cursor.current.seq = d.steps[d.steps.length - 1].seq;
     setTrail((t) => (t.id === invId && after >= 0 ? { id: invId, steps: [...t.steps, ...d.steps] } : { id: invId, steps: d.steps }));
     setProposals(d.proposals);
-    setRuns(d.runs ?? []);
   }, [invId]);
 
   useEffect(() => {
@@ -187,7 +179,6 @@ export function Workspace({ ticketId }: { ticketId: string }) {
           )}
           {running && <button onClick={() => fetch(`/api/investigations/${inv!.id}`, { method: "DELETE" }).then(poll)} className="text-sm text-bad">cancel</button>}
         </div>
-        {inv && <Usage runs={runs} />}
         {inv?.error && <div className="mb-3 rounded-md border border-bad/40 bg-bad/5 px-3 py-2 text-sm text-bad">{inv.error}</div>}
         {connErrors.map((s) => (
           <div key={s.seq} className="mb-2 rounded-md border border-bad/40 bg-bad/5 px-3 py-2 text-sm">
@@ -386,48 +377,5 @@ function Chat({ steps, busy, onSend, resumed }: { steps: Step[]; busy: boolean; 
         <button onClick={submit} disabled={busy || sending || !text.trim()} className="self-end rounded-md bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50">Send</button>
       </div>
     </div>
-  );
-}
-
-/** Token usage per agent run (investigation + each chat follow-up), as reported by the Claude Agent SDK. */
-function Usage({ runs }: { runs: Run[] }) {
-  if (!runs.length) return <div className="mb-3 text-xs text-muted">Token usage: not recorded for this investigation (ran before tracking was added).</div>;
-  const t = runs.reduce((a, r) => ({
-    input: a.input + r.input_tokens, output: a.output + r.output_tokens, cr: a.cr + r.cache_read_tokens, cw: a.cw + r.cache_write_tokens,
-    cost: a.cost + (r.cost_usd ?? 0), turns: a.turns + (r.num_turns ?? 0),
-  }), { input: 0, output: 0, cr: 0, cw: 0, cost: 0, turns: 0 });
-  const total = t.input + t.output + t.cr + t.cw;
-  return (
-    <details className="mb-3 rounded-md border border-line bg-panel px-3 py-2 text-sm">
-      <summary className="cursor-pointer">
-        <b>Token usage</b>{" "}
-        <span className="text-muted">
-          {fmtTok(total)} total · {fmtTok(t.input)} in · {fmtTok(t.output)} out · {fmtTok(t.cr)} cache read · {fmtTok(t.cw)} cache write
-          {" "}· ${t.cost.toFixed(2)} · {runs.length} run{runs.length > 1 ? "s" : ""}
-        </span>
-      </summary>
-      <div className="mt-2 overflow-x-auto">
-        <table className="w-full text-xs tabular-nums">
-          <thead className="text-left text-muted">
-            <tr><th className="py-1 pr-3">Run</th><th className="pr-3">By</th><th className="pr-3 text-right">Input</th><th className="pr-3 text-right">Output</th><th className="pr-3 text-right">Cache read</th><th className="pr-3 text-right">Cache write</th><th className="pr-3 text-right">Turns</th><th className="text-right">Cost</th></tr>
-          </thead>
-          <tbody>
-            {runs.map((r, i) => (
-              <tr key={r.id} className="border-t border-line">
-                <td className="py-1 pr-3">{r.kind === "investigation" ? "Investigation" : `Chat #${runs.slice(0, i + 1).filter((x) => x.kind === "chat").length}`}{!r.finished_at && <span className="text-warn"> · running</span>}</td>
-                <td className="pr-3 text-muted">{r.started_by ?? "—"}</td>
-                <td className="pr-3 text-right">{fmtTok(r.input_tokens)}</td>
-                <td className="pr-3 text-right">{fmtTok(r.output_tokens)}</td>
-                <td className="pr-3 text-right">{fmtTok(r.cache_read_tokens)}</td>
-                <td className="pr-3 text-right">{fmtTok(r.cache_write_tokens)}</td>
-                <td className="pr-3 text-right">{r.num_turns ?? "—"}</td>
-                <td className="text-right">{r.cost_usd != null ? `$${Number(r.cost_usd).toFixed(2)}` : "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <p className="mt-1 text-muted">Cache reads are prior context re-used across turns (billed at a fraction of input). Cost is the SDK&apos;s estimate, not a bill.</p>
-      </div>
-    </details>
   );
 }
