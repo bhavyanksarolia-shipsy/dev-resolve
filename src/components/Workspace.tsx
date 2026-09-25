@@ -229,12 +229,12 @@ export function Workspace({ ticketId }: { ticketId: string }) {
               </div>
             )}
             {currentPosted || rcaMode === "preview" ? (
-              <div className="max-h-[75vh] overflow-y-auto rounded-xl border border-line bg-panel px-5 py-4">
+              <div className="rounded-xl border border-line bg-panel px-6 py-5">
                 <Markdown>{hidePaths(rca)}</Markdown>
               </div>
             ) : (
               <textarea value={rca} onChange={(e) => setRca(e.target.value)}
-                className="h-[60vh] w-full rounded-xl border border-line bg-bg p-3 font-mono text-xs leading-relaxed outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft" />
+                className="h-[85vh] min-h-[32rem] w-full rounded-xl border border-line bg-bg p-4 font-mono text-[13px] leading-relaxed outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft" />
             )}
             {!currentPosted && (
               <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">

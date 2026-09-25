@@ -6,6 +6,18 @@ import { InvestigationNotifier } from "@/components/InvestigationNotifier";
 import { cookies } from "next/headers";
 import { SESSION_COOKIE, verifySession } from "@/lib/auth";
 import { SignOut } from "@/components/SignOut";
+import { execSync } from "node:child_process";
+
+// Version tag in the header (current git commit, read per request) — tells you at a glance if a tab is stale.
+function currentVersion() {
+  try {
+    const sha = execSync("git rev-parse --short HEAD", { cwd: process.cwd(), timeout: 2000 }).toString().trim();
+    const dirty = execSync("git status --porcelain", { cwd: process.cwd(), timeout: 2000 }).toString().trim() ? "+" : "";
+    return sha + dirty;
+  } catch {
+    return "dev";
+  }
+}
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
@@ -26,6 +38,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
               <span className="grid h-7 w-7 place-items-center rounded-lg bg-accent text-sm text-white">DR</span>
               Dev Resolve
             </Link>
+            <span className="-ml-4 rounded-full bg-bg px-2 py-0.5 font-mono text-[10px] text-muted ring-1 ring-line" title="Version (git commit) this page was loaded from">{currentVersion()}</span>
             <nav className="flex gap-1 text-sm">
               <Link href="/" className="rounded-md px-2.5 py-1 text-muted hover:bg-accent-soft hover:text-accent-strong">Tickets</Link>
               <Link href="/knowledge" className="rounded-md px-2.5 py-1 text-muted hover:bg-accent-soft hover:text-accent-strong">Knowledge</Link>
