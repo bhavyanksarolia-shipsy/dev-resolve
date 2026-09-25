@@ -1,0 +1,1686 @@
+{
+  "_readme": "Single source of truth for Dev Resolve. 'accounts' = what tickets route to; every other top-level key is a connection project (OpenSearch cluster and/or Metabase instance) referenced by name. Values (URLs, users, passwords, tokens) live in config/config.env, referenced here only by env-var NAME. Adding an account = add an entry here (+ its connection project and config.env keys if it has its own logs/DB). No code change. See README 'Adding an account'.",
+  "accounts": [
+    {
+      "name": "Reliance VF",
+      "slug": "reliance-vf",
+      "group": "reliance",
+      "status": "active",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/CGco7KEf"
+        ],
+        "names": [
+          "[WMS] Reliance -VF"
+        ]
+      },
+      "opensearch_log_type": "reliance_app",
+      "opensearch_log_types": {
+        "app": "reliance_app",
+        "audit": "reliance_audit",
+        "integration": "reliance_link"
+      },
+      "metabase_project": "wms",
+      "metabase_database": 2,
+      "metabase_databases": {
+        "postgres": 2,
+        "mongo": 3
+      },
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/reliance-vf",
+      "wms_tickets_seen": 61,
+      "last_ticket": "2026-09-21"
+    },
+    {
+      "name": "Reliance (WMS)",
+      "slug": "reliance-wms",
+      "group": "reliance",
+      "status": "active",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/q5mCrwb1"
+        ],
+        "names": [
+          "[WMS] Reliance"
+        ]
+      },
+      "opensearch_log_type": "reliance_app",
+      "opensearch_log_types": {
+        "app": "reliance_app",
+        "audit": "reliance_audit",
+        "integration": "reliance_link"
+      },
+      "metabase_project": "wms",
+      "metabase_database": 2,
+      "metabase_databases": {
+        "postgres": 2,
+        "mongo": 3
+      },
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/reliance-vf",
+      "_note": "DevRev account '[WMS] Reliance' — verified 2026-09-25: its DC codes (FREF 1100, FRIA 1086, R801, SB52, SF92) are VF warehouses, none in QC/3P. Uses VF connections + VF knowledge; kept as a separate queue to match DevRev."
+    },
+    {
+      "name": "QC",
+      "slug": "qc",
+      "group": "reliance",
+      "status": "active",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/NankroX0"
+        ],
+        "names": [
+          "Jiomart Quick Commerce"
+        ]
+      },
+      "opensearch_log_type": "qc_app",
+      "opensearch_log_types": {
+        "app": "qc_app",
+        "audit": "qc_audit",
+        "integration": "qc_api"
+      },
+      "metabase_project": "qc",
+      "metabase_database": 6,
+      "metabase_databases": {
+        "postgres": 6,
+        "mongo": 7
+      },
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "skills": [
+        "ffo-miss-analysis"
+      ],
+      "knowledge_dir": "knowledge/qc",
+      "wms_tickets_seen": 43,
+      "last_ticket": "2026-09-24"
+    },
+    {
+      "name": "JioMart 3P",
+      "slug": "jiomart-3p",
+      "group": "reliance",
+      "status": "active",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/YXZd3ezr"
+        ],
+        "names": [
+          "Reliance - 3P"
+        ]
+      },
+      "opensearch_log_type": "jiomart_3p_app",
+      "opensearch_log_types": {
+        "app": "jiomart_3p_app",
+        "audit": "jiomart_3p_audit",
+        "integration": "jiomart_3p_link"
+      },
+      "metabase_project": "jiomart_3p",
+      "metabase_database": 2,
+      "metabase_databases": {
+        "postgres": 2,
+        "packing": 6
+      },
+      "code_repos": [
+        "stockone-neo",
+        "stockone-packing"
+      ],
+      "knowledge_dir": "knowledge/jiomart-3p",
+      "wms_tickets_seen": 66,
+      "last_ticket": "2026-09-10"
+    },
+    {
+      "name": "Rozana",
+      "slug": "rozana",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/1BzCWHVKp"
+        ],
+        "names": [
+          "Rozana"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/rozana",
+      "wms_tickets_seen": 2141,
+      "last_ticket": "2026-09-23"
+    },
+    {
+      "name": "Wellness Forever",
+      "slug": "wellness-forever",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/MvDvXbCR",
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/Z2zYm0vU",
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/FaajGCwi",
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/l0Fev0J8"
+        ],
+        "names": [
+          "[WMS] Wellness Forever",
+          "Wellness Forever (TMS)",
+          "Trancehome linen",
+          "Wellness Forever"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/wellness-forever",
+      "wms_tickets_seen": 1948,
+      "last_ticket": "2026-09-24"
+    },
+    {
+      "name": "Rubicon",
+      "slug": "rubicon",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/69pMisfN"
+        ],
+        "names": [
+          "Rubicon"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/rubicon",
+      "wms_tickets_seen": 1813,
+      "last_ticket": "2026-09-24"
+    },
+    {
+      "name": "Sugarcosmetics",
+      "slug": "sugarcosmetics",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/T6qw2ldy"
+        ],
+        "names": [
+          "Sugarcosmetics"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/sugarcosmetics",
+      "wms_tickets_seen": 1454,
+      "last_ticket": "2026-09-23"
+    },
+    {
+      "name": "Cars24",
+      "slug": "cars24",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/hXYH30ce"
+        ],
+        "names": [
+          "Cars24"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/cars24",
+      "wms_tickets_seen": 692,
+      "last_ticket": "2026-07-25"
+    },
+    {
+      "name": "JGH",
+      "slug": "jgh",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/339n4E50",
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/nDcDX1yM"
+        ],
+        "names": [
+          "[WMS] JGH",
+          "JGH"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/jgh",
+      "wms_tickets_seen": 646,
+      "last_ticket": "2026-09-18"
+    },
+    {
+      "name": "Kimbal",
+      "slug": "kimbal",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/jnri8Dno"
+        ],
+        "names": [
+          "Kimbal"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/kimbal",
+      "wms_tickets_seen": 550,
+      "last_ticket": "2026-09-23"
+    },
+    {
+      "name": "Kama Ayurveda",
+      "slug": "kama-ayurveda",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/Fo4yfp6l"
+        ],
+        "names": [
+          "Kama Ayurveda"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/kama-ayurveda",
+      "wms_tickets_seen": 520,
+      "last_ticket": "2026-09-18"
+    },
+    {
+      "name": "The Whole Truth",
+      "slug": "the-whole-truth",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/Y3nbMnvM"
+        ],
+        "names": [
+          "The Whole Truth"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/the-whole-truth",
+      "wms_tickets_seen": 476,
+      "last_ticket": "2026-09-24"
+    },
+    {
+      "name": "Milkbasket",
+      "slug": "milkbasket",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/da1U9co8"
+        ],
+        "names": [
+          "Milkbasket"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/milkbasket",
+      "wms_tickets_seen": 389,
+      "last_ticket": "2026-09-24"
+    },
+    {
+      "name": "Superk",
+      "slug": "superk",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/9BDVFB0l"
+        ],
+        "names": [
+          "Superk"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/superk",
+      "wms_tickets_seen": 383,
+      "last_ticket": "2026-09-23"
+    },
+    {
+      "name": "Spencers",
+      "slug": "spencers",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/lFj4HNfY"
+        ],
+        "names": [
+          "Spencers"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/spencers",
+      "wms_tickets_seen": 305,
+      "last_ticket": "2026-07-22"
+    },
+    {
+      "name": "Orange Health",
+      "slug": "orange-health",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/12L11ReDo"
+        ],
+        "names": [
+          "Orangehealth"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/orange-health",
+      "wms_tickets_seen": 299,
+      "last_ticket": "2026-09-24"
+    },
+    {
+      "name": "Meatigo",
+      "slug": "meatigo",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/pKnmqMSh",
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/10mUwJ5T7"
+        ],
+        "names": [
+          "meatigo",
+          "[WMS] Meatigo"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/meatigo",
+      "wms_tickets_seen": 150,
+      "last_ticket": "2026-09-24"
+    },
+    {
+      "name": "Furnishka",
+      "slug": "furnishka",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/6mwmn1ts"
+        ],
+        "names": [
+          "Furnishka"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/furnishka",
+      "wms_tickets_seen": 115,
+      "last_ticket": "2026-03-26"
+    },
+    {
+      "name": "Kasha",
+      "slug": "kasha",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/6FALvkEQ"
+        ],
+        "names": [
+          "Kasha"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/kasha",
+      "wms_tickets_seen": 108,
+      "last_ticket": "2026-09-19"
+    },
+    {
+      "name": "arrowfoods",
+      "slug": "arrowfoods",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/14yzTtYR7"
+        ],
+        "names": [
+          "arrowfoods"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/arrowfoods",
+      "wms_tickets_seen": 108,
+      "last_ticket": "2026-06-18"
+    },
+    {
+      "name": "Ripplr",
+      "slug": "ripplr",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/BTxvbCEv",
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/tJPeTZv7"
+        ],
+        "names": [
+          "Ripplr",
+          "ripplr.atlassian.net"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/ripplr",
+      "wms_tickets_seen": 104,
+      "last_ticket": "2026-09-24"
+    },
+    {
+      "name": "Imperial Auto",
+      "slug": "imperial-auto",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/12N3xvIEv"
+        ],
+        "names": [
+          "Imperial Auto"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/imperial-auto",
+      "wms_tickets_seen": 88,
+      "last_ticket": "2026-05-07"
+    },
+    {
+      "name": "Incnut",
+      "slug": "incnut",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/1FaIFI0rQ"
+        ],
+        "names": [
+          "Incnut"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/incnut",
+      "wms_tickets_seen": 76,
+      "last_ticket": "2026-08-19"
+    },
+    {
+      "name": "Sathya Retail",
+      "slug": "sathya-retail",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/18ijViA9I",
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/LQzaIyXt"
+        ],
+        "names": [
+          "Sathya Retail",
+          "Sathya"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/sathya-retail",
+      "wms_tickets_seen": 59,
+      "last_ticket": "2026-04-21"
+    },
+    {
+      "name": "Pramana",
+      "slug": "pramana",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/9qAddeyW"
+        ],
+        "names": [
+          "Pramana"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/pramana",
+      "wms_tickets_seen": 54,
+      "last_ticket": "2026-03-25"
+    },
+    {
+      "name": "Nference",
+      "slug": "nference",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/6h3w1s8A"
+        ],
+        "names": [
+          "Nference"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/nference",
+      "wms_tickets_seen": 52,
+      "last_ticket": "2025-08-21"
+    },
+    {
+      "name": "Exponent",
+      "slug": "exponent",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/eHfr2cK8"
+        ],
+        "names": [
+          "Exponent"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/exponent",
+      "wms_tickets_seen": 36,
+      "last_ticket": "2025-06-13"
+    },
+    {
+      "name": "Sleepyowl",
+      "slug": "sleepyowl",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/18dHLHBFw"
+        ],
+        "names": [
+          "Sleepyowl"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/sleepyowl",
+      "wms_tickets_seen": 34,
+      "last_ticket": "2025-02-01"
+    },
+    {
+      "name": "Captainfresh",
+      "slug": "captainfresh",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/zZnxONDU"
+        ],
+        "names": [
+          "Captainfresh"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/captainfresh",
+      "wms_tickets_seen": 24,
+      "last_ticket": "2025-03-18"
+    },
+    {
+      "name": "Urbanladder",
+      "slug": "urbanladder",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/nkFm15XW"
+        ],
+        "names": [
+          "Urbanladder"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/urbanladder",
+      "wms_tickets_seen": 23,
+      "last_ticket": "2026-06-30"
+    },
+    {
+      "name": "Meesho",
+      "slug": "meesho",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/16e34BXRk",
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/1DPjntFAp"
+        ],
+        "names": [
+          "[WMS] Meesho",
+          "Meesho"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/meesho",
+      "wms_tickets_seen": 17,
+      "last_ticket": "2024-11-07"
+    },
+    {
+      "name": "Lalpathlabs",
+      "slug": "lalpathlabs",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/u7Gf1YZq"
+        ],
+        "names": [
+          "Lalpathlabs"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/lalpathlabs",
+      "wms_tickets_seen": 14,
+      "last_ticket": "2026-09-09"
+    },
+    {
+      "name": "Cariotauto",
+      "slug": "cariotauto",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/179Ujkm3z"
+        ],
+        "names": [
+          "Cariotauto"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/cariotauto",
+      "wms_tickets_seen": 14,
+      "last_ticket": "2024-11-14"
+    },
+    {
+      "name": "Ur Medz",
+      "slug": "ur-medz",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/VSvLkSnT"
+        ],
+        "names": [
+          "Ur Medz"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/ur-medz",
+      "wms_tickets_seen": 12,
+      "last_ticket": "2024-04-23"
+    },
+    {
+      "name": "Evidentscientific",
+      "slug": "evidentscientific",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/aO0yJkqw"
+        ],
+        "names": [
+          "Evidentscientific"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/evidentscientific",
+      "wms_tickets_seen": 11,
+      "last_ticket": "2026-08-20"
+    },
+    {
+      "name": "Unicommerce",
+      "slug": "unicommerce",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/1DVoBljZG",
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/kaWeC7Yo"
+        ],
+        "names": [
+          "Unicommerce",
+          "[WMS] Unicommerce"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/unicommerce",
+      "wms_tickets_seen": 10,
+      "last_ticket": "2026-07-22"
+    },
+    {
+      "name": "Sinhaludyog",
+      "slug": "sinhaludyog",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/NvXuUFm5"
+        ],
+        "names": [
+          "Sinhaludyog"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/sinhaludyog",
+      "wms_tickets_seen": 6,
+      "last_ticket": "2026-08-03"
+    },
+    {
+      "name": "Aramex",
+      "slug": "aramex",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/18SMEJTqx",
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/cldfPBey",
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/G0tfv4Ge",
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/raRm5N7U"
+        ],
+        "names": [
+          "aramexfreight",
+          "Aramex Global",
+          "Aramex",
+          "AramexGCC"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/aramex",
+      "wms_tickets_seen": 5,
+      "last_ticket": "2026-08-04"
+    },
+    {
+      "name": "Medgenome",
+      "slug": "medgenome",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/3DM49Nyt"
+        ],
+        "names": [
+          "Medgenome"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/medgenome",
+      "wms_tickets_seen": 5,
+      "last_ticket": "2024-04-10"
+    },
+    {
+      "name": "Cloudcorner",
+      "slug": "cloudcorner",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/suTFIV8P",
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/1AFCWZdAY"
+        ],
+        "names": [
+          "Cloudcorner",
+          "Cloudcornersolutions"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/cloudcorner",
+      "wms_tickets_seen": 4,
+      "last_ticket": "2025-06-11"
+    },
+    {
+      "name": "Invenzolabs",
+      "slug": "invenzolabs",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/XEK4KNbQ"
+        ],
+        "names": [
+          "Invenzolabs"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/invenzolabs",
+      "wms_tickets_seen": 4,
+      "last_ticket": "2026-04-19"
+    },
+    {
+      "name": "Frogo",
+      "slug": "frogo",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/aCwkc50r"
+        ],
+        "names": [
+          "Frogo"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/frogo",
+      "wms_tickets_seen": 3,
+      "last_ticket": "2024-08-12"
+    },
+    {
+      "name": "Wondersoft",
+      "slug": "wondersoft",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/TzThGhwe"
+        ],
+        "names": [
+          "Wondersoft"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/wondersoft",
+      "wms_tickets_seen": 2,
+      "last_ticket": "2026-04-10"
+    },
+    {
+      "name": "Eshipz",
+      "slug": "eshipz",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/106VSfPBo"
+        ],
+        "names": [
+          "Eshipz"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/eshipz",
+      "wms_tickets_seen": 2,
+      "last_ticket": "2024-08-19"
+    },
+    {
+      "name": "Ogbeauty",
+      "slug": "ogbeauty",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/tWRCPSPo"
+        ],
+        "names": [
+          "Ogbeauty"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/ogbeauty",
+      "wms_tickets_seen": 2,
+      "last_ticket": "2024-04-10"
+    },
+    {
+      "name": "Expeditors 3PL",
+      "slug": "expeditors-3pl",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/Y7afyNd2"
+        ],
+        "names": [
+          "[WMS] Expeditors - 3PL"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/expeditors-3pl",
+      "wms_tickets_seen": 1,
+      "last_ticket": "2026-08-10"
+    },
+    {
+      "name": "Avery",
+      "slug": "avery",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/1CQoAsLw1"
+        ],
+        "names": [
+          "avery Account"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/avery",
+      "wms_tickets_seen": 1,
+      "last_ticket": "2024-09-20"
+    },
+    {
+      "name": "AJS Logistics",
+      "slug": "ajs-logistics",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/BIyMbrVY"
+        ],
+        "names": [
+          "ajslogisticsprod Account"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/ajs-logistics",
+      "wms_tickets_seen": 1,
+      "last_ticket": "2026-01-15"
+    },
+    {
+      "name": "Pickily",
+      "slug": "pickily",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/oiLFSOBa"
+        ],
+        "names": [
+          "Pickily"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/pickily",
+      "wms_tickets_seen": 1,
+      "last_ticket": "2025-09-02"
+    },
+    {
+      "name": "Tciscs",
+      "slug": "tciscs",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/jtAr0pY7"
+        ],
+        "names": [
+          "Tciscs"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/tciscs",
+      "wms_tickets_seen": 1,
+      "last_ticket": "2025-08-19"
+    },
+    {
+      "name": "warehousenow",
+      "slug": "warehousenow",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/d8jGxDb9"
+        ],
+        "names": [
+          "warehousenow"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/warehousenow",
+      "wms_tickets_seen": 1,
+      "last_ticket": "2025-04-14"
+    },
+    {
+      "name": "Ajio",
+      "slug": "ajio",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/gjwcq3VE"
+        ],
+        "names": [
+          "Ajio"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/ajio",
+      "wms_tickets_seen": 1,
+      "last_ticket": "2025-03-07"
+    },
+    {
+      "name": "PLUB",
+      "slug": "plub",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/10MFHpNLt"
+        ],
+        "names": [
+          "PLUB"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/plub",
+      "wms_tickets_seen": 1,
+      "last_ticket": "2024-11-04"
+    },
+    {
+      "name": "Punjabbulls",
+      "slug": "punjabbulls",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/14QrxEwCr"
+        ],
+        "names": [
+          "Punjabbulls"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/punjabbulls",
+      "wms_tickets_seen": 1,
+      "last_ticket": "2024-10-11"
+    },
+    {
+      "name": "Ludic",
+      "slug": "ludic",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/CqBkw7vk"
+        ],
+        "names": [
+          "Ludic"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/ludic",
+      "wms_tickets_seen": 1,
+      "last_ticket": "2024-08-14"
+    },
+    {
+      "name": "Loftafrica",
+      "slug": "loftafrica",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/sqx2Ih38"
+        ],
+        "names": [
+          "[WMS] Loftafrica"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/loftafrica",
+      "wms_tickets_seen": 0,
+      "last_ticket": ""
+    },
+    {
+      "name": "Aujan",
+      "slug": "aujan",
+      "group": null,
+      "status": "awaiting_credentials",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/xXjPo9nF:account/eATggDGt"
+        ],
+        "names": [
+          "Aujan-SD"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "metabase_project": null,
+      "metabase_database": null,
+      "metabase_databases": {},
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/aujan",
+      "wms_tickets_seen": 0,
+      "last_ticket": ""
+    }
+  ],
+  "devrev_routing": {
+    "_comment": "DevRev accounts that can't be mapped 1:1. 'ambiguous' ones are resolved per ticket by the agent (warehouse code / identifiers, trying each candidate's logs+DB). 'ignore' ones are internal/test orgs hidden from the inbox.",
+    "ambiguous": [
+      {
+        "account_id": "don:identity:dvrv-us-1:devo/xXjPo9nF:account/y36IXmM4",
+        "name": "Reliance (RIL)",
+        "candidates": [
+          "reliance-vf",
+          "qc",
+          "jiomart-3p"
+        ]
+      },
+      {
+        "account_id": "don:identity:dvrv-us-1:devo/xXjPo9nF:account/Wc8Rt9rz",
+        "name": "Reliance",
+        "candidates": [
+          "reliance-vf",
+          "qc",
+          "jiomart-3p"
+        ]
+      },
+      {
+        "account_id": "don:identity:dvrv-us-1:devo/xXjPo9nF:account/JKoyH2yi",
+        "name": "Reliance Grocery",
+        "candidates": [
+          "reliance-vf",
+          "qc",
+          "jiomart-3p"
+        ]
+      },
+      {
+        "account_id": "don:identity:dvrv-us-1:devo/xXjPo9nF:account/yCCPb69O",
+        "name": "1P Jiomart Reliance",
+        "candidates": [
+          "reliance-vf",
+          "qc",
+          "jiomart-3p"
+        ]
+      }
+    ],
+    "ignore": [
+      {
+        "account_id": "don:identity:dvrv-us-1:devo/xXjPo9nF:account/18QFkGPLO",
+        "name": "Stockone"
+      },
+      {
+        "account_id": "don:identity:dvrv-us-1:devo/xXjPo9nF:account/SUvQq2OB",
+        "name": "Field"
+      },
+      {
+        "account_id": "don:identity:dvrv-us-1:devo/xXjPo9nF:account/M43EfSDu",
+        "name": "[WMS] Shipsy"
+      },
+      {
+        "account_id": "don:identity:dvrv-us-1:devo/xXjPo9nF:account/1FjuWcjXU",
+        "name": "Shipsy"
+      },
+      {
+        "account_id": "don:identity:dvrv-us-1:devo/xXjPo9nF:account/16QKjAX0Y",
+        "name": "shipsy.ai"
+      },
+      {
+        "account_id": "don:identity:dvrv-us-1:devo/xXjPo9nF:account/17HLDWe1A",
+        "name": "spencersdemo"
+      },
+      {
+        "account_id": "don:identity:dvrv-us-1:devo/xXjPo9nF:account/v7k6SAne",
+        "name": "[WMS] dummy-rev-org"
+      },
+      {
+        "account_id": "don:identity:dvrv-us-1:devo/xXjPo9nF:account/nA0maDOe",
+        "name": "Cleartaxmailer"
+      },
+      {
+        "account_id": "don:identity:dvrv-us-1:devo/xXjPo9nF:account/gLVxKABp",
+        "name": "E"
+      },
+      {
+        "account_id": "don:identity:dvrv-us-1:devo/xXjPo9nF:account/CISJWjw7",
+        "name": "Otter"
+      },
+      {
+        "account_id": "don:identity:dvrv-us-1:devo/xXjPo9nF:account/1G1HoDxFW",
+        "name": "Evigintegration"
+      },
+      {
+        "account_id": "don:identity:dvrv-us-1:devo/xXjPo9nF:account/71A9Jj2O",
+        "name": "Fielded"
+      }
+    ]
+  },
+  "devrev_view": {
+    "_comment": "Mirrors DevRev's WMS 'Support' view (verified 2026-09-25: 125 org-wide, VF 33 — matched 19/19 workspaces). Counts + inbox use these rules. 'default_part_id' = the part new email tickets land on before triage.",
+    "name": "DevRev WMS Support view",
+    "subtype": "Support",
+    "wms_product_id": "don:core:dvrv-us-1:devo/xXjPo9nF:product/23",
+    "default_part_id": "don:core:dvrv-us-1:devo/xXjPo9nF:product/19",
+    "default_part_label": "TMS (default, untriaged)",
+    "stages": [
+      "queued",
+      "work_in_progress",
+      "awaiting_development",
+      "awaiting_customer_response",
+      "Reopen",
+      "Reassigned to Customer Support",
+      "in_development",
+      "awaiting_product_assist"
+    ]
+  },
+  "wms": {
+    "label": "Reliance VF + QC logs (vf-wms-os.ril.com); Reliance VF Metabase (vf-wms-metabase.ril.com)",
+    "opensearch": {
+      "url_env": "RELIANCE_OS_URL",
+      "username_env": "RELIANCE_OS_USERNAME",
+      "password_env": "RELIANCE_OS_PASSWORD",
+      "log_types": {
+        "reliance_app": "app-logs-*ril-vf*",
+        "reliance_audit": "audit-logs-*-ril-vf-*",
+        "reliance_link": "api-logger-logs-liink",
+        "qc_app": "app-logs-*ril-qc-prod",
+        "qc_audit": "audit-logs-*-ril-qc-prod",
+        "qc_api": "api-logger-logs-ril-qc-liink-prod"
+      }
+    },
+    "metabase": {
+      "base_url_env": "RELIANCE_METABASE_BASE_URL",
+      "username_env": "RELIANCE_METABASE_USERNAME",
+      "password_env": "RELIANCE_METABASE_PASSWORD",
+      "session_token_env": "RELIANCE_METABASE_SESSION_TOKEN",
+      "default_database": 2,
+      "databases": {
+        "2": "Reliance VF Postgres (vf-replica-db) — default for this project",
+        "3": "Reliance VF Mongo (vf-prod-mongodb)"
+      }
+    }
+  },
+  "qc": {
+    "label": "QC / Quick Commerce Metabase (qc-wms-metabase.ril.com) — logs still live under the wms project",
+    "metabase": {
+      "base_url_env": "RELIANCE_QC_METABASE_BASE_URL",
+      "username_env": "RELIANCE_QC_METABASE_USERNAME",
+      "password_env": "RELIANCE_QC_METABASE_PASSWORD",
+      "session_token_env": "RELIANCE_QC_METABASE_SESSION_TOKEN",
+      "default_database": 6,
+      "databases": {
+        "6": "QC Postgres (qc-psql-prod-slave) — default for this project",
+        "7": "QC Mongo (qc-prod-mongodb)"
+      }
+    }
+  },
+  "jiomart_3p": {
+    "label": "JioMart 3P (shipsy-wms-dashboard.ril.com / shipsy-wms-metabase.ril.com)",
+    "opensearch": {
+      "url_env": "RELIANCE_3P_OS_URL",
+      "username_env": null,
+      "password_env": null,
+      "log_types": {
+        "jiomart_3p_app": "app-logs-*-*",
+        "jiomart_3p_audit": "audit-logs-*ril-prod",
+        "jiomart_3p_link": "api-logger-logs-liink-*"
+      }
+    },
+    "metabase": {
+      "base_url_env": "RELIANCE_3P_METABASE_BASE_URL",
+      "username_env": "RELIANCE_3P_METABASE_USERNAME",
+      "password_env": "RELIANCE_3P_METABASE_PASSWORD",
+      "session_token_env": "RELIANCE_3P_METABASE_SESSION_TOKEN",
+      "default_database": 2,
+      "databases": {
+        "2": "PROD-Slave — default for this project",
+        "6": "PROD Packing"
+      }
+    }
+  }
+}

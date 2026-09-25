@@ -1,0 +1,27 @@
+{
+  "_comment": "pod -> stage -> list of Slack user IDs to @mention. Seeded verbatim from the n8n pod_format node. EDIT THIS FILE when staff join/leave/rotate -- the deactivated-user check in ownership.py is a safety net that stops a dead ID from being silently tagged, it does not reassign coverage to someone else. Bare 'WMS' pod has no entries here (the n8n version didn't have any either) -- add them if tickets are ever tagged with plain 'WMS' instead of Inbound/Outbound.",
+
+  "WMS Inbound": {
+    "awaiting_customer_response": ["U09BY1THYBW"],
+    "queued": ["U09BY1THYBW"],
+    "awaiting_development": ["U069BU2KE6T"],
+    "in_development": ["U069BU2KE6T"],
+    "work_in_progress": ["U09BY1THYBW"],
+    "Reopen": ["U09BY1THYBW"],
+    "awaiting_product_assist": ["U088Y7109B9"],
+    "Reassigned to Customer Support": ["U09BY1THYBW"]
+  },
+
+  "WMS Outbound": {
+    "awaiting_customer_response": ["U096P8Y72BC"],
+    "queued": ["U096P8Y72BC"],
+    "awaiting_development": ["U069UU2T4SY"],
+    "in_development": ["U069UU2T4SY"],
+    "work_in_progress": ["U096P8Y72BC"],
+    "Reopen": ["U096P8Y72BC"],
+    "awaiting_product_assist": ["U06A53QA7S5"],
+    "Reassigned to Customer Support": ["U096P8Y72BC"]
+  },
+
+  "WMS": {}
+}

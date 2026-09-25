@@ -1,0 +1,29 @@
+{
+  "_comment": "raw DevRev account display-name -> canonical name. Seeded from what was visible in the n8n account_format node's match_account dict. This is almost certainly incomplete -- review against your real DevRev account list before relying on it. Anything not listed here falls through to fuzzy matching in accounts.py, and anything below the match threshold gets flagged in the digest's 'Unmapped accounts' section instead of silently becoming a duplicate row (that silent-duplicate behavior was the original bug).",
+
+  "[WMS] Wellness Forever": "Wellness Forever",
+  "Wellness Forever": "Wellness Forever",
+  "Wellness Forever (TMS)": "Wellness Forever",
+  "Wellnessforever": "Wellness Forever",
+  "Trancehome linen": "Wellness Forever",
+
+  "Kimbal": "Kimbal",
+  "[WMS] JGH": "JGH",
+  "JGH": "JGH",
+  "Sugarcosmetics": "Sugarcosmetics",
+  "Kama Ayurveda": "Kama Ayurveda",
+  "Milkbasket": "Milkbasket",
+  "arrowfoods": "arrowfoods",
+  "Rubicon": "Rubicon",
+  "The Whole Truth": "The Whole Truth",
+  "Ripplr": "Ripplr",
+  "Superk": "Superk",
+  "Spencers": "Spencers",
+  "Pramana": "Pramana",
+  "Nference": "Nference",
+  "Kasha": "Kasha",
+  "Meatigo": "Meatigo",
+  "Cars24": "Cars24",
+  "Incnut": "Incnut",
+  "OrangeHealth": "OrangeHealth"
+}
