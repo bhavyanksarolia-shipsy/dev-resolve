@@ -25,6 +25,13 @@ export function HealthBanner({ account }: { account?: string }) {
     fetchChecks().then((c) => live && setChecks(c));
     return () => { live = false; };
   }, [fetchChecks]);
+  // While something is failing (e.g. VPN still connecting), re-check on our own instead of waiting for a click.
+  const failing = !!checks?.some((c) => c.status === "vpn_required" || c.status === "error" || c.status === "auth_failed");
+  useEffect(() => {
+    if (!failing) return;
+    const t = setInterval(() => { fetchChecks().then(setChecks).catch(() => {}); }, 15000);
+    return () => clearInterval(t);
+  }, [failing, fetchChecks]);
   const load = async () => {
     setLoading(true);
     try {
@@ -46,7 +53,7 @@ export function HealthBanner({ account }: { account?: string }) {
           </span>
         ))}
         <button onClick={load} disabled={loading} className="ml-1 text-accent underline-offset-2 hover:underline disabled:opacity-50">
-          {loading ? "checking…" : "re-check"}
+          {loading ? "checking…" : failing ? "re-check (auto every 15s)" : "re-check"}
         </button>
       </div>
       {bad.filter((c) => c.status !== "not_configured").map((c) => (

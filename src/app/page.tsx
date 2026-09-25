@@ -76,6 +76,13 @@ function Inbox() {
   const error = fresh?.error ?? null;
   const anyRunning = !!tickets?.some((t) => t.investigation?.status === "running");
 
+  // After a network error (VPN connecting, Wi-Fi switch), retry on our own every 10s.
+  useEffect(() => {
+    if (!error) return;
+    const t = setInterval(() => setTick((n) => n + 1), 10000);
+    return () => clearInterval(t);
+  }, [error]);
+
   // While something is being investigated, keep its row status live.
   useEffect(() => {
     if (!anyRunning) return;
@@ -119,13 +126,13 @@ function Inbox() {
 
       {/* Queue numbers follow DevRev's WMS "Support" view (config devrev_view): Support subtype, support-workflow stages. */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat loading={!counts} label={`${current?.name ?? account} · open tickets`} value={counts ? String(counts.account.total) : ""}
+        <Stat loading={!counts && !error} label={`${current?.name ?? account} · open tickets`} value={counts ? String(counts.account.total) : "—"}
           sub={counts ? `${counts.account.wms} WMS · ${counts.account.default_part} TMS (default)` : undefined} />
-        <Stat loading={!counts} label="In DevRev WMS view" value={counts ? String(counts.account.wms) : ""} sub="matches DevRev"
+        <Stat loading={!counts && !error} label="In DevRev WMS view" value={counts ? String(counts.account.wms) : "—"} sub="matches DevRev"
           hint="Part under the WMS product. Tickets still on the default TMS part aren't counted here until triaged." />
-        <Stat loading={!counts} label="Share of DevRev WMS view" value={counts ? pct(counts.account.wms, counts.org.wms) : ""}
+        <Stat loading={!counts && !error} label="Share of DevRev WMS view" value={counts ? pct(counts.account.wms, counts.org.wms) : "—"}
           sub={counts ? `${counts.account.wms} of ${counts.org.wms}` : undefined} />
-        <Stat loading={!counts} label="Share of all open Support tickets" value={counts ? pct(counts.account.total, counts.org.total) : ""}
+        <Stat loading={!counts && !error} label="Share of all open Support tickets" value={counts ? pct(counts.account.total, counts.org.total) : "—"}
           sub={counts ? `${counts.account.total} of ${counts.org.total}` : undefined} />
       </div>
       {counts && counts.account.default_part > 0 && (
@@ -161,7 +168,14 @@ function Inbox() {
         </div>
         <div className={fetching ? "progress" : "h-0.5"} />
 
-        {error && <div className="m-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-bad">{error}</div>}
+        {error && (
+          <div className="m-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-bad">
+            {error}
+            <div className="mt-1 text-xs text-muted">
+              {error.startsWith("NETWORK") ? "Network looks unavailable — often the VPN connecting or a Wi-Fi switch. " : ""}Retrying automatically every 10 seconds…
+            </div>
+          </div>
+        )}
         {!error && (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
