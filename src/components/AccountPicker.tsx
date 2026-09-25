@@ -44,7 +44,7 @@ export function AccountPicker({ accounts, value, onChange }: { accounts: PickerA
     return (
       <li key={a.slug}>
         <button type="button" onMouseEnter={() => setHi(i)} onClick={() => choose(a.slug)}
-          className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm ${i === hi ? "bg-accent/15" : ""} ${a.slug === value ? "font-semibold" : ""}`}>
+          className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm ${i === hi ? "bg-accent-soft text-accent-strong" : ""} ${a.slug === value ? "font-semibold" : ""}`}>
           <span className="truncate">{a.name}</span>
           <span className="ml-auto shrink-0 tabular-nums text-xs text-muted" title="WMS view count · all open">{a.wms_tickets ?? "…"} WMS · {a.open_tickets ?? "…"}</span>
         </button>
@@ -56,13 +56,13 @@ export function AccountPicker({ accounts, value, onChange }: { accounts: PickerA
     <div ref={box} className="relative text-sm">
       <div className="mb-1 text-muted">Account</div>
       <button type="button" onClick={() => (open ? setOpen(false) : openPicker())}
-        className="flex min-w-64 items-center gap-2 rounded-md border border-line bg-panel px-2 py-1.5 text-left">
-        <span className="truncate">{current?.name ?? value}</span>
+        className="flex w-full min-w-0 items-center sm:w-auto sm:min-w-72 gap-2 rounded-lg border border-line bg-panel px-3 py-2 text-left shadow-sm hover:border-accent">
+        {current ? <span className="truncate">{current.name}</span> : <span className="skeleton h-4 w-40" />}
         {current?.open_tickets != null && <span className="text-xs text-muted">{current.wms_tickets} WMS · {current.open_tickets} open</span>}
         <span className="ml-auto text-muted">▾</span>
       </button>
       {open && (
-        <div className="absolute z-20 mt-1 w-80 rounded-md border border-line bg-panel shadow-lg">
+        <div className="absolute z-40 mt-1 w-80 overflow-hidden rounded-xl border border-line bg-panel shadow-xl">
           <input ref={input} value={query} onChange={(e) => { setQuery(e.target.value); setHi(0); }} onKeyDown={onKey}
             placeholder="Search accounts…" className="w-full rounded-t-md border-b border-line bg-bg px-3 py-2 outline-none" />
           <ul className="max-h-96 overflow-y-auto py-1">

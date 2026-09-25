@@ -1,28 +1,21 @@
 @import "tailwindcss";
 
+/* Light, breathable theme: white surfaces, green accents. */
 :root {
-  --bg: #f7f7f5;
+  color-scheme: light;
+  --bg: #f5f9f6;          /* page: faint green-white so white cards lift off it */
   --panel: #ffffff;
-  --fg: #1c1c1a;
-  --muted: #6b6b66;
-  --line: #e4e4df;
-  --accent: #2f5bd3;
-  --ok: #1f7a4d;
-  --warn: #a15c00;
-  --bad: #b42318;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #121212;
-    --panel: #1b1b1b;
-    --fg: #ececea;
-    --muted: #a0a09a;
-    --line: #2d2d2b;
-    --accent: #7c9cff;
-    --ok: #4cc38a;
-    --warn: #f0a849;
-    --bad: #ff7b72;
-  }
+  --fg: #12251b;
+  --muted: #5c6f65;
+  --line: #e3ece6;
+  --accent: #0f9d63;      /* primary green */
+  --accent-strong: #0b7a4c;
+  --accent-soft: #eaf7f0; /* hover / selection wash */
+  --head: #e3f4ea;        /* table header */
+  --head-fg: #115e3b;
+  --ok: #15803d;
+  --warn: #b45309;
+  --bad: #dc2626;
 }
 @theme inline {
   --color-bg: var(--bg);
@@ -31,6 +24,10 @@
   --color-muted: var(--muted);
   --color-line: var(--line);
   --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-head: var(--head);
+  --color-head-fg: var(--head-fg);
   --color-ok: var(--ok);
   --color-warn: var(--warn);
   --color-bad: var(--bad);
@@ -42,3 +39,30 @@ body { background: var(--bg); color: var(--fg); }
 /* Tailwind v4 resets buttons to cursor:default — every clickable thing gets a pointer. */
 a[href], button:not(:disabled), select, summary, label[for], [role="button"] { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
+
+/* Soft card */
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 1px 2px rgb(16 40 28 / 0.04), 0 4px 16px rgb(16 40 28 / 0.04); }
+
+/* Loading skeleton shimmer */
+.skeleton { position: relative; overflow: hidden; background: #edf3ef; border-radius: 6px; }
+.skeleton::after {
+  content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.75), transparent);
+  animation: shimmer 1.3s infinite;
+}
+@keyframes shimmer { to { transform: translateX(100%); } }
+
+/* Thin indeterminate progress bar shown while data is being fetched */
+.progress { position: relative; height: 2px; overflow: hidden; background: var(--accent-soft); }
+.progress::after {
+  content: ""; position: absolute; top: 0; bottom: 0; width: 35%; left: -35%;
+  background: var(--accent); border-radius: 2px; animation: progress 1.1s ease-in-out infinite;
+}
+@keyframes progress { to { left: 100%; } }
+
+.spin { animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after, .progress::after, .spin { animation: none; }
+}

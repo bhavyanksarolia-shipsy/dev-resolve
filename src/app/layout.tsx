@@ -20,18 +20,25 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="min-h-full font-sans">
-        <header className="border-b border-line bg-panel">
-          <div className="mx-auto flex max-w-7xl items-center gap-6 px-4 py-3">
-            <Link href="/" className="font-semibold tracking-tight">Dev Resolve</Link>
-            <nav className="flex gap-4 text-sm text-muted">
-              <Link href="/">Tickets</Link>
-              <Link href="/knowledge">Knowledge</Link>
+        <header className="sticky top-0 z-30 border-b border-line bg-panel/85 backdrop-blur">
+          <div className="flex w-full flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
+            <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
+              <span className="grid h-7 w-7 place-items-center rounded-lg bg-accent text-sm text-white">DR</span>
+              Dev Resolve
+            </Link>
+            <nav className="flex gap-1 text-sm">
+              <Link href="/" className="rounded-md px-2.5 py-1 text-muted hover:bg-accent-soft hover:text-accent-strong">Tickets</Link>
+              <Link href="/knowledge" className="rounded-md px-2.5 py-1 text-muted hover:bg-accent-soft hover:text-accent-strong">Knowledge</Link>
             </nav>
-            {user && <InvestigationNotifier />}
-            {user && <SignOut user={user} />}
+            {user && (
+              <div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1">
+                <InvestigationNotifier />
+                <SignOut user={user} />
+              </div>
+            )}
           </div>
         </header>
-        <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
+        <main className="w-full px-4 py-6 sm:px-6">{children}</main>
       </body>
     </html>
   );

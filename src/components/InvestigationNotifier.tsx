@@ -52,7 +52,7 @@ export function InvestigationNotifier() {
   }, [router]);
 
   return (
-    <div className="ml-auto flex items-center gap-3 text-xs">
+    <div className="flex items-center gap-3 text-xs">
       {running > 0 && <span className="text-warn">● {running} investigating</span>}
       {perm === "default" && (
         <button onClick={() => Notification.requestPermission().then(setPerm)} className="rounded-md border border-line px-2 py-1 text-muted hover:text-fg">

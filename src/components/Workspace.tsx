@@ -126,7 +126,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
   }
 
   if (err) return <div className="rounded-md border border-bad/40 bg-bad/5 px-3 py-2 text-sm text-bad">{err}</div>;
-  if (!data) return <div className="text-sm text-muted">Loading {ticketId}…</div>;
+  if (!data) return <WorkspaceSkeleton />;
   const t = data.ticket;
   const connErrors = steps.filter((s) => s.kind === "connection_error");
   const running = inv?.status === "running";
@@ -163,6 +163,12 @@ export function Workspace({ ticketId }: { ticketId: string }) {
       </section>
 
       {/* Right: investigation */}
+      {invId && !inv ? (
+        <section className="min-w-0 space-y-3">
+          <div className="skeleton h-9 w-72 rounded-lg" />
+          <div className="card space-y-2 p-4">{Array.from({ length: 10 }).map((_, i) => <div key={i} className="skeleton h-4" style={{ width: `${96 - (i % 4) * 9}%` }} />)}</div>
+        </section>
+      ) : (
       <section className="min-w-0">
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <button onClick={start} disabled={busy || running || data.routing.kind === "unmapped" || data.routing.kind === "ignored"}
@@ -188,7 +194,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
         ))}
 
         {inv?.draft_rca && (
-          <div className="mb-5 rounded-lg border border-line bg-panel p-3">
+          <div className="card mb-5 p-4">
             <div className="mb-2 flex items-center justify-between">
               <h2 className="font-semibold">
                 RCA <span className="text-sm font-normal text-muted">v{inv.rca_version}</span>{" "}
@@ -243,6 +249,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
           </div>
         )}
       </section>
+      )}
     </div>
   );
 }
@@ -347,7 +354,7 @@ function Chat({ steps, busy, onSend, resumed }: { steps: Step[]; busy: boolean; 
   }
 
   return (
-    <div className="mb-5 rounded-lg border border-line bg-panel p-3">
+    <div className="card mb-5 p-4">
       <h2 className="mb-1 font-semibold">Discuss this RCA</h2>
       <p className="mb-2 text-xs text-muted">
         Ask questions or add context (&ldquo;also check trip SD39000220&rdquo;, &ldquo;SAP fixed this on 23-Sep, re-verify&rdquo;). The agent keeps
@@ -375,6 +382,22 @@ function Chat({ steps, busy, onSend, resumed }: { steps: Step[]; busy: boolean; 
           placeholder={busy ? "Waiting for the agent…" : "Message Dev Resolve about this RCA… (Enter to send, Shift+Enter for a new line)"}
           className="h-16 flex-1 resize-y rounded-md border border-line bg-bg p-2 text-sm disabled:opacity-60" />
         <button onClick={submit} disabled={busy || sending || !text.trim()} className="self-end rounded-md bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50">Send</button>
+      </div>
+    </div>
+  );
+}
+
+function WorkspaceSkeleton() {
+  return (
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+      <div className="space-y-3">
+        <div className="skeleton h-4 w-56" /><div className="skeleton h-7 w-3/4" /><div className="skeleton h-4 w-40" />
+        <div className="card space-y-2 p-4"><div className="skeleton h-4 w-full" /><div className="skeleton h-4 w-5/6" /><div className="skeleton h-4 w-2/3" /></div>
+        {Array.from({ length: 3 }).map((_, i) => <div key={i} className="skeleton h-11 w-full rounded-xl" />)}
+      </div>
+      <div className="space-y-3">
+        <div className="skeleton h-9 w-44 rounded-lg" />
+        <div className="card space-y-2 p-4">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="skeleton h-4" style={{ width: `${95 - i * 6}%` }} />)}</div>
       </div>
     </div>
   );

@@ -40,19 +40,19 @@ export default async function KnowledgePage() {
       </section>
       <section>
         <h2 className="mb-2 font-semibold">Knowledge per account</h2>
-        <div className="overflow-x-auto rounded-lg border border-line bg-panel">
+        <div className="card overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="border-b border-line text-left text-muted">
-              <tr><th className="px-3 py-2">Account</th><th className="px-3 py-2">Connections</th><th className="px-3 py-2 text-right">Playbook files</th><th className="px-3 py-2 text-right">Saved queries</th><th className="px-3 py-2 text-right">Resolved cases</th></tr>
+            <thead className="bg-head text-left text-xs font-semibold uppercase tracking-wide text-head-fg">
+              <tr><th className="px-4 py-3">Account</th><th className="px-4 py-3">Connections</th><th className="px-4 py-3 text-right">Playbook files</th><th className="px-4 py-3 text-right">Saved queries</th><th className="px-4 py-3 text-right">Resolved cases</th></tr>
             </thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.slug} className="border-b border-line last:border-0">
-                  <td className="px-3 py-1.5">{r.name}</td>
-                  <td className={`px-3 py-1.5 ${r.status === "active" ? "text-ok" : "text-muted"}`}>{r.status.replace("_", " ")}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums">{r.files}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums">{r.queries}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums">{r.cases}</td>
+                  <td className="px-4 py-2.5">{r.name}</td>
+                  <td className={`px-4 py-2.5 ${r.status === "active" ? "text-ok" : "text-muted"}`}>{r.status.replace("_", " ")}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{r.files}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{r.queries}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{r.cases}</td>
                 </tr>
               ))}
             </tbody>
