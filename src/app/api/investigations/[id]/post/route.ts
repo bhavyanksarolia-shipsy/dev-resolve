@@ -1,8 +1,9 @@
 import { q } from "@/lib/db";
 import { postInternalComment, DevrevError } from "@/lib/devrev";
+import { currentUser } from "@/lib/auth";
 
 /** Human-approved: post the (edited) RCA to the ticket's INTERNAL discussion and record it as a resolved case. */
-export async function POST(req: Request, ctx: RouteContext<"/api/investigations/[id]">) {
+export async function POST(req: Request, ctx: RouteContext<"/api/investigations/[id]/post">) {
   const { id } = await ctx.params;
   const { rca, rating } = (await req.json()) as { rca?: string; rating?: number };
   if (!rca?.trim()) return Response.json({ error: "rca is required" }, { status: 400 });
@@ -12,8 +13,9 @@ export async function POST(req: Request, ctx: RouteContext<"/api/investigations/
   // Each RCA version can be posted once; a chat revision (v2, v3…) can be posted as an update.
   if (inv.posted_at && inv.posted_version >= inv.rca_version) return Response.json({ error: `RCA v${inv.rca_version} is already posted` }, { status: 409 });
   const isUpdate = !!inv.posted_at;
+  const by = currentUser(req);
 
-  const body = `${isUpdate ? `**Updated RCA (v${inv.rca_version})** — supersedes the earlier Dev Resolve RCA on this ticket.\n\n` : ""}${rca.trim()}\n\n---\n_Dev Resolve RCA v${inv.rca_version} · investigation #${id} · reviewed before posting_`;
+  const body = `${isUpdate ? `**Updated RCA (v${inv.rca_version})** — supersedes the earlier Dev Resolve RCA on this ticket.\n\n` : ""}${rca.trim()}\n\n---\n_Dev Resolve RCA v${inv.rca_version} · investigation #${id} · reviewed & posted by ${by}_`;
   let entry;
   try {
     entry = await postInternalComment(inv.ticket_id, body);
@@ -21,7 +23,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/investigations/
     const err = e as DevrevError;
     return Response.json({ error: err.message, tag: err.tag, connection: "devrev" }, { status: 502 });
   }
-  await q(`UPDATE investigations SET final_rca=$2, rating=COALESCE($3, rating), status='posted', posted_at=now(), posted_comment_id=$4, posted_version=rca_version WHERE id=$1`, [id, rca, rating ?? null, entry.id]);
+  await q(`UPDATE investigations SET final_rca=$2, rating=COALESCE($3, rating), status='posted', posted_at=now(), posted_comment_id=$4, posted_version=rca_version, posted_by=$5 WHERE id=$1`, [id, rca, rating ?? null, entry.id, by]);
   const cd = inv.case_draft || {};
   const caseValues = [inv.account_slug, inv.ticket_display, inv.ticket_title, inv.category, cd.symptoms ?? null, cd.root_cause ?? null, cd.resolution ?? null, JSON.stringify(cd.evidence ?? [])];
   const updated = await q(`UPDATE cases SET account_slug=$2, ticket_display=$3, title=$4, category=$5, symptoms=$6, root_cause=$7, resolution=$8, evidence=$9 WHERE investigation_id=$1 RETURNING id`, [id, ...caseValues]);

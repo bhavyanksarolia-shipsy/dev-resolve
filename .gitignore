@@ -46,3 +46,6 @@ config/metabase_ratelimit.json
 services/wms_ticket_digest/.env
 services/wms_ticket_digest/state/
 __pycache__/
+
+# local run logs
+.logs/

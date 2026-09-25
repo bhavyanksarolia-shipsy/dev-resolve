@@ -249,7 +249,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
 
 function StepRow({ s }: { s: Step }) {
   if (s.kind === "text") return <li className="whitespace-pre-wrap rounded-md bg-panel p-2">{s.output}</li>;
-  if (s.kind === "user_message") return <li className="whitespace-pre-wrap rounded-md border border-accent/40 bg-accent/10 p-2"><b className="text-xs text-accent">You (chat)</b><br />{s.output}</li>;
+  if (s.kind === "user_message") return <li className="whitespace-pre-wrap rounded-md border border-accent/40 bg-accent/10 p-2"><b className="text-xs text-accent">{String(s.input?.by ?? "You")} (chat)</b><br />{s.output}</li>;
   if (s.kind === "system") return <li className="text-xs text-muted">— {s.output}</li>;
   if (s.kind === "tool_call") {
     return (
@@ -358,7 +358,7 @@ function Chat({ steps, busy, onSend, resumed }: { steps: Step[]; busy: boolean; 
         <div className="mb-2 max-h-[50vh] space-y-2 overflow-y-auto pr-1 text-sm">
           {thread.map((s) =>
             s.kind === "user_message" ? (
-              <div key={s.seq} className="ml-10 whitespace-pre-wrap rounded-md bg-accent/10 px-3 py-2"><b className="text-xs text-accent">You</b><br />{s.output}</div>
+              <div key={s.seq} className="ml-10 whitespace-pre-wrap rounded-md bg-accent/10 px-3 py-2"><b className="text-xs text-accent">{String(s.input?.by ?? "You")}</b><br />{s.output}</div>
             ) : s.kind === "tool_call" ? (
               <div key={s.seq} className="font-mono text-xs text-muted">↳ {short(s.tool)} {JSON.stringify(s.input).slice(0, 120)}</div>
             ) : (

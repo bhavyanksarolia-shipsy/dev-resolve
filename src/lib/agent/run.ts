@@ -139,15 +139,15 @@ function resolveScope(accountId: string | undefined, displayId: string, accountN
   return { account, candidates };
 }
 
-export async function startInvestigation(ticketRef: string): Promise<number> {
+export async function startInvestigation(ticketRef: string, startedBy = "unknown"): Promise<number> {
   const ticket = await getTicket(ticketRef);
   const { account, candidates } = resolveScope(ticket.account?.id, ticket.display_id, ticket.account?.display_name);
   const [row] = await q<{ id: number }>(
-    `INSERT INTO investigations (ticket_id, ticket_display, ticket_title, account_slug, status, candidate_slugs)
-     VALUES ($1,$2,$3,$4,'running',$5) RETURNING id`,
-    [ticket.id, ticket.display_id, ticket.title, account.slug, candidates.map((c) => c.slug)],
+    `INSERT INTO investigations (ticket_id, ticket_display, ticket_title, account_slug, status, candidate_slugs, started_by)
+     VALUES ($1,$2,$3,$4,'running',$5,$6) RETURNING id`,
+    [ticket.id, ticket.display_id, ticket.title, account.slug, candidates.map((c) => c.slug), startedBy],
   );
-  void runAgent(row.id, ticket, account, candidates).catch(async (e) => {
+  void runAgent(row.id, ticket, account, candidates, startedBy).catch(async (e) => {
     await q(`UPDATE investigations SET status='failed', error=$2, finished_at=now() WHERE id=$1`, [row.id, String(e?.message || e)]);
   });
   return row.id;
@@ -160,7 +160,7 @@ export function cancelInvestigation(id: number) {
 const userMessage = (content: SDKUserMessage["message"]["content"]): SDKUserMessage =>
   ({ type: "user", parent_tool_use_id: null, message: { role: "user", content } }) as SDKUserMessage;
 
-async function runAgent(id: number, ticket: Awaited<ReturnType<typeof getTicket>>, account: Account, candidates: Account[]) {
+async function runAgent(id: number, ticket: Awaited<ReturnType<typeof getTicket>>, account: Account, candidates: Account[], startedBy?: string) {
   const comments = await listTimeline(ticket.id).catch(() => []);
   // Screenshots / files the customer attached (incl. images inside email.eml) go to the agent as real images.
   const attachments = await listAttachments(comments).catch(() => []);
@@ -179,6 +179,8 @@ async function runAgent(id: number, ticket: Awaited<ReturnType<typeof getTicket>
   await runSession({
     id, account, candidates, seq,
     message: userMessage([{ type: "text", text: ticketPrompt(ticket, comments) + attachmentList }, ...attachmentBlocks]),
+    kind: "investigation",
+    by: startedBy,
   });
   const [inv] = await q<{ status: string }>(`SELECT status FROM investigations WHERE id=$1`, [id]);
   if (inv.status === "running") {
@@ -191,7 +193,7 @@ async function runAgent(id: number, ticket: Awaited<ReturnType<typeof getTicket>
  * investigation's own agent session, so it keeps every log search / query / code read from the first run.
  * If the findings change, the agent calls submit_rca again → a new draft version.
  */
-export async function sendChatMessage(id: number, text: string) {
+export async function sendChatMessage(id: number, text: string, by = "unknown") {
   const [inv] = await q<{
     ticket_id: string; ticket_display: string; account_slug: string; candidate_slugs: string[] | null;
     status: string; session_id: string | null; chat_running: boolean; draft_rca: string | null;
@@ -204,10 +206,10 @@ export async function sendChatMessage(id: number, text: string) {
 
   const [{ next }] = await q<{ next: number }>(`SELECT COALESCE(max(seq), -1) + 1 AS next FROM investigation_steps WHERE investigation_id=$1`, [id]);
   await q(`UPDATE investigations SET chat_running=true WHERE id=$1`, [id]);
-  await step(id, next, "user_message", null, undefined, text);
+  await step(id, next, "user_message", null, { by }, text);
 
   const followUp =
-    `Follow-up from the reviewer on ${inv.ticket_display}:\n\n${text}\n\n` +
+    `Follow-up from reviewer "${by}" on ${inv.ticket_display}:\n\n${text}\n\n` +
     `Answer them directly and concisely. Run any log / DB / code checks needed to verify — don't answer from memory when the data can be checked. ` +
     `If the findings change the RCA (including Current status), call submit_rca again with the FULL revised RCA; otherwise just reply.`;
   let message: SDKUserMessage;
@@ -224,7 +226,7 @@ export async function sendChatMessage(id: number, text: string) {
   }
   void (async () => {
     try {
-      await runSession({ id, account, candidates, seq: next + 1, message, resume: inv.session_id ?? undefined });
+      await runSession({ id, account, candidates, seq: next + 1, message, resume: inv.session_id ?? undefined, kind: "chat", by });
     } catch (e) {
       await step(id, next + 1, "system", null, { error: true }, `Chat failed: ${(e as Error).message}`).catch(() => {});
     } finally {
@@ -233,7 +235,7 @@ export async function sendChatMessage(id: number, text: string) {
   })();
 }
 
-async function runSession(opts: { id: number; account: Account; candidates: Account[]; seq: number; message: SDKUserMessage; resume?: string }) {
+async function runSession(opts: { id: number; account: Account; candidates: Account[]; seq: number; message: SDKUserMessage; resume?: string; kind: "investigation" | "chat"; by?: string }) {
   const { id, account, candidates } = opts;
   let seq = opts.seq;
   const scope = [account, ...candidates];
@@ -275,6 +277,7 @@ async function runSession(opts: { id: number; account: Account; candidates: Acco
   });
 
   let sessionSaved = false;
+  const [run] = await q<{ id: number }>(`INSERT INTO agent_runs (investigation_id, kind, started_by) VALUES ($1,$2,$3) RETURNING id`, [id, opts.kind, opts.by ?? null]);
   try {
     for await (const msg of stream as AsyncIterable<SDKMessage>) {
       const sid = (msg as { session_id?: string }).session_id;
@@ -304,6 +307,13 @@ async function runSession(opts: { id: number; account: Account; candidates: Acco
         }
       } else if (msg.type === "result") {
         const cost = "total_cost_usd" in msg ? msg.total_cost_usd : 0;
+        const mu = ("modelUsage" in msg ? msg.modelUsage : {}) as Record<string, { inputTokens: number; outputTokens: number; cacheReadInputTokens: number; cacheCreationInputTokens: number }>;
+        const sum = (k: "inputTokens" | "outputTokens" | "cacheReadInputTokens" | "cacheCreationInputTokens") => Object.values(mu).reduce((n, m) => n + (m[k] || 0), 0);
+        await q(
+          `UPDATE agent_runs SET finished_at=now(), num_turns=$2, cost_usd=$3, input_tokens=$4, output_tokens=$5,
+                  cache_read_tokens=$6, cache_write_tokens=$7, model_usage=$8 WHERE id=$1`,
+          [run.id, msg.num_turns, cost, sum("inputTokens"), sum("outputTokens"), sum("cacheReadInputTokens"), sum("cacheCreationInputTokens"), JSON.stringify(mu)],
+        );
         // Chat turns add to the investigation's running cost / turn count.
         await q(`UPDATE investigations SET cost_usd=COALESCE(cost_usd,0)+$2, num_turns=COALESCE(num_turns,0)+$3 WHERE id=$1`, [id, cost, msg.num_turns]);
         if (msg.subtype !== "success") await step(id, seq++, "system", null, { subtype: msg.subtype }, "Agent stopped before finishing");

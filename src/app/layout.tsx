@@ -3,6 +3,9 @@ import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { InvestigationNotifier } from "@/components/InvestigationNotifier";
+import { cookies } from "next/headers";
+import { SESSION_COOKIE, verifySession } from "@/lib/auth";
+import { SignOut } from "@/components/SignOut";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
@@ -12,7 +15,8 @@ export const metadata: Metadata = {
   description: "Evidence-based RCAs for DevRev tickets — logs, DB and code, per account.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const user = verifySession((await cookies()).get(SESSION_COOKIE)?.value);
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="min-h-full font-sans">
@@ -23,7 +27,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               <Link href="/">Tickets</Link>
               <Link href="/knowledge">Knowledge</Link>
             </nav>
-            <InvestigationNotifier />
+            {user && <InvestigationNotifier />}
+            {user && <SignOut user={user} />}
           </div>
         </header>
         <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
