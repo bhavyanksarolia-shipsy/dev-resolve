@@ -180,7 +180,6 @@ export function Workspace({ ticketId }: { ticketId: string }) {
               #{inv.id} · <b className={running ? "text-warn" : inv.status === "failed" ? "text-bad" : "text-ok"}>{inv.status.replace("_", " ")}</b>
               {inv.confidence && <> · confidence {inv.confidence}</>}
               {inv.num_turns != null && <> · {inv.num_turns} turns</>}
-              {inv.cost_usd && <> · ${Number(inv.cost_usd).toFixed(2)}</>}
             </span>
           )}
           {running && <button onClick={() => fetch(`/api/investigations/${inv!.id}`, { method: "DELETE" }).then(poll)} className="text-sm text-bad">cancel</button>}
