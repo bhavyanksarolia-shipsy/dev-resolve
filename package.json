@@ -24,6 +24,7 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.282",
     "mailparser": "^3.9.28",
+    "mammoth": "^1.13.0",
     "next": "16.3.6",
     "pg": "^8.23.0",
     "react": "19.2.8",
@@ -32,6 +33,7 @@
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
     "server-only": "^0.0.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zod": "^4.6.5"
   },
   "devDependencies": {

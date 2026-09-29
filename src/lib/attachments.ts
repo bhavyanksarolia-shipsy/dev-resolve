@@ -1,5 +1,7 @@
 import "server-only";
 import { simpleParser, type ParsedMail } from "mailparser";
+import * as XLSX from "xlsx";
+import mammoth from "mammoth";
 import { locateArtifact, type TimelineEntry } from "./devrev";
 
 export interface Attachment {
@@ -98,13 +100,43 @@ function htmlToText(html: string) {
     .replace(/\n{3,}/g, "\n\n");
 }
 
-/** Images, attached emails (as text) and text-like files to hand the agent, within the API's per-image size limit. */
-export async function agentAttachmentBlocks(atts: Attachment[], maxImages = 8) {
+const ext = (name: string) => (name.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? "");
+const isPdf = (a: Attachment) => a.type === "application/pdf" || ext(a.name) === "pdf";
+const SHEET_EXT = ["xlsx", "xlsm", "xls", "xlsb", "ods", "csv", "tsv"];
+const TEXT_EXT = ["txt", "log", "json", "xml", "html", "htm", "md", "yaml", "yml", "sql"];
+
+/** Plain text of a spreadsheet / Word / text-like file, or null when it isn't one of those. */
+async function fileText(a: Attachment, body: Buffer): Promise<string | null> {
+  const e = ext(a.name);
+  if (SHEET_EXT.includes(e) || /spreadsheet|excel|text\/csv/.test(a.type)) {
+    const wb = XLSX.read(body, { type: "buffer", cellDates: true, dense: true });
+    return wb.SheetNames.map((n) => {
+      const csv = XLSX.utils.sheet_to_csv(wb.Sheets[n], { blankrows: false });
+      const rows = csv.split("\n").length;
+      return `### Sheet "${n}" (${rows} rows)\n${csv}`;
+    }).join("\n\n");
+  }
+  if (e === "docx" || a.type.includes("wordprocessingml")) return (await mammoth.extractRawText({ buffer: body })).value;
+  if (TEXT_EXT.includes(e) || a.type.startsWith("text/") || a.type === "application/json") {
+    const t = body.toString("utf8");
+    return e === "html" || e === "htm" || a.type === "text/html" ? htmlToText(t) : t;
+  }
+  return null;
+}
+
+/** Images, PDFs, attached emails and spreadsheets / Word / text files (as text) to hand the agent. */
+export async function agentAttachmentBlocks(atts: Attachment[], maxImages = 8, maxPdfs = 5) {
   type ImageType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
-  const blocks: ({ type: "image"; source: { type: "base64"; media_type: ImageType; data: string } } | { type: "text"; text: string })[] = [];
+  const blocks: (
+    | { type: "image"; source: { type: "base64"; media_type: ImageType; data: string } }
+    | { type: "document"; source: { type: "base64"; media_type: "application/pdf"; data: string }; title?: string }
+    | { type: "text"; text: string }
+  )[] = [];
   const supported: string[] = ["image/png", "image/jpeg", "image/gif", "image/webp"];
   let images = 0;
   let emailBudget = 150_000; // total characters of email text per investigation
+  let fileBudget = 150_000;  // total characters of spreadsheet / Word / text files
+  let pdfs = 0;
   for (const a of atts) {
     try {
       if (a.kind === "image" && supported.includes(a.type) && a.size < 3_500_000 && images < maxImages) {
@@ -127,9 +159,25 @@ export async function agentAttachmentBlocks(atts: Attachment[], maxImages = 8) {
             `Subject: ${m.subject ?? ""}\nFrom: ${m.from?.text ?? ""}\nTo/Cc: ${to}\nDate: ${m.date?.toISOString() ?? ""}\n\n` +
             (body.length > max ? body.slice(0, max) + "\n…[email truncated]" : body || "(empty body)"),
         });
-      } else if (/^text\/(plain|csv)/.test(a.type) && a.size < 200_000) {
+      } else if (isPdf(a)) {
+        // Claude reads PDFs natively — text and scanned pages (invoices, challans, POs). API limit: 32 MB / 100 pages.
+        if (pdfs >= maxPdfs || a.size > 20_000_000) { blocks.push({ type: "text", text: `PDF "${a.name}" not read — ${pdfs >= maxPdfs ? "too many PDFs on this ticket" : "file too large"}.` }); continue; }
         const { body } = await fetchArtifact(a.artifact_id, a.part);
-        blocks.push({ type: "text", text: `Attachment "${a.name}":\n${body.toString("utf8").slice(0, 20000)}` });
+        blocks.push({ type: "text", text: `Attached PDF "${a.name}" (from ${a.from ?? "?"}, ${a.comment_date}):` });
+        blocks.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: body.toString("base64") }, title: a.name });
+        pdfs++;
+      } else if (a.kind === "file" && a.size < 25_000_000) {
+        const { body } = await fetchArtifact(a.artifact_id, a.part);
+        const text = await fileText(a, body);
+        if (text == null) continue; // zip, video, … — only listed by name
+        if (fileBudget <= 0) { blocks.push({ type: "text", text: `Attachment "${a.name}" not read — too many files on this ticket.` }); continue; }
+        const max = Math.min(40000, fileBudget);
+        fileBudget -= Math.min(text.length, max);
+        blocks.push({
+          type: "text",
+          text: `Attached file "${a.name}" (from ${a.from ?? "?"}, ${a.comment_date}):\n` +
+            (text.length > max ? text.slice(0, max) + `\n…[file truncated — ${text.length} characters in total]` : text.trim() || "(empty file)"),
+        });
       }
     } catch {
       blocks.push({ type: "text", text: `Attachment "${a.name}" could not be downloaded.` });
