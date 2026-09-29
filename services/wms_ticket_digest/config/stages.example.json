@@ -1,0 +1,16 @@
+{
+  "valid_stages": [
+    "awaiting_customer_response",
+    "queued",
+    "awaiting_development",
+    "in_development",
+    "work_in_progress",
+    "Reopen",
+    "awaiting_product_assist",
+    "Reassigned to Customer Support"
+  ],
+  "dev_stages": [
+    "awaiting_development",
+    "in_development"
+  ]
+}

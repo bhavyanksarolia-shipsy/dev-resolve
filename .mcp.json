@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "opensearch-logs": {
+      "command": "uv",
+      "args": ["run", "mcp/opensearch-logs/server.py"]
+    }
+  }
+}

@@ -1,0 +1,70 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# Dev Resolve secrets & local state — never commit
+config/config.env
+config/metabase_ratelimit.json
+services/wms_ticket_digest/.env
+services/wms_ticket_digest/state/
+__pycache__/
+
+# local run logs
+.logs/
+
+# Saved browser logins (SSO sessions) — never commit
+.auth/
+
+# Templates with setting NAMES only (no values) are safe to commit
+!.env.example
+
+# ── Client data stays on this machine (code-only repo) ──
+# Accounts, companies, index patterns, DevRev ids, connection projects
+config/projects.json
+# Knowledge base content (playbooks, glossaries, saved queries) — only the README + empty template are shared
+knowledge/*
+!knowledge/README.md
+!knowledge/_template/
+!knowledge/_shared/
+# Client-specific skill and ticket-digest lists
+.claude/skills/ffo-miss-analysis/
+services/wms_ticket_digest/config/*.json
+!services/wms_ticket_digest/config/*.example.json

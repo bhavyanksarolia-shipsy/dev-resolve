@@ -1,0 +1,152 @@
+{
+  "_readme": "EXAMPLE \u2014 copy to config/projects.json (gitignored) and replace with your accounts. 'accounts' = what tickets route to; other top-level keys are connection projects. Every URL/user/password/token lives in config/config.env and is referenced here only by env-var NAME.",
+  "accounts": [
+    {
+      "name": "Acme Retail",
+      "slug": "acme",
+      "group": null,
+      "status": "active",
+      "client_active": true,
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/EXAMPLE:account/ACME123"
+        ],
+        "names": [
+          "[WMS] Acme Retail"
+        ]
+      },
+      "opensearch_log_type": "acme_app",
+      "opensearch_log_types": {
+        "app": "acme_app",
+        "audit": "acme_audit",
+        "integration": "acme_link"
+      },
+      "metabase_project": "acme_metabase",
+      "metabase_database": 2,
+      "metabase_databases": {
+        "postgres": 2
+      },
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/acme"
+    },
+    {
+      "name": "Globex (shared app logs)",
+      "slug": "globex",
+      "group": null,
+      "status": "active",
+      "devrev": {
+        "account_ids": [
+          "don:identity:dvrv-us-1:devo/EXAMPLE:account/GLOBEX1"
+        ],
+        "names": [
+          "Globex"
+        ]
+      },
+      "opensearch_log_type": null,
+      "opensearch_log_types": {},
+      "app_log": {
+        "project": "app_log_mcp",
+        "indices": {
+          "app": "app-logs-example-*",
+          "audit": "audit-logs-*-example-*"
+        },
+        "company": "GLOBEX PVT LTD",
+        "warehouses": [
+          "WH01"
+        ]
+      },
+      "metabase_project": "sso_metabase",
+      "metabase_database": 3,
+      "metabase_databases": {
+        "postgres": 3
+      },
+      "_shared_db_note": "Metabase DB 3 is shared by several clients \u2014 SQL must be restricted to this account's warehouses",
+      "code_repos": [
+        "stockone-neo"
+      ],
+      "knowledge_dir": "knowledge/globex"
+    }
+  ],
+  "devrev_routing": {
+    "ambiguous": [],
+    "ignore": []
+  },
+  "devrev_view": {
+    "name": "DevRev WMS Support view",
+    "subtype": "Support",
+    "wms_product_id": "don:core:dvrv-us-1:devo/EXAMPLE:product/1",
+    "default_part_id": "don:core:dvrv-us-1:devo/EXAMPLE:product/2",
+    "default_part_label": "Default part (untriaged)",
+    "stages": [
+      "queued",
+      "work_in_progress",
+      "awaiting_development",
+      "awaiting_customer_response",
+      "Reopen"
+    ]
+  },
+  "acme": {
+    "label": "Acme logs + Metabase (URLs in config.env)",
+    "opensearch": {
+      "url_env": "ACME_OS_URL",
+      "username_env": "ACME_OS_USERNAME",
+      "password_env": "ACME_OS_PASSWORD",
+      "log_types": {
+        "acme_app": "app-logs-acme-*",
+        "acme_audit": "audit-logs-acme-*",
+        "acme_link": "api-logger-acme-*"
+      }
+    }
+  },
+  "acme_metabase": {
+    "label": "Acme Metabase \u2014 username/password",
+    "metabase": {
+      "base_url_env": "ACME_METABASE_BASE_URL",
+      "username_env": "ACME_METABASE_USERNAME",
+      "password_env": "ACME_METABASE_PASSWORD",
+      "session_token_env": "ACME_METABASE_SESSION_TOKEN",
+      "default_database": 2,
+      "databases": {
+        "2": "Acme Postgres replica"
+      }
+    }
+  },
+  "sso_metabase": {
+    "label": "Metabase with Google login",
+    "metabase": {
+      "sso": "google",
+      "base_url_env": "SSO_METABASE_BASE_URL",
+      "username_env": "SSO_METABASE_USERNAME",
+      "password_env": "SSO_METABASE_PASSWORD",
+      "session_token_env": "SSO_METABASE_SESSION_TOKEN",
+      "default_database": 3,
+      "databases": {
+        "3": "Shared Postgres replica \u2014 SHARED"
+      }
+    }
+  },
+  "app_log_mcp": {
+    "label": "Application logs via an OpenSearch MCP (gateway + OAuth client in config.env)",
+    "opensearch_mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote@0.8.7",
+        "${APP_LOG_MCP_URL}",
+        "3334",
+        "--static-oauth-client-info",
+        "${APP_LOG_OAUTH_CLIENT_INFO}"
+      ],
+      "config_dir": ".auth/mcp-remote",
+      "login_command": "npm run app-log-login",
+      "read_only_tools": [
+        "SearchIndexTool",
+        "CountTool",
+        "ListIndexTool",
+        "IndexMappingTool"
+      ]
+    }
+  }
+}
