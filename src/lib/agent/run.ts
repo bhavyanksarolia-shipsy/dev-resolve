@@ -108,11 +108,13 @@ ${accountKnowledge(account)}
 ${skillText(account)}`;
 }
 
+const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + "\n…[comment truncated]" : s);
+
 function ticketPrompt(t: Awaited<ReturnType<typeof getTicket>>, comments: Awaited<ReturnType<typeof listTimeline>>) {
   const conv = comments
     .slice()
     .reverse()
-    .map((c) => `[${c.created_date}] (${c.visibility}) ${c.created_by?.display_name || c.created_by?.email || "?"}: ${(c.body || "").slice(0, 4000)}`)
+    .map((c) => `[${c.created_date}] (${c.visibility}) ${c.created_by?.display_name || c.created_by?.email || "?"}: ${clip(c.body || "", 15000)}`)
     .join("\n\n");
   return `Investigate DevRev ticket ${t.display_id}: "${t.title}"
 Created: ${t.created_date}   Stage: ${t.stage?.name}   Severity: ${t.severity}

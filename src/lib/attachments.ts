@@ -104,6 +104,7 @@ export async function agentAttachmentBlocks(atts: Attachment[], maxImages = 8) {
   const blocks: ({ type: "image"; source: { type: "base64"; media_type: ImageType; data: string } } | { type: "text"; text: string })[] = [];
   const supported: string[] = ["image/png", "image/jpeg", "image/gif", "image/webp"];
   let images = 0;
+  let emailBudget = 150_000; // total characters of email text per investigation
   for (const a of atts) {
     try {
       if (a.kind === "image" && supported.includes(a.type) && a.size < 3_500_000 && images < maxImages) {
@@ -111,16 +112,20 @@ export async function agentAttachmentBlocks(atts: Attachment[], maxImages = 8) {
         blocks.push({ type: "text", text: `Attachment "${a.name}" (from ${a.from ?? "?"}, ${a.comment_date}):` });
         blocks.push({ type: "image", source: { type: "base64", media_type: a.type as ImageType, data: body.toString("base64") } });
         images++;
-      } else if (a.kind === "email" && a.part == null) {
+      } else if (a.kind === "email") {
         // The email itself (subject, people, full body) — often where the real details are (invoice lists, IDs…).
-        const m = await parseEmail(a.artifact_id);
+        // Also covers emails forwarded as attachments inside another email (a.part set).
+        if (emailBudget <= 0) { blocks.push({ type: "text", text: `Attached email "${a.name}" skipped — too many emails on this ticket.` }); continue; }
+        const m = a.part == null ? await parseEmail(a.artifact_id) : await simpleParser((await fetchArtifact(a.artifact_id, a.part)).body);
         const body = (m.text || (typeof m.html === "string" ? htmlToText(m.html) : "") || "").trim();
         const to = [m.to, m.cc].flat().filter(Boolean).map((x) => (x as { text: string }).text).join(", ");
+        const max = Math.min(30000, emailBudget);
+        emailBudget -= Math.min(body.length, max);
         blocks.push({
           type: "text",
           text: `Attached email "${a.name}" (from ${a.from ?? "?"}, ${a.comment_date}):\n` +
             `Subject: ${m.subject ?? ""}\nFrom: ${m.from?.text ?? ""}\nTo/Cc: ${to}\nDate: ${m.date?.toISOString() ?? ""}\n\n` +
-            (body.length > 30000 ? body.slice(0, 30000) + "\n…[email truncated]" : body || "(empty body)"),
+            (body.length > max ? body.slice(0, max) + "\n…[email truncated]" : body || "(empty body)"),
         });
       } else if (/^text\/(plain|csv)/.test(a.type) && a.size < 200_000) {
         const { body } = await fetchArtifact(a.artifact_id, a.part);
