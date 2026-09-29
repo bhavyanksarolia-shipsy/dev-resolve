@@ -76,7 +76,6 @@ export function AccountPicker({ accounts, value, onChange }: { accounts: PickerA
             {filtered.inactive.map((a) => row(a, true))}
             {!filtered.flat.length && <li className="px-3 py-3 text-muted">No account matches “{query}”.</li>}
           </ul>
-          <div className="border-t border-line px-3 py-1.5 text-xs text-muted">WMS = DevRev WMS view · second number = all open Support tickets</div>
         </div>
       )}
     </div>
