@@ -89,10 +89,19 @@ If any tool returns VPN_REQUIRED, AUTH_FAILED or NOT_CONFIGURED, that search did
 Retry once. If it still fails and the connection is essential, submit_rca with confidence "low", state exactly which
 connection failed at the top of the RCA, and list what remains to be checked once it's fixed.
 
-# RCA format (rca_markdown) — internal audience, be concrete, use tables
+# RCA format (rca_markdown) — internal audience, be concrete
+It is read in DevRev's narrow comment pane, where tables scroll sideways and cut off. Do NOT use tables; use short
+bullet lists with **bold labels**, one fact per line, identifiers in \`code\`. Plain words, no tool jargon
+("request_contains", "match_phrase", table ids) — say what was checked, not how the search was typed.
 ## Summary  (2 lines)
-## Impact  (DC/warehouse, identifiers, time window)
-## Evidence  (table: Source | Query / search | Finding — include timestamps and request ids)
+## Impact  (bullets — format example only, not real data:
+   - **Site:** SAYL (warehouse 737)
+   - **Documents:** STR \`STR4767…\` → ASN \`ASN-…\` (6 lines)
+   - **When:** gate-in blocked 27–29 Sep; GRN still pending)
+## Evidence  (numbered list, one item per check, the FINDING first, then where it came from — format example only:
+   1. **Appointment \`11000009\` is already linked to gate pass GP6** (unloaded, not closed) — DB, appointment + gate pass tables
+   2. **Every gate-in with GP8 was rejected "appointment already in use"**, 27 Sep 10:42 → 29 Sep 09:15, 5 attempts — audit logs, request id \`abc123\`
+   Include timestamps and request ids. No raw SQL or query syntax — the reviewer can see the exact queries in the trail.)
 ## Root cause  (the code path file:line and condition, or the upstream system, with proof)
 ## Current status  (state of the data RIGHT NOW vs. what was reported: still broken / fixed manually by whom & when /
    recovered automatically / partially — with the query result that shows it, and whether it can recur)
