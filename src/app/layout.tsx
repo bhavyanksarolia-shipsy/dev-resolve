@@ -38,7 +38,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
               <span className="grid h-7 w-7 place-items-center rounded-lg bg-accent text-sm text-white">DR</span>
               Dev Resolve
             </Link>
-            <span className="-ml-4 rounded-full bg-bg px-2 py-0.5 font-mono text-[10px] text-muted ring-1 ring-line" title="Version (git commit) this page was loaded from">{currentVersion()}</span>
+            {/* <span className="-ml-4 rounded-full bg-bg px-2 py-0.5 font-mono text-[10px] text-muted ring-1 ring-line" title="Version (git commit) this page was loaded from">{currentVersion()}</span> */}
             <nav className="flex gap-1 text-sm">
               <Link href="/" className="rounded-md px-2.5 py-1 text-muted hover:bg-accent-soft hover:text-accent-strong">Tickets</Link>
               <Link href="/knowledge" className="rounded-md px-2.5 py-1 text-muted hover:bg-accent-soft hover:text-accent-strong">Knowledge</Link>
