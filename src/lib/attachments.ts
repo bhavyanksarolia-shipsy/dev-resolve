@@ -87,7 +87,18 @@ export async function listAttachments(comments: TimelineEntry[]): Promise<Attach
   return out;
 }
 
-/** Images (and text-like files) to hand the agent, within the API's per-image size limit. */
+/** Minimal HTML → text for email bodies that have no plain-text part. */
+function htmlToText(html: string) {
+  return html
+    .replace(/<(script|style)[\s\S]*?<\/\1>/gi, "")
+    .replace(/<br\s*\/?>|<\/(p|div|li|tr|h\d)>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "- ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, "\n\n");
+}
+
+/** Images, attached emails (as text) and text-like files to hand the agent, within the API's per-image size limit. */
 export async function agentAttachmentBlocks(atts: Attachment[], maxImages = 8) {
   type ImageType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
   const blocks: ({ type: "image"; source: { type: "base64"; media_type: ImageType; data: string } } | { type: "text"; text: string })[] = [];
@@ -100,6 +111,17 @@ export async function agentAttachmentBlocks(atts: Attachment[], maxImages = 8) {
         blocks.push({ type: "text", text: `Attachment "${a.name}" (from ${a.from ?? "?"}, ${a.comment_date}):` });
         blocks.push({ type: "image", source: { type: "base64", media_type: a.type as ImageType, data: body.toString("base64") } });
         images++;
+      } else if (a.kind === "email" && a.part == null) {
+        // The email itself (subject, people, full body) — often where the real details are (invoice lists, IDs…).
+        const m = await parseEmail(a.artifact_id);
+        const body = (m.text || (typeof m.html === "string" ? htmlToText(m.html) : "") || "").trim();
+        const to = [m.to, m.cc].flat().filter(Boolean).map((x) => (x as { text: string }).text).join(", ");
+        blocks.push({
+          type: "text",
+          text: `Attached email "${a.name}" (from ${a.from ?? "?"}, ${a.comment_date}):\n` +
+            `Subject: ${m.subject ?? ""}\nFrom: ${m.from?.text ?? ""}\nTo/Cc: ${to}\nDate: ${m.date?.toISOString() ?? ""}\n\n` +
+            (body.length > 30000 ? body.slice(0, 30000) + "\n…[email truncated]" : body || "(empty body)"),
+        });
       } else if (/^text\/(plain|csv)/.test(a.type) && a.size < 200_000) {
         const { body } = await fetchArtifact(a.artifact_id, a.part);
         blocks.push({ type: "text", text: `Attachment "${a.name}":\n${body.toString("utf8").slice(0, 20000)}` });

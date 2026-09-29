@@ -187,7 +187,8 @@ async function runAgent(id: number, ticket: Awaited<ReturnType<typeof getTicket>
   await step(id, seq++, "system", null, { model: MODEL, account: account.slug, candidates: candidates.map((c) => c.slug) }, `Investigating ${ticket.display_id} as ${account.name}`);
   if (attachments.length) {
     const imgs = attachmentBlocks.filter((b) => b.type === "image").length;
-    await step(id, seq++, "system", null, { attachments: attachments.map((a) => a.name) }, `Read ${attachments.length} attachment(s) · ${imgs} image(s) sent to the agent`);
+    const emails = attachmentBlocks.filter((b) => b.type === "text" && b.text.startsWith("Attached email")).length;
+    await step(id, seq++, "system", null, { attachments: attachments.map((a) => a.name) }, `Read ${attachments.length} attachment(s) · ${imgs} image(s) + ${emails} email(s) sent to the agent`);
   }
   await runSession({
     id, account, candidates, seq,
