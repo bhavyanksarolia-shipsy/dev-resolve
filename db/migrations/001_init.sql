@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS knowledge_proposals (
   content          TEXT NOT NULL,           -- markdown/SQL to append
   rationale        TEXT,
   source           TEXT NOT NULL DEFAULT 'agent', -- agent|human_edit
-  status           TEXT NOT NULL DEFAULT 'pending', -- pending|accepted|rejected
+  status           TEXT NOT NULL DEFAULT 'pending', -- pending|accepted|rejected|superseded
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   decided_at       TIMESTAMPTZ
 );

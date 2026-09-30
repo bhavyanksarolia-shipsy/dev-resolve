@@ -159,6 +159,14 @@ export function buildToolServer(opts: { investigationId: number; account: Accoun
           WHERE id=$1`,
         [investigationId, a.rca_markdown, a.category, a.confidence, JSON.stringify(caseDraft), resolved],
       );
+      // Only the latest investigation's proposals are shown on the ticket, so older runs' pending ones could never be decided.
+      await q(
+        `UPDATE knowledge_proposals p SET status='superseded', decided_at=now(), decided_by=$2
+           FROM investigations old, investigations cur
+          WHERE p.investigation_id = old.id AND cur.id = $1 AND old.ticket_id = cur.ticket_id AND old.id < cur.id
+            AND p.status = 'pending'`,
+        [investigationId, `newer investigation #${investigationId}`],
+      );
       return text("RCA saved as a new draft version for human review. Stop here and give the reviewer a short summary of what changed (if anything).");
     },
   );
