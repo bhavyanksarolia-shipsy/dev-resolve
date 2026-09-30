@@ -163,11 +163,10 @@ export function Workspace({ ticketId }: { ticketId: string }) {
             <Markdown>{t.body}</Markdown>
           </div>
         )}
-        <Attachments items={data.attachments} />
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">Timeline · {data.timeline.length}</h2>
         <ol className="space-y-3">
           {data.timeline.slice().reverse().map((c, i) => (
-            <CommentCard key={c.id} c={c} attachments={data.attachments.filter((a) => a.comment_id === c.id && !a.signature).length} defaultOpen={i === 0} />
+            <CommentCard key={c.id} c={c} attachments={data.attachments.filter((a) => a.comment_id === c.id)} defaultOpen={i === 0} />
           ))}
         </ol>
       </section>
@@ -363,67 +362,46 @@ function ProposalCard({ p, onDecide }: { p: Proposal; onDecide: (p: Proposal, a:
   );
 }
 
-function Attachments({ items }: { items: Attachment[] }) {
+/** One message's attachments: emails/files as links, images as tiles; email-signature logos behind a toggle. */
+function AttachmentList({ items }: { items: Attachment[] }) {
   const [showLogos, setShowLogos] = useState(false);
   const logos = items.filter((a) => a.signature);
   const images = items.filter((a) => a.kind === "image" && (showLogos || !a.signature));
   const others = items.filter((a) => a.kind !== "image");
-  const count = (k: Attachment["kind"]) => items.filter((a) => a.kind === k && !a.signature).length;
-  const parts = [
-    count("email") && `${count("email")} email${count("email") > 1 ? "s" : ""}`,
-    count("image") && `${count("image")} image${count("image") > 1 ? "s" : ""}`,
-    count("file") && `${count("file")} file${count("file") > 1 ? "s" : ""}`,
-    logos.length && `${logos.length} signature logo${logos.length > 1 ? "s" : ""} hidden`,
-  ].filter(Boolean);
-  if (!items.length) {
-    return (
-      <div className="card mb-4 flex items-center gap-2 px-4 py-3 text-sm">
-        <span className="text-muted">▸</span><span className="font-semibold">Attachments (0)</span>
-        <span className="text-xs text-muted">none on this ticket</span>
-      </div>
-    );
-  }
   return (
-    <details className="card group mb-4 overflow-hidden">
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm hover:bg-accent-soft/60 [&::-webkit-details-marker]:hidden">
-        <span className="text-muted transition-transform group-open:rotate-90">▸</span>
-        <span className="font-semibold">Attachments ({items.length - logos.length})</span>
-        <span className="text-xs text-muted">{parts.join(" · ")}</span>
-      </summary>
-      <div className="border-t border-line px-4 py-3">
-        {others.length > 0 && (
-          <ul className="mb-3 space-y-1 text-sm">
-            {others.map((a) => (
-              <li key={`${a.artifact_id}-${a.part ?? ""}`} className="flex items-center gap-2">
-                <span>{a.kind === "email" ? "✉️" : "📄"}</span>
-                <a href={a.url} target="_blank" rel="noreferrer" className="truncate text-accent hover:underline">
-                  {a.kind === "email" ? "View email" : a.name}
-                </a>
-                <span className="shrink-0 text-xs text-muted">{a.kind === "email" ? a.name + " · " : ""}{kb(a.size)} · {a.from} · {new Date(a.comment_date).toLocaleDateString("en-IN")}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {images.length > 0 && (
-          <div className="mb-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {images.map((a) => (
-              <a key={`${a.artifact_id}-${a.part ?? ""}`} href={a.url} target="_blank" rel="noreferrer" title={`${a.name} · ${a.from ?? ""}`}
-                className="group/img block overflow-hidden rounded-md border border-line bg-panel">
-                {/* eslint-disable-next-line @next/next/no-img-element -- proxied, auth'd attachment; next/image can't optimise it */}
-                <img src={a.url} alt={a.name} loading="lazy" className="h-28 w-full object-cover object-top transition group-hover/img:opacity-90" />
-                <div className="truncate px-2 py-1 text-xs text-muted">{a.name} · {kb(a.size)}</div>
+    <div className="text-sm">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Attachments · {items.length - logos.length}</div>
+      {others.length > 0 && (
+        <ul className="mb-2 space-y-1">
+          {others.map((a) => (
+            <li key={`${a.artifact_id}-${a.part ?? ""}`} className="flex min-w-0 items-center gap-2">
+              <span>{a.kind === "email" ? "✉️" : "📄"}</span>
+              <a href={a.url} target="_blank" rel="noreferrer" className="truncate text-accent hover:underline">
+                {a.kind === "email" ? "View email" : a.name}
               </a>
-            ))}
-          </div>
-        )}
-        {!images.length && !others.length && <p className="text-xs text-muted">Only email-signature logos on this ticket.</p>}
-        {logos.length > 0 && (
-          <button type="button" onClick={() => setShowLogos((v) => !v)} className="text-xs text-muted hover:text-accent">
-            {showLogos ? "Hide" : "Show"} {logos.length} signature logo{logos.length > 1 ? "s" : ""}
-          </button>
-        )}
-      </div>
-    </details>
+              <span className="shrink-0 text-xs text-muted">{a.kind === "email" ? a.name + " · " : ""}{kb(a.size)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {images.length > 0 && (
+        <div className="mb-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {images.map((a) => (
+            <a key={`${a.artifact_id}-${a.part ?? ""}`} href={a.url} target="_blank" rel="noreferrer" title={a.name}
+              className="group/img block overflow-hidden rounded-md border border-line bg-panel">
+              {/* eslint-disable-next-line @next/next/no-img-element -- proxied, auth'd attachment; next/image can't optimise it */}
+              <img src={a.url} alt={a.name} loading="lazy" className="h-28 w-full object-cover object-top transition group-hover/img:opacity-90" />
+              <div className="truncate px-2 py-1 text-xs text-muted">{a.name} · {kb(a.size)}</div>
+            </a>
+          ))}
+        </div>
+      )}
+      {logos.length > 0 && (
+        <button type="button" onClick={() => setShowLogos((v) => !v)} className="text-xs text-muted hover:text-accent">
+          {showLogos ? "Hide" : "Show"} {logos.length} signature logo{logos.length > 1 ? "s" : ""}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -498,8 +476,9 @@ function WorkspaceSkeleton() {
 }
 
 function CommentCard({ c, attachments, defaultOpen }: {
-  c: TicketData["timeline"][number]; attachments: number; defaultOpen: boolean;
+  c: TicketData["timeline"][number]; attachments: Attachment[]; defaultOpen: boolean;
 }) {
+  const shown = attachments.filter((a) => !a.signature).length;
   const [open, setOpen] = useState(defaultOpen);
   const who = c.created_by?.display_name || c.created_by?.email || "unknown";
   const internal = c.visibility === "internal";
@@ -514,13 +493,18 @@ function CommentCard({ c, attachments, defaultOpen }: {
           <span className="block truncate text-sm font-medium">{who}</span>
           <span className="block text-xs text-muted">{new Date(c.created_date).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</span>
         </span>
-        {attachments > 0 && <span className="text-xs text-muted">📎 {attachments}</span>}
+        {shown > 0 && <span className="text-xs text-muted" title="Attachments on this message">📎 {shown}</span>}
         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${internal ? "bg-amber-50 text-warn ring-amber-200" : "bg-accent-soft text-accent-strong ring-emerald-200"}`}>{c.visibility}</span>
         <span className={`text-muted transition-transform ${open ? "rotate-90" : ""}`}>›</span>
       </button>
       {open && (
         <div className={`border-t border-line px-4 py-3 ${long ? "max-h-[32rem] overflow-y-auto" : ""}`}>
           {c.body?.trim() ? <Markdown compact>{hidePaths(c.body)}</Markdown> : <span className="text-sm text-muted">(no text)</span>}
+        </div>
+      )}
+      {open && attachments.length > 0 && (
+        <div className="border-t border-line bg-bg/60 px-4 py-3">
+          <AttachmentList items={attachments} />
         </div>
       )}
     </li>

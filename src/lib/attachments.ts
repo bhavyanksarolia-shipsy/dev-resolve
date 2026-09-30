@@ -92,7 +92,8 @@ export async function listAttachments(comments: TimelineEntry[]): Promise<Attach
   for (const a of out) if (a.kind === "image") sizeCount.set(a.size, (sizeCount.get(a.size) ?? 0) + 1);
   for (const a of out) {
     if (a.kind !== "image" || a.size > 40_000) continue;
-    if (/^(OutlookEmoji-|image\d{3}\.)/i.test(a.name) || (sizeCount.get(a.size) ?? 0) >= 3) a.signature = true;
+    // Outlook also names real pasted screenshots imageNNN.png, so for those only tiny icons count as logos.
+    if (/^OutlookEmoji-/i.test(a.name) || (/^image\d{3}\./i.test(a.name) && a.size <= 12_000) || (sizeCount.get(a.size) ?? 0) >= 3) a.signature = true;
   }
   return out;
 }
