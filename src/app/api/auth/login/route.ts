@@ -1,10 +1,12 @@
 import { login, sessionCookie } from "@/lib/auth";
+import { passwordLoginEnabled } from "@/lib/google";
 
 // Per-IP brake on top of the per-account lockout in login() (single app instance, so in-memory is enough).
 const attempts = new Map<string, { n: number; at: number }>();
 const WINDOW = 15 * 60e3;
 
 export async function POST(req: Request) {
+  if (!passwordLoginEnabled()) return Response.json({ error: "Password sign-in is turned off — use Sign in with Google" }, { status: 403 });
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "local";
   const a = attempts.get(ip);
   if (a && a.n >= 20 && Date.now() - a.at < WINDOW) return Response.json({ error: "Too many attempts — try again in 15 minutes" }, { status: 429 });

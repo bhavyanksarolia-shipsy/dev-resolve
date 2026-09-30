@@ -47,7 +47,7 @@ export async function login(nameRaw: string, password: string, meta: { ip?: stri
   Promise<{ ok: true; token: string; maxAge: number; user: SessionUser } | { ok: false; error: string; status: number }> {
   await seedFromEnvOnce();
   const name = nameRaw.trim().toLowerCase();
-  const [u] = await q<{ id: number; name: string; password_hash: string; is_admin: boolean; disabled_at: string | null; locked_until: string | null }>(
+  const [u] = await q<{ id: number; name: string; password_hash: string | null; is_admin: boolean; disabled_at: string | null; locked_until: string | null }>(
     `SELECT id, name, password_hash, is_admin, disabled_at, locked_until FROM app_users WHERE name = $1`, [name]);
   const good = await verifyPassword(password, u?.password_hash ?? (await DUMMY));
   if (u?.locked_until && new Date(u.locked_until).getTime() > Date.now()) {
@@ -61,13 +61,44 @@ export async function login(nameRaw: string, password: string, meta: { ip?: stri
     }
     return { ok: false, status: 401, error: "Wrong name or password" };
   }
-  await q(`UPDATE app_users SET failed_logins = 0, locked_until = NULL, last_login_at = now() WHERE id = $1`, [u.id]);
+  return { ok: true, ...(await openSession(u.id, meta)), user: { name: u.name, isAdmin: u.is_admin } };
+}
+
+async function openSession(userId: number, meta: { ip?: string; userAgent?: string }) {
+  await q(`UPDATE app_users SET failed_logins = 0, locked_until = NULL, last_login_at = now() WHERE id = $1`, [userId]);
   const token = randomBytes(32).toString("base64url");
   await q(`INSERT INTO app_sessions (token_hash, user_id, expires_at, ip, user_agent) VALUES ($1, $2, now() + ($3 || ' milliseconds')::interval, $4, $5)`,
-    [sha256(token), u.id, String(MAX_MS), meta.ip?.slice(0, 64) ?? null, meta.userAgent?.slice(0, 300) ?? null]);
+    [sha256(token), userId, String(MAX_MS), meta.ip?.slice(0, 64) ?? null, meta.userAgent?.slice(0, 300) ?? null]);
   // Housekeeping: old sessions are useless — drop them now and then.
   if (Math.random() < 0.05) q(`DELETE FROM app_sessions WHERE expires_at < now() - interval '7 days'`).catch(() => {});
-  return { ok: true, token, maxAge: Math.floor(MAX_MS / 1000), user: { name: u.name, isAdmin: u.is_admin } };
+  return { token, maxAge: Math.floor(MAX_MS / 1000) };
+}
+
+/**
+ * Google sign-in (identity already verified in google.ts). Matched by email; a first-timer gets a member login
+ * (GOOGLE_AUTO_CREATE=off: only people added with `npm run user -- add <name> --email <email>`).
+ */
+export async function loginWithGoogle(email: string, displayName: string, meta: { ip?: string; userAgent?: string }):
+  Promise<{ ok: true; token: string; maxAge: number; user: SessionUser } | { ok: false; error: string }> {
+  await seedFromEnvOnce();
+  let [u] = await q<{ id: number; name: string; is_admin: boolean; disabled_at: string | null }>(
+    `SELECT id, name, is_admin, disabled_at FROM app_users WHERE lower(email) = $1`, [email]);
+  if (!u) {
+    if (["off", "0", "false"].includes((process.env.GOOGLE_AUTO_CREATE || "on").toLowerCase())) {
+      return { ok: false, error: `${email} doesn't have a Dev Resolve login yet — ask an admin to add you` };
+    }
+    const admins = (process.env.GOOGLE_ADMIN_EMAILS || "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+    const base = email.split("@")[0].toLowerCase().replace(/[^a-z0-9._-]/g, "-").slice(0, 60) || "user";
+    for (let i = 0; !u && i < 20; i++) {
+      [u] = await q(`INSERT INTO app_users (name, email, display_name, is_admin) VALUES ($1, $2, $3, $4)
+                      ON CONFLICT (name) DO NOTHING RETURNING id, name, is_admin, disabled_at`,
+        [i ? `${base}-${i + 1}` : base, email, displayName.slice(0, 120), admins.includes(email)]);
+    }
+    if (!u) return { ok: false, error: "Couldn't create your login — ask an admin" };
+  }
+  if (u.disabled_at) return { ok: false, error: "Your Dev Resolve login is disabled — ask an admin" };
+  await q(`UPDATE app_users SET display_name = $2 WHERE id = $1`, [u.id, displayName.slice(0, 120)]);
+  return { ok: true, ...(await openSession(u.id, meta)), user: { name: u.name, isAdmin: u.is_admin } };
 }
 
 export async function verifySession(token: string | undefined): Promise<SessionUser | null> {
@@ -104,6 +135,6 @@ export { tokenFrom as sessionToken };
 
 /** Secure only over HTTPS (behind a proxy: X-Forwarded-Proto), so plain-http localhost keeps working. */
 export function sessionCookie(req: Request, value: string, maxAge: number) {
-  const secure = new URL(req.url).protocol === "https:" || req.headers.get("x-forwarded-proto") === "https";
+  const secure = new URL(req.url).protocol === "https:" || req.headers.get("x-forwarded-proto") === "https" || !!process.env.APP_URL?.startsWith("https:");
   return `${SESSION_COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? "; Secure" : ""}`;
 }

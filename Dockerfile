@@ -7,7 +7,7 @@ RUN npm ci
 COPY . .
 # Build needs no secrets; the example config stands in for the private one.
 RUN mkdir -p config && cp -n config/projects.example.json config/projects.json && cp -n config/config.env.example config/config.env \
- && npm run build && npm prune --omit=dev
+ && npm run build && npm prune --omit=dev && rm -rf .next/cache
 
 FROM node:22-bookworm-slim
 ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0 NEXT_TELEMETRY_DISABLED=1 \
@@ -27,6 +27,9 @@ RUN rm -f config/projects.json config/config.env && rm -rf .auth .logs \
 USER node
 # Warm the Python dependencies of the log server so the first investigation doesn't download them.
 RUN uv run --script mcp/opensearch-logs/server.py --help >/dev/null 2>&1 || true
+# Start as root only to take ownership of the mounted disk (Render / cloud disks mount root-owned); the entrypoint
+# then drops to the unprivileged "node" user before doing anything else.
+USER root
 EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s CMD curl -fsS http://127.0.0.1:3000/api/healthz || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s CMD curl -fsS "http://127.0.0.1:${PORT:-3000}/api/healthz" || exit 1
 ENTRYPOINT ["/usr/bin/tini", "--", "bash", "scripts/docker-entrypoint.sh"]

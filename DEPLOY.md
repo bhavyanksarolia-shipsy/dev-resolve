@@ -27,6 +27,16 @@ psql "$ADMIN_URL" -v owner_pw="'…'" -v app_pw="'…'" -f db/roles.sql    # two
 
 ## 3. Logins
 
+**Sign in with Google** (recommended). In Google Cloud Console → APIs & Services → Credentials → *Create OAuth
+client ID* → **Web application**:
+- Authorized redirect URI: `https://<your-domain>/api/auth/google/callback`
+- OAuth consent screen: **Internal** (only your Google Workspace users)
+
+Then set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_ALLOWED_DOMAINS=<your company domain>` and
+`GOOGLE_ADMIN_EMAILS=<you>`. People of that domain get a member login on first sign-in
+(`GOOGLE_AUTO_CREATE=off` to allow only people you add with `npm run user -- add-google <email>`).
+Password logins stay as a break-glass; `DEV_RESOLVE_PASSWORD_LOGIN=off` hides them.
+
 ```bash
 docker compose exec app npm run user -- add <name> --admin     # asks for the password (hidden, 12+ chars)
 docker compose exec app npm run user -- list | reset | disable | enable | signout
@@ -50,7 +60,21 @@ Needs Node 22+ and Chrome on the laptop. The connector pins the allowed host suf
 `CODE_GIT_BASE=https://github.com/<org>`, `GITHUB_TOKEN` = fine-grained token, **read-only Contents** on only the
 repos in `code_repos`. Shallow clones; the token is sent per request, never stored in git config.
 
-## 6. Run
+## 6. Render
+
+One **Web Service** (Docker) + one **Postgres** — `render.yaml` describes both (Dashboard → New → Blueprint).
+1. Fill the `sync: false` env vars when asked (DevRev, Claude token, Google client, GitHub token, `APP_URL`).
+2. Secret files: run `bash scripts/render-secret-files.sh` on your laptop, then in the service → Environment →
+   **Secret Files** add `projects.json`, `config.env`, `knowledge.tgz.b64` with those contents. They're copied onto the
+   disk on start (and again whenever you change them there). Delete the local folder afterwards.
+3. Custom domain: service → Settings → Custom Domains (Render issues the HTTPS certificate). Set `APP_URL` to it and
+   use the same URL in the Google OAuth client's redirect URI.
+4. First admin: sign in with Google as one of `GOOGLE_ADMIN_EMAILS`.
+
+Render specifics already handled: `PORT` (10000), health check `/api/healthz`, root-owned disk, one instance.
+Render Postgres has a single user — skip `db/roles.sql` there.
+
+## 7. Run elsewhere (any Docker host)
 
 ```bash
 docker compose -f docker-compose.prod.yml --env-file /secure/dev-resolve.env up -d --build

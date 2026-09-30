@@ -2,6 +2,7 @@
  * Manage Dev Resolve logins (stored hashed in Postgres). Passwords are typed hidden — never passed as arguments.
  *   npm run user -- list
  *   npm run user -- add <name> [--admin]      create a user (asks for the password twice)
+ *   npm run user -- add-google <email> [--admin]   pre-add a Google sign-in user (no password)
  *   npm run user -- reset <name>              new password; signs that user out everywhere
  *   npm run user -- admin <name> on|off       grant / remove admin
  *   npm run user -- disable <name>            block logins + end their sessions (history is kept)
@@ -51,12 +52,22 @@ async function main() {
   try {
     switch (cmd) {
       case "list": {
-        const r = await db.query(`SELECT u.name, u.is_admin, u.disabled_at, u.last_login_at, u.locked_until,
+        const r = await db.query(`SELECT u.name, u.email, u.password_hash IS NOT NULL AS has_pw, u.is_admin, u.disabled_at, u.last_login_at, u.locked_until,
             (SELECT count(*) FROM app_sessions s WHERE s.user_id = u.id AND s.revoked_at IS NULL AND s.expires_at > now()) AS sessions
           FROM app_users u ORDER BY u.name`);
-        console.table(r.rows.map((u) => ({ name: u.name, role: u.is_admin ? "admin" : "member",
+        console.table(r.rows.map((u) => ({ name: u.name, email: u.email ?? "", sign_in: [u.email && "google", u.has_pw && "password"].filter(Boolean).join("+"), role: u.is_admin ? "admin" : "member",
           status: u.disabled_at ? "disabled" : u.locked_until && u.locked_until > new Date() ? "locked (wrong passwords)" : "active",
           "last login": u.last_login_at?.toISOString().slice(0, 16).replace("T", " ") ?? "never", "open sessions": Number(u.sessions) })));
+        break;
+      }
+      case "add-google": {
+        const email = rawName?.trim().toLowerCase();
+        if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error("Usage: npm run user -- add-google <email> [--admin]");
+        const base = email.split("@")[0].replace(/[^a-z0-9._-]/g, "-").slice(0, 60);
+        const r = await db.query(`INSERT INTO app_users (name, email, is_admin) VALUES ($1, $2, $3)
+          ON CONFLICT (name) DO NOTHING RETURNING name`, [base, email, arg === "--admin"]);
+        if (!r.rowCount) throw new Error(`A user named '${base}' already exists — use their existing login or add them with a different name`);
+        console.log(`Added ${email} as '${base}' (${arg === "--admin" ? "admin" : "member"}) — they sign in with Google.`);
         break;
       }
       case "add": {
@@ -94,7 +105,7 @@ async function main() {
         break;
       }
       default:
-        console.log("Usage: npm run user -- list | add <name> [--admin] | reset <name> | admin <name> on|off | disable <name> | enable <name> | signout <name>|--all");
+        console.log("Usage: npm run user -- list | add <name> [--admin] | add-google <email> [--admin] | reset <name> | admin <name> on|off | disable <name> | enable <name> | signout <name>|--all");
     }
   } finally {
     await db.end();
