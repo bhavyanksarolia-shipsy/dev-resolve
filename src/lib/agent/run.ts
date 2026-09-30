@@ -2,7 +2,8 @@ import "server-only";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import { Account, ROOT, getAccount, projectForLogType, resolveDevrevAccount, toolEnv } from "../config";
+import { Account, ROOT, getAccount, projectForLogType, resolveDevrevAccount } from "../config";
+import { userToolEnv } from "../connector";
 import { q } from "../db";
 import { getTicket, listTimeline } from "../devrev";
 import { accountKnowledge } from "../knowledge";
@@ -273,7 +274,7 @@ async function runSession(opts: { id: number; account: Account; candidates: Acco
   const appLogProject = appLogAccounts.length ? appLogProjects().find((p) => p.name === appLogAccounts[0].app_log!.project) : undefined;
   let appLogReady = false;
   if (appLogProject) {
-    const auth = await ensureAppLogAuth(appLogProject);
+    const auth = await ensureAppLogAuth(appLogProject, opts.by);
     appLogReady = auth.ok;
     if (!auth.ok) await step(id, seq++, "connection_error", `mcp__${APP_LOG}__login`, { connection: `opensearch_mcp:${appLogProject.name}`, tag: "AUTH_FAILED" }, auth.message);
   }
@@ -294,11 +295,11 @@ async function runSession(opts: { id: number; account: Account; candidates: Acco
       settingSources: [], // self-contained: don't pull in ~/.claude settings / CLAUDE.md
       tools: [], // no built-in tools (no shell, no file edits) — only the MCP tools below
       mcpServers: {
-        [OS_SERVER]: { type: "stdio", command: "uv", args: ["run", path.join(ROOT, "mcp/opensearch-logs/server.py")], env: toolEnv() },
-        devresolve: buildToolServer({ investigationId: id, account, candidates }),
+        [OS_SERVER]: { type: "stdio", command: "uv", args: ["run", path.join(ROOT, "mcp/opensearch-logs/server.py")], env: userToolEnv(opts.by) },
+        devresolve: buildToolServer({ investigationId: id, account, candidates, user: opts.by }),
         ...(appLogProject && appLogReady && {
           [APP_LOG]: { type: "stdio" as const, command: appLogProject.command, args: appLogProject.args,
-            env: { ...toolEnv(), MCP_REMOTE_CONFIG_DIR: appLogConfigDir(appLogProject) } },
+            env: { ...userToolEnv(opts.by), MCP_REMOTE_CONFIG_DIR: appLogConfigDir(appLogProject, opts.by) } },
         }),
       },
       allowedTools: ["mcp__devresolve__*"],
@@ -332,7 +333,7 @@ async function runSession(opts: { id: number; account: Account; candidates: Acco
       },
       maxTurns: 60,
       abortController: abort,
-      env: { ...toolEnv(), CLAUDE_AGENT_SDK_CLIENT_APP: "dev-resolve/0.1.0" },
+      env: { ...userToolEnv(opts.by), CLAUDE_AGENT_SDK_CLIENT_APP: "dev-resolve/0.1.0" },
     },
   });
 

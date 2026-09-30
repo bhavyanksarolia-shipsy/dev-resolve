@@ -40,6 +40,13 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "mcp"))
+from relay_client import ConnectorOffline, needs_relay, relay, VPN_VIA_CONNECTOR_HINT  # noqa: E402
+
+# Connector mode: Google-login Metabase uses the session of the person this run is for (passed in the env by the
+# server), never a shared one — so never refresh or store sessions into the shared config.env for those.
+PER_USER_SESSIONS = os.environ.get("DEV_RESOLVE_PER_USER_SESSIONS") == "1"
+
 TOOL_DIR = os.environ.get("DEV_RESOLVE_CONFIG_DIR") or os.path.abspath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "config"))
 CONFIG_ENV_FILE = os.path.join(TOOL_DIR, "config.env")
@@ -131,6 +138,10 @@ def _load_config_env():
                 continue
             k, v = line.split("=", 1)
             out[k.strip()] = v.strip()
+    if PER_USER_SESSIONS:
+        for k, v in os.environ.items():
+            if k.endswith("_METABASE_SESSION_TOKEN"):
+                out[k] = v
     return out
 
 
@@ -162,6 +173,8 @@ def _get_stored_session_token(project: str):
 
 
 def _store_session_token(project: str, token: str):
+    if PER_USER_SESSIONS and PROJECTS.get(project, {}).get("sso") == "google":
+        return  # a person's own session lives on the server, per person — not in the shared config
     _write_config_env({_project_cfg(project)["session_token_key"]: token})
 
 
@@ -184,7 +197,7 @@ def _sso_login(project: str):
     """Google-login Metabase (projects.json metabase.sso = "google"): renew the session silently in a hidden
     browser that reuses the saved Google sign-in (Dev Resolve's scripts/metabase-login.cjs --silent).
     Returns the new token, or None if Google needs the user to sign in again."""
-    if PROJECTS.get(project, {}).get("sso") != "google":
+    if PROJECTS.get(project, {}).get("sso") != "google" or PER_USER_SESSIONS:
         return None
     script = os.path.join(os.path.dirname(TOOL_DIR), "scripts", "metabase-login.cjs")
     if not os.path.exists(script):
@@ -247,6 +260,22 @@ def _request(project, method, path, token=None, body=None, timeout=30):
     elif token:
         headers["X-Metabase-Session"] = token
     data = json.dumps(body).encode() if body is not None else None
+    if needs_relay(url):
+        try:
+            status, _h, raw = relay(method, url, headers, data, timeout)
+        except ConnectorOffline:
+            print(f"Connection error reaching {get_base_url(project)}. {VPN_VIA_CONNECTOR_HINT}", file=sys.stderr)
+            sys.exit(4)
+        except TimeoutError:
+            print(f"Request to {path} timed out after {timeout}s (via connector).", file=sys.stderr)
+            sys.exit(4)
+        except RuntimeError as e:
+            print(f"Connection error reaching {get_base_url(project)} via the connector: {e}. {VPN_VIA_CONNECTOR_HINT}", file=sys.stderr)
+            sys.exit(4)
+        try:
+            return status, json.loads(raw.decode() or "null")
+        except json.JSONDecodeError:
+            return status, {"raw": raw.decode(errors="replace")}
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -292,6 +321,11 @@ def _handle_common_errors(project, status, body, database_id=None):
 
 
 def _fail_no_session(project):
+    if PER_USER_SESSIONS and PROJECTS.get(project, {}).get("sso") == "google":
+        print(f"AUTH_FAILED: no valid Metabase sign-in for --project {project} for the person running this. They need to "
+              f"sign in to it from their local connector (Dev Resolve → Connector page), then retry this exact command.",
+              file=sys.stderr)
+        sys.exit(1)
     if PROJECTS.get(project, {}).get("sso") == "google":
         print(f"AUTH_FAILED: Metabase session for --project {project} expired and the silent Google sign-in didn't "
               f"work (Google probably signed you out). Run: npm run metabase-login -- {project}", file=sys.stderr)

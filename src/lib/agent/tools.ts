@@ -4,7 +4,8 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
-import { Account, CODE_ROOT, ROOT, toolEnv } from "../config";
+import { Account, CODE_ROOT, ROOT } from "../config";
+import { userToolEnv } from "../connector";
 import { q } from "../db";
 import { proposeKnowledge, similarCases } from "../knowledge";
 
@@ -12,9 +13,9 @@ const MAX_OUT = 15000;
 const clip = (s: string) => (s.length > MAX_OUT ? s.slice(0, MAX_OUT) + `\n…[truncated ${s.length - MAX_OUT} chars — narrow the query]` : s);
 const text = (s: string) => ({ content: [{ type: "text" as const, text: clip(s) }] });
 
-function run(cmd: string, args: string[], timeoutMs = 90000): Promise<string> {
+function run(cmd: string, args: string[], timeoutMs = 90000, user?: string): Promise<string> {
   return new Promise((resolve) => {
-    execFile(cmd, args, { env: toolEnv() as NodeJS.ProcessEnv, timeout: timeoutMs, maxBuffer: 20 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile(cmd, args, { env: userToolEnv(user) as NodeJS.ProcessEnv, timeout: timeoutMs, maxBuffer: 20 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err && !stdout) return resolve(`${stderr || err.message}`.trim());
       resolve(`${stdout}${stderr ? `\n[stderr] ${stderr}` : ""}`.trim());
     });
@@ -29,7 +30,7 @@ const METABASE = path.join(ROOT, ".claude/skills/metabase-sql/query.py");
  * `candidates` is set for ambiguous tickets (one DevRev account used by several tenants): the agent
  * may probe each candidate account to work out which tenant it is.
  */
-export function buildToolServer(opts: { investigationId: number; account: Account; candidates: Account[] }) {
+export function buildToolServer(opts: { investigationId: number; account: Account; candidates: Account[]; user?: string }) {
   const { investigationId, account } = opts;
   const scope = [account, ...opts.candidates.filter((c) => c.slug !== account.slug)];
   const bySlug = (slug?: string) => (slug ? scope.find((a) => a.slug === slug) : account);
@@ -50,7 +51,7 @@ export function buildToolServer(opts: { investigationId: number; account: Accoun
       const allowed = [acc.metabase_database, ...Object.values(acc.metabase_databases)].filter((x): x is number => x != null);
       const db = database ?? acc.metabase_database!;
       if (!allowed.includes(db)) return text(`Database ${db} is not configured for ${acc.name}. Allowed: ${allowed.join(", ")}`);
-      return text(await run("python3", [METABASE, "sql", sql, "--project", acc.metabase_project, "--database", String(db), "--format", "json", "--timeout", "60"]));
+      return text(await run("python3", [METABASE, "sql", sql, "--project", acc.metabase_project, "--database", String(db), "--format", "json", "--timeout", "60"], 90000, opts.user));
     },
   );
 
@@ -61,7 +62,7 @@ export function buildToolServer(opts: { investigationId: number; account: Accoun
     async ({ database, account_slug }) => {
       const acc = bySlug(account_slug);
       if (!acc?.metabase_project) return text(`NOT_CONFIGURED: no Metabase connection for this account.`);
-      const out = await run("python3", [METABASE, "tables", "--project", acc.metabase_project, "--database", String(database ?? acc.metabase_database)]);
+      const out = await run("python3", [METABASE, "tables", "--project", acc.metabase_project, "--database", String(database ?? acc.metabase_database)], 90000, opts.user);
       return text(out);
     },
   );

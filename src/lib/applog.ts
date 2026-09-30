@@ -2,6 +2,7 @@ import "server-only";
 import { existsSync, readdirSync, readFileSync, writeFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { cfgValue, getConnectionProjects, ROOT } from "./config";
+import { appLogUserConfigDir, connectorMode } from "./connector";
 
 /**
  * Shipsy application logs are reached through the `opensearch-app-log` MCP (mcp-remote → OAuth gateway).
@@ -28,7 +29,9 @@ export function resolveEnv(v: string) {
   });
 }
 
-export function appLogConfigDir(p: AppLogProject) {
+/** Where the saved login lives. Connector mode: each person's own (brought by their connector); else the shared one. */
+export function appLogConfigDir(p: AppLogProject, user?: string | null) {
+  if (connectorMode()) return appLogUserConfigDir(user || "unknown");
   return path.join(ROOT, p.config_dir);
 }
 
@@ -36,8 +39,8 @@ const gatewayUrl = (p: AppLogProject) => p.args.find((a) => /^https:\/\//.test(a
 const clientId = (p: AppLogProject) => JSON.parse(p.args[p.args.indexOf("--static-oauth-client-info") + 1]).client_id as string;
 
 /** mcp-remote stores tokens under <config_dir>/mcp-remote-<version>/<hash>_tokens.json — newest file wins. */
-function tokenFile(p: AppLogProject): string | null {
-  const base = appLogConfigDir(p);
+function tokenFile(p: AppLogProject, user?: string | null): string | null {
+  const base = appLogConfigDir(p, user);
   if (!existsSync(base)) return null;
   const files = readdirSync(base, { recursive: true, withFileTypes: false })
     .map(String)
@@ -72,26 +75,28 @@ async function refresh(p: AppLogProject, t: Tokens): Promise<Tokens | null> {
 
 export type AppLogAuth = { ok: true; message: string } | { ok: false; status: "auth_failed" | "error" | "not_configured"; message: string };
 
-let lastGood = 0;
+const lastGood = new Map<string, number>();
 
 /** Make sure the saved login works (refreshing it silently if needed). Never opens a browser. */
-export async function ensureAppLogAuth(p: AppLogProject): Promise<AppLogAuth> {
-  if (Date.now() - lastGood < 60_000) return { ok: true, message: "Signed in (checked <1 min ago)" };
-  const f = tokenFile(p);
-  if (!f) return { ok: false, status: "not_configured", message: `No saved login yet — run \`${p.login_command}\`` };
+export async function ensureAppLogAuth(p: AppLogProject, user?: string | null): Promise<AppLogAuth> {
+  const dir = appLogConfigDir(p, user);
+  const signIn = connectorMode() ? "sign in to app logs from your local connector (Connector page)" : `run \`${p.login_command}\``;
+  if (Date.now() - (lastGood.get(dir) ?? 0) < 60_000) return { ok: true, message: "Signed in (checked <1 min ago)" };
+  const f = tokenFile(p, user);
+  if (!f) return { ok: false, status: "not_configured", message: `No saved login yet — ${signIn}` };
   try {
     const t = JSON.parse(readFileSync(f, "utf8")) as Tokens;
     if (t.access_token && (await tokenWorks(p, t.access_token))) {
-      lastGood = Date.now();
+      lastGood.set(dir, Date.now());
       return { ok: true, message: "Signed in" };
     }
     const n = await refresh(p, t);
     if (n && (await tokenWorks(p, n.access_token))) {
       writeFileSync(f, JSON.stringify(n, null, 2), { mode: 0o600 });
-      lastGood = Date.now();
+      lastGood.set(dir, Date.now());
       return { ok: true, message: "Signed in (session renewed)" };
     }
-    return { ok: false, status: "auth_failed", message: `Login expired — run \`${p.login_command}\`` };
+    return { ok: false, status: "auth_failed", message: `Login expired — ${signIn}` };
   } catch (e) {
     return { ok: false, status: "error", message: (e as Error).message };
   }

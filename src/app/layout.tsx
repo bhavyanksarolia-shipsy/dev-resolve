@@ -5,6 +5,7 @@ import "./globals.css";
 import { InvestigationNotifier } from "@/components/InvestigationNotifier";
 import { cookies } from "next/headers";
 import { SESSION_COOKIE, verifySession } from "@/lib/auth";
+import { connectorMode } from "@/lib/connector";
 import { SignOut } from "@/components/SignOut";
 import { execSync } from "node:child_process";
 
@@ -42,6 +43,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
             <nav className="flex gap-1 text-sm">
               <Link href="/" className="rounded-md px-2.5 py-1 text-muted hover:bg-accent-soft hover:text-accent-strong">Tickets</Link>
               <Link href="/knowledge" className="rounded-md px-2.5 py-1 text-muted hover:bg-accent-soft hover:text-accent-strong">Knowledge</Link>
+              {connectorMode() && <Link href="/connector" className="rounded-md px-2.5 py-1 text-muted hover:bg-accent-soft hover:text-accent-strong">Connector</Link>}
             </nav>
             {user && (
               <div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1">

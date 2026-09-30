@@ -6,8 +6,10 @@ mkdir -p /data/config /data/knowledge /data/auth /data/logs /data/code
 chmod 700 /data/config /data/auth
 # First start: seed the knowledge templates; config must be provided by you (copied onto the volume or mounted).
 cp -rn /app/knowledge-defaults/. /data/knowledge/ 2>/dev/null || true
-for f in projects.json config.env; do
-  [ -f "/data/config/$f" ] || { echo "Missing /data/config/$f — copy your private config onto the volume (see DEPLOY.md)." >&2; exit 1; }
+# Wait (instead of exiting) until the private config is on the volume, so it can be copied in with `docker cp`.
+until [ -f /data/config/projects.json ] && [ -f /data/config/config.env ]; do
+  echo "[start] waiting for /data/config/projects.json and config.env — copy them in (see DEPLOY.md)" >&2
+  sleep 15
 done
 : "${DATABASE_URL:?DATABASE_URL is not set}"
 : "${DEVREV_TOKEN:?DEVREV_TOKEN is not set}"

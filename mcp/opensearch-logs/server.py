@@ -29,6 +29,11 @@ import requests
 import urllib3
 from mcp.server.fastmcp import FastMCP
 
+import base64 as _b64
+import sys as _sys
+_sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from relay_client import ConnectorOffline, needs_relay, relay, VPN_VIA_CONNECTOR_HINT  # noqa: E402
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 TOOL_DIR = os.environ.get("DEV_RESOLVE_CONFIG_DIR") or os.path.abspath(
@@ -164,14 +169,19 @@ def _search(query: str, size: int, hours_back: int, warehouse: str | None,
         }
     }
 
-    resp = requests.post(
-        os_url,
-        auth=auth,
-        json=body,
-        headers={"osd-xsrf": "osd-fetch", "osd-version": "2.19.3"},
-        verify=False,
-        timeout=30,
-    )
+    headers = {"osd-xsrf": "osd-fetch", "osd-version": "2.19.3"}
+    if needs_relay(os_url):
+        # VPN-only cluster in connector mode: carried by the local connector of the person this run is for.
+        h = {**headers, "Content-Type": "application/json"}
+        if auth:
+            h["Authorization"] = "Basic " + _b64.b64encode(f"{auth[0]}:{auth[1]}".encode()).decode()
+        status, _rh, raw = relay("POST", os_url, h, json.dumps(body).encode(), 30, insecure=True)
+        if status >= 400:
+            fake = requests.Response()
+            fake.status_code, fake._content = status, raw
+            raise requests.HTTPError(f"HTTP {status}", response=fake)
+        return json.loads(raw.decode())
+    resp = requests.post(os_url, auth=auth, json=body, headers=headers, verify=False, timeout=30)
     resp.raise_for_status()
     return resp.json()
 
@@ -277,6 +287,12 @@ def search_logs(
         }
         data = _search(query, size, hours_back, warehouse or None, level or None, request_id or None, log_type,
                        field_filters)
+    except ConnectorOffline:
+        return VPN_VIA_CONNECTOR_HINT
+    except RuntimeError as e:
+        if needs_relay(str(CLUSTERS.get(LOG_INDEXES.get(log_type, {}).get("cluster"), {}).get("url") or "")):
+            return f"{VPN_VIA_CONNECTOR_HINT} Connector said: {e}"
+        return f"Search failed: {e}"
     except requests.exceptions.ConnectionError as e:
         return (
             "VPN_REQUIRED: could not reach the OpenSearch host for this log_type. "

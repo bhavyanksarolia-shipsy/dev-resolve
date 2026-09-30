@@ -19,8 +19,14 @@ function sameOrigin(req: NextRequest) {
 
 export async function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
+  // Token-authenticated machine endpoints (connector: Bearer token; relay: internal secret) — no cookie, so no CSRF.
+  if (pathname === "/api/relay" || (pathname.startsWith("/api/connector/") && !["/api/connector/token", "/api/connector/status", "/api/connector/request-signin"].includes(pathname))) {
+    return NextResponse.next();
+  }
   if (!sameOrigin(req)) return NextResponse.json({ error: "Cross-site request refused" }, { status: 403 });
-  if (pathname === "/login" || pathname.startsWith("/api/auth/") || pathname === "/api/healthz") return NextResponse.next();
+  if (pathname === "/login" || pathname.startsWith("/api/auth/") || pathname === "/api/healthz" || pathname === "/dev-resolve-connector.mjs") {
+    return NextResponse.next();
+  }
   const user = await verifySession(req.cookies.get(SESSION_COOKIE)?.value).catch(() => null);
   if (user) return NextResponse.next();
   if (pathname.startsWith("/api/")) return NextResponse.json({ error: "Sign in required" }, { status: 401 });

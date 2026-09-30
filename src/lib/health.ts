@@ -3,8 +3,9 @@ import https from "node:https";
 import http from "node:http";
 import { execFile } from "node:child_process";
 import path from "node:path";
-import { cfgValue, getAccounts, getConnectionProjects, ROOT, toolEnv } from "./config";
+import { cfgValue, getAccounts, getConnectionProjects, ROOT } from "./config";
 import { getPool } from "./db";
+import { ConnectorOffline, connectorMode, metabaseSession, needsRelay, relay, userToolEnv } from "./connector";
 import { whoAmI, DevrevError } from "./devrev";
 import { appLogProjects, ensureAppLogAuth } from "./applog";
 
@@ -21,7 +22,9 @@ export interface ConnectionHealth {
   used_by: string[];     // account names depending on this connection
 }
 
-const vpnFix = () => `Connect the client VPN${cfgValue("VPN_HINT") ? ` (${cfgValue("VPN_HINT")})` : ""}, then re-check.`;
+const vpnFix = () => connectorMode()
+  ? `Connect the VPN on your laptop${cfgValue("VPN_HINT") ? ` (${cfgValue("VPN_HINT")})` : ""} and keep your local connector running (Connector page), then re-check.`
+  : `Connect the client VPN${cfgValue("VPN_HINT") ? ` (${cfgValue("VPN_HINT")})` : ""}, then re-check.`;
 const TIMEOUT_MS = 12000;
 
 function hostOf(url?: string) {
@@ -75,7 +78,7 @@ function usersOf(pred: (a: ReturnType<typeof getAccounts>[number]) => boolean) {
   return getAccounts().filter((a) => a.status === "active" && pred(a)).map((a) => a.name);
 }
 
-async function checkOpenSearch(project: string, cfg: NonNullable<ReturnType<typeof getConnectionProjects>[string]["opensearch"]>): Promise<ConnectionHealth> {
+async function checkOpenSearch(project: string, cfg: NonNullable<ReturnType<typeof getConnectionProjects>[string]["opensearch"]>, viewer?: string): Promise<ConnectionHealth> {
   const url = cfgValue(cfg.url_env);
   const host = hostOf(url);
   const logTypes = Object.keys(cfg.log_types || {});
@@ -94,12 +97,25 @@ async function checkOpenSearch(project: string, cfg: NonNullable<ReturnType<type
   }
   const index = Object.values(cfg.log_types)[0];
   try {
-    const res = await rawPost(
-      url,
-      { params: { index, body: { size: 0, query: { range: { timestamp: { gte: "now-1h" } } } } } },
-      { "osd-xsrf": "osd-fetch", "osd-version": "2.19.3" },
-      user && pass ? { user, pass } : undefined,
-    );
+    const body = { params: { index, body: { size: 0, query: { range: { timestamp: { gte: "now-1h" } } } } } };
+    const headers = { "osd-xsrf": "osd-fetch", "osd-version": "2.19.3" };
+    let res: { status: number; text: string };
+    if (needsRelay(url)) {
+      // Connector mode: checked through the viewer's own laptop (the one that has the VPN).
+      try {
+        const r = await relay(viewer || "", {
+          method: "POST", url, timeout_ms: TIMEOUT_MS, insecure: true,
+          headers: { ...headers, "Content-Type": "application/json", ...(user && pass && { Authorization: "Basic " + Buffer.from(`${user}:${pass}`).toString("base64") }) },
+          body_b64: Buffer.from(JSON.stringify(body)).toString("base64"),
+        });
+        res = { status: r.status, text: Buffer.from(r.body_b64, "base64").toString() };
+      } catch (e) {
+        const offline = e instanceof ConnectorOffline;
+        return { ...base, status: "vpn_required", message: offline ? "Your local connector isn't running" : `Your laptop can't reach ${host} — ${(e as Error).message}`, fix: vpnFix() };
+      }
+    } else {
+      res = await rawPost(url, body, headers, user && pass ? { user, pass } : undefined);
+    }
     if (res.status === 401 || res.status === 403) {
       return { ...base, status: "auth_failed", message: `HTTP ${res.status} from ${host}`, fix: `Fix ${cfg.username_env} / ${cfg.password_env} in config/config.env` };
     }
@@ -113,7 +129,7 @@ async function checkOpenSearch(project: string, cfg: NonNullable<ReturnType<type
   }
 }
 
-function checkMetabase(project: string, cfg: NonNullable<ReturnType<typeof getConnectionProjects>[string]["metabase"]>): Promise<ConnectionHealth> {
+function checkMetabase(project: string, cfg: NonNullable<ReturnType<typeof getConnectionProjects>[string]["metabase"]>, viewer?: string): Promise<ConnectionHealth> {
   const url = cfgValue(cfg.base_url_env);
   const host = hostOf(url);
   const base: Omit<ConnectionHealth, "status" | "message"> = {
@@ -125,8 +141,12 @@ function checkMetabase(project: string, cfg: NonNullable<ReturnType<typeof getCo
   };
   if (!url) return Promise.resolve({ ...base, status: "not_configured", message: `${cfg.base_url_env} is not set`, fix: `Add ${cfg.base_url_env}=<url> to config/config.env` });
   const script = path.join(ROOT, ".claude/skills/metabase-sql/query.py");
+  if (connectorMode() && cfg.sso === "google" && !(viewer && metabaseSession(viewer, project))) {
+    return Promise.resolve({ ...base, status: "auth_failed", message: "You haven't signed in to it with Google yet",
+      fix: `Sign in to ${project} with Google from your local connector (Connector page)` });
+  }
   return new Promise((resolve) => {
-    execFile("python3", [script, "whoami", "--project", project], { env: toolEnv() as NodeJS.ProcessEnv, timeout: 25000 }, (error, stdout, stderr) => {
+    execFile("python3", [script, "whoami", "--project", project], { env: userToolEnv(viewer) as NodeJS.ProcessEnv, timeout: 35000 }, (error, stdout, stderr) => {
       const out = `${stdout}\n${stderr}`;
       if (!error) return resolve({ ...base, status: "ok", message: stdout.trim() });
       // Killed by our own timeout while the host is unreachable = the same VPN problem, not a mystery error.
@@ -138,7 +158,9 @@ function checkMetabase(project: string, cfg: NonNullable<ReturnType<typeof getCo
           ...base,
           status: "auth_failed",
           message: "Session expired and auto-login failed",
-          fix: cfg.sso === "google"
+          fix: cfg.sso === "google" && connectorMode()
+            ? `Sign in to ${project} with Google from your local connector (Connector page)`
+            : cfg.sso === "google"
             ? `Google sign-in expired — run in a terminal: npm run metabase-login -- ${project}`
             : `Run in a terminal: npm run metabase-password -- ${project}`,
         });
@@ -204,8 +226,11 @@ function cached(key: string, force: boolean, run: () => Promise<ConnectionHealth
 }
 
 /** Runs every check in parallel. The list of OpenSearch/Metabase checks is built from config, so new connections appear automatically. */
-export async function checkAll(filter?: { accountSlug?: string; force?: boolean }): Promise<ConnectionHealth[]> {
+export async function checkAll(filter?: { accountSlug?: string; force?: boolean; viewer?: string }): Promise<ConnectionHealth[]> {
   const force = !!filter?.force;
+  const viewer = filter?.viewer;
+  // Connector mode: VPN hosts and Google sign-ins differ per person, so those results are cached per viewer.
+  const per = (key: string, personal: boolean) => (connectorMode() && personal ? `${key}@${viewer ?? ""}` : key);
   const acc = filter?.accountSlug ? getAccounts().find((a) => a.slug === filter.accountSlug) : undefined;
   // Only run the checks this account actually uses (plus the shared ones) — no point pinging every Metabase.
   const needs = (kind: "opensearch" | "metabase", name: string, p: ReturnType<typeof getConnectionProjects>[string]) => {
@@ -218,17 +243,22 @@ export async function checkAll(filter?: { accountSlug?: string; force?: boolean 
     cached("devrev", force, checkDevrev), cached("postgres", force, checkPostgres), cached("claude", force, checkClaude),
   ];
   for (const [name, p] of Object.entries(getConnectionProjects())) {
-    if (p.opensearch && needs("opensearch", name, p)) checks.push(cached(`opensearch:${name}`, force, () => checkOpenSearch(name, p.opensearch!)));
-    if (p.metabase && needs("metabase", name, p)) checks.push(cached(`metabase:${name}`, force, () => checkMetabase(name, p.metabase!)));
+    if (p.opensearch && needs("opensearch", name, p)) {
+      checks.push(cached(per(`opensearch:${name}`, needsRelay(cfgValue(p.opensearch.url_env) || "")), force, () => checkOpenSearch(name, p.opensearch!, viewer)));
+    }
+    if (p.metabase && needs("metabase", name, p)) {
+      const personal = needsRelay(cfgValue(p.metabase.base_url_env) || "") || p.metabase.sso === "google";
+      checks.push(cached(per(`metabase:${name}`, personal), force, () => checkMetabase(name, p.metabase!, viewer)));
+    }
   }
   for (const p of appLogProjects()) {
     if (acc && acc.app_log?.project !== p.name) continue;
-    checks.push(cached(`opensearch_mcp:${p.name}`, force, () =>
-      ensureAppLogAuth(p).then((r): ConnectionHealth => ({
+    checks.push(cached(per(`opensearch_mcp:${p.name}`, true), force, () =>
+      ensureAppLogAuth(p, viewer).then((r): ConnectionHealth => ({
         id: `opensearch_mcp:${p.name}`, kind: "opensearch_mcp", label: "Shipsy app logs (MCP)", host: hostOf(p.args.find((a) => a.startsWith("https://"))),
         used_by: getAccounts().filter((a) => a.status === "active" && a.app_log?.project === p.name).map((a) => a.name),
         status: r.ok ? "ok" : r.status, message: r.message,
-        ...(r.ok ? {} : { fix: `Run in a terminal: ${p.login_command}  (signs in with your Shipsy Google account)` }),
+        ...(r.ok ? {} : { fix: connectorMode() ? "Sign in to app logs from your local connector (Connector page)" : `Run in a terminal: ${p.login_command}  (signs in with your Shipsy Google account)` }),
       }))),
     );
   }
