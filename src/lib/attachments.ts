@@ -15,6 +15,7 @@ export interface Attachment {
   visibility?: string;
   from?: string;
   kind: "image" | "email" | "file";
+  signature?: boolean;          // email-signature logo / emoji (repeated small inline image) — hidden, not sent to the agent
   url: string;                  // Dev Resolve proxy URL (DevRev signed URLs expire)
 }
 
@@ -86,6 +87,13 @@ export async function listAttachments(comments: TimelineEntry[]): Promise<Attach
       /* unreadable email — still listed as the .eml itself */
     }
   }
+  // Signature logos: small images that are Outlook inline emoji / imageNNN, or the same small image repeated across replies.
+  const sizeCount = new Map<number, number>();
+  for (const a of out) if (a.kind === "image") sizeCount.set(a.size, (sizeCount.get(a.size) ?? 0) + 1);
+  for (const a of out) {
+    if (a.kind !== "image" || a.size > 40_000) continue;
+    if (/^(OutlookEmoji-|image\d{3}\.)/i.test(a.name) || (sizeCount.get(a.size) ?? 0) >= 3) a.signature = true;
+  }
   return out;
 }
 
@@ -137,9 +145,14 @@ export async function agentAttachmentBlocks(atts: Attachment[], maxImages = 8, m
   let emailBudget = 150_000; // total characters of email text per investigation
   let fileBudget = 150_000;  // total characters of spreadsheet / Word / text files
   let pdfs = 0;
+  const sentImages = new Set<string>();
   for (const a of atts) {
     try {
+      if (a.signature) continue;
       if (a.kind === "image" && supported.includes(a.type) && a.size < 3_500_000 && images < maxImages) {
+        const key = `${a.type}|${a.size}`;
+        if (sentImages.has(key)) continue; // same picture repeated in every reply
+        sentImages.add(key);
         const { body } = await fetchArtifact(a.artifact_id, a.part);
         blocks.push({ type: "text", text: `Attachment "${a.name}" (from ${a.from ?? "?"}, ${a.comment_date}):` });
         blocks.push({ type: "image", source: { type: "base64", media_type: a.type as ImageType, data: body.toString("base64") } });

@@ -32,7 +32,7 @@ interface TicketData {
 
 interface Attachment {
   artifact_id: string; part?: number; name: string; type: string; size: number; comment_id: string;
-  comment_date: string; visibility?: string; from?: string; kind: "image" | "email" | "file"; url: string;
+  comment_date: string; visibility?: string; from?: string; kind: "image" | "email" | "file"; signature?: boolean; url: string;
 }
 const kb = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
@@ -364,37 +364,58 @@ function ProposalCard({ p, onDecide }: { p: Proposal; onDecide: (p: Proposal, a:
 }
 
 function Attachments({ items }: { items: Attachment[] }) {
-  const images = items.filter((a) => a.kind === "image");
+  const [showLogos, setShowLogos] = useState(false);
+  const logos = items.filter((a) => a.signature);
+  const images = items.filter((a) => a.kind === "image" && (showLogos || !a.signature));
   const others = items.filter((a) => a.kind !== "image");
+  const count = (k: Attachment["kind"]) => items.filter((a) => a.kind === k && !a.signature).length;
+  const parts = [
+    count("email") && `${count("email")} email${count("email") > 1 ? "s" : ""}`,
+    count("image") && `${count("image")} image${count("image") > 1 ? "s" : ""}`,
+    count("file") && `${count("file")} file${count("file") > 1 ? "s" : ""}`,
+    logos.length && `${logos.length} signature logo${logos.length > 1 ? "s" : ""} hidden`,
+  ].filter(Boolean);
   return (
-    <div className="mb-4">
-      <h2 className="mb-2 text-sm font-semibold text-muted">Attachments ({items.length})</h2>
-      {images.length > 0 && (
-        <div className="mb-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {images.map((a) => (
-            <a key={`${a.artifact_id}-${a.part ?? ""}`} href={a.url} target="_blank" rel="noreferrer" title={`${a.name} · ${a.from ?? ""}`}
-              className="group block overflow-hidden rounded-md border border-line bg-panel">
-              {/* eslint-disable-next-line @next/next/no-img-element -- proxied, auth'd attachment; next/image can't optimise it */}
-              <img src={a.url} alt={a.name} loading="lazy" className="h-28 w-full object-cover object-top transition group-hover:opacity-90" />
-              <div className="truncate px-2 py-1 text-xs text-muted">{a.name} · {kb(a.size)}</div>
-            </a>
-          ))}
-        </div>
-      )}
-      {others.length > 0 && (
-        <ul className="space-y-1 text-sm">
-          {others.map((a) => (
-            <li key={`${a.artifact_id}-${a.part ?? ""}`} className="flex items-center gap-2">
-              <span>{a.kind === "email" ? "✉️" : "📄"}</span>
-              <a href={a.url} target="_blank" rel="noreferrer" className="truncate text-accent hover:underline">
-                {a.kind === "email" ? "View email" : a.name}
+    <details className="card group mb-4 overflow-hidden">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm hover:bg-accent-soft/60 [&::-webkit-details-marker]:hidden">
+        <span className="text-muted transition-transform group-open:rotate-90">▸</span>
+        <span className="font-semibold">Attachments ({items.length - logos.length})</span>
+        <span className="text-xs text-muted">{parts.join(" · ")}</span>
+      </summary>
+      <div className="border-t border-line px-4 py-3">
+        {others.length > 0 && (
+          <ul className="mb-3 space-y-1 text-sm">
+            {others.map((a) => (
+              <li key={`${a.artifact_id}-${a.part ?? ""}`} className="flex items-center gap-2">
+                <span>{a.kind === "email" ? "✉️" : "📄"}</span>
+                <a href={a.url} target="_blank" rel="noreferrer" className="truncate text-accent hover:underline">
+                  {a.kind === "email" ? "View email" : a.name}
+                </a>
+                <span className="shrink-0 text-xs text-muted">{a.kind === "email" ? a.name + " · " : ""}{kb(a.size)} · {a.from} · {new Date(a.comment_date).toLocaleDateString("en-IN")}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {images.length > 0 && (
+          <div className="mb-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {images.map((a) => (
+              <a key={`${a.artifact_id}-${a.part ?? ""}`} href={a.url} target="_blank" rel="noreferrer" title={`${a.name} · ${a.from ?? ""}`}
+                className="group/img block overflow-hidden rounded-md border border-line bg-panel">
+                {/* eslint-disable-next-line @next/next/no-img-element -- proxied, auth'd attachment; next/image can't optimise it */}
+                <img src={a.url} alt={a.name} loading="lazy" className="h-28 w-full object-cover object-top transition group-hover/img:opacity-90" />
+                <div className="truncate px-2 py-1 text-xs text-muted">{a.name} · {kb(a.size)}</div>
               </a>
-              <span className="shrink-0 text-xs text-muted">{a.kind === "email" ? a.name + " · " : ""}{kb(a.size)} · {a.from} · {new Date(a.comment_date).toLocaleDateString("en-IN")}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+            ))}
+          </div>
+        )}
+        {!images.length && !others.length && <p className="text-xs text-muted">Only email-signature logos on this ticket.</p>}
+        {logos.length > 0 && (
+          <button type="button" onClick={() => setShowLogos((v) => !v)} className="text-xs text-muted hover:text-accent">
+            {showLogos ? "Hide" : "Show"} {logos.length} signature logo{logos.length > 1 ? "s" : ""}
+          </button>
+        )}
+      </div>
+    </details>
   );
 }
 
