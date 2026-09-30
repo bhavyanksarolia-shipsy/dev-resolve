@@ -28,7 +28,7 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
-  const user = verifySession((await cookies()).get(SESSION_COOKIE)?.value);
+  const user = (await verifySession((await cookies()).get(SESSION_COOKIE)?.value).catch(() => null))?.name;
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="min-h-full font-sans">

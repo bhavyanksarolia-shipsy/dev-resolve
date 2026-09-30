@@ -5,7 +5,7 @@ export async function POST(req: Request) {
   const { ticket } = (await req.json()) as { ticket?: string };
   if (!ticket) return Response.json({ error: "ticket is required" }, { status: 400 });
   try {
-    const id = await startInvestigation(ticket, currentUser(req));
+    const id = await startInvestigation(ticket, await currentUser(req));
     return Response.json({ id });
   } catch (e) {
     return Response.json({ error: (e as Error).message }, { status: 400 });

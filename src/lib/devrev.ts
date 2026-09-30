@@ -10,7 +10,7 @@ export class DevrevError extends Error {
 }
 
 async function call<T>(path: string, body?: unknown): Promise<T> {
-  const token = process.env.DEVREV_TOKEN;
+  const token = process.env.DEVREV_TOKEN?.trim();
   if (!token) throw new DevrevError(0, "AUTH_FAILED", "DEVREV_TOKEN is not set in .env.local");
   let res: Response;
   try {

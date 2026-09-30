@@ -73,6 +73,9 @@ def _build_projects() -> dict:
             "username_key": mb.get("username_env"),
             "password_key": mb.get("password_env"),
             "session_token_key": mb.get("session_token_env", f"{name.upper()}_METABASE_SESSION_TOKEN"),
+            # Metabase API key (v0.49+, created by a Metabase admin): no user session, no password, no Google sign-in.
+            "api_key_key": mb.get("api_key_env") or re.sub(r"_SESSION_TOKEN$", "_API_KEY",
+                                                         mb.get("session_token_env", f"{name.upper()}_METABASE_SESSION_TOKEN")),
             "default_database": mb.get("default_database"),
             "sso": mb.get("sso"),
             "databases": mb.get("databases", {}),
@@ -194,7 +197,14 @@ def _sso_login(project: str):
     return _get_stored_session_token(project)
 
 
+def _get_api_key(project: str):
+    return _load_config_env().get(_project_cfg(project)["api_key_key"]) or None
+
+
 def get_session_token(project: str, auto_refresh=True):
+    api_key = _get_api_key(project)
+    if api_key:
+        return "apikey:" + api_key
     token = _get_stored_session_token(project)
     if not token and auto_refresh:
         token = _auto_login(project)
@@ -232,7 +242,9 @@ def _check_rate_limit():
 def _request(project, method, path, token=None, body=None, timeout=30):
     url = get_base_url(project).rstrip("/") + path
     headers = {"Content-Type": "application/json"}
-    if token:
+    if token and token.startswith("apikey:"):
+        headers["X-API-Key"] = token[len("apikey:"):]
+    elif token:
         headers["X-Metabase-Session"] = token
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
@@ -302,6 +314,11 @@ def _authed_request(project, method, path, body=None, timeout=30):
     before giving up. Returns (status, response_body, token_used)."""
     token = get_session_token(project)
     status, resp = _request(project, method, path, token=token, body=body, timeout=timeout)
+    if status == 401 and token.startswith("apikey:"):
+        cfg = _project_cfg(project)
+        print(f"AUTH_FAILED: Metabase rejected the API key in {cfg['api_key_key']} for --project {project} "
+              f"(revoked or wrong). Ask the Metabase admin for a new key and update config.env.", file=sys.stderr)
+        sys.exit(1)
     if status == 401:
         new_token = _auto_login(project)
         if new_token:
@@ -401,7 +418,8 @@ def cmd_whoami(args):
     if status != 200:
         print(f"Unexpected error ({status}): {body}", file=sys.stderr)
         sys.exit(1)
-    print(f"[{project}] Logged in as {body.get('email')} (session {_mask(token)})")
+    how = "API key" if token.startswith("apikey:") else "session"
+    print(f"[{project}] Logged in as {body.get('email') or body.get('common_name')} ({how} {_mask(token)})")
 
 
 def cmd_databases(args):

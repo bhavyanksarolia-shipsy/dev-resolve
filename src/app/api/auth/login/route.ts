@@ -1,21 +1,20 @@
-import { checkLogin, createSession, SESSION_COOKIE } from "@/lib/auth";
+import { login, sessionCookie } from "@/lib/auth";
 
+// Per-IP brake on top of the per-account lockout in login() (single app instance, so in-memory is enough).
 const attempts = new Map<string, { n: number; at: number }>();
+const WINDOW = 15 * 60e3;
 
 export async function POST(req: Request) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "local";
   const a = attempts.get(ip);
-  if (a && a.n >= 10 && Date.now() - a.at < 15 * 60 * 1000) return Response.json({ error: "Too many attempts — try again in 15 minutes" }, { status: 429 });
+  if (a && a.n >= 20 && Date.now() - a.at < WINDOW) return Response.json({ error: "Too many attempts — try again in 15 minutes" }, { status: 429 });
   const { name, password } = (await req.json().catch(() => ({}))) as { name?: string; password?: string };
-  const user = name && password ? checkLogin(name, password) : null;
-  if (!user) {
-    attempts.set(ip, { n: (a && Date.now() - a.at < 15 * 60 * 1000 ? a.n : 0) + 1, at: Date.now() });
-    return Response.json({ error: "Wrong name or password" }, { status: 401 });
+  if (!name || !password || name.length > 64 || password.length > 256) return Response.json({ error: "Wrong name or password" }, { status: 401 });
+  const r = await login(name, password, { ip, userAgent: req.headers.get("user-agent") ?? undefined });
+  if (!r.ok) {
+    attempts.set(ip, { n: (a && Date.now() - a.at < WINDOW ? a.n : 0) + 1, at: Date.now() });
+    return Response.json({ error: r.error }, { status: r.status });
   }
   attempts.delete(ip);
-  const s = createSession(user);
-  const secure = new URL(req.url).protocol === "https:" || req.headers.get("x-forwarded-proto") === "https";
-  return Response.json({ ok: true, user }, {
-    headers: { "Set-Cookie": `${SESSION_COOKIE}=${s.value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${s.maxAge}${secure ? "; Secure" : ""}` },
-  });
+  return Response.json({ ok: true, user: r.user.name }, { headers: { "Set-Cookie": sessionCookie(req, r.token, r.maxAge) } });
 }

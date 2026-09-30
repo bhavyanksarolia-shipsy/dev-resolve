@@ -43,13 +43,12 @@ if [ "$WITH_TUNNEL" = 1 ]; then
 fi
 
 LAN_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "?")
-USER_LINE=$(grep '^DEV_RESOLVE_USERS=' .env.local | sed 's/^DEV_RESOLVE_USERS=//')
 echo
 say "Dev Resolve is running"
 echo "  You:             http://localhost:${PORT}"
 echo "  Same Wi-Fi:      http://${LAN_IP}:${PORT}"
 echo "  Cloudflare link: ${TUNNEL_LINE}"
-echo "  Login (name:pw): ${USER_LINE}"
+echo "  Logins:          npm run user -- list   (add / reset / disable users there)"
 echo "  Logs:            .logs/app.log · .logs/tunnel.log"
 echo "  VPN:             $(grep '^VPN_HINT=' config/config.env | cut -d= -f2- || echo 'connect the client VPN') — header chips turn green when logs/DB are reachable"
 echo

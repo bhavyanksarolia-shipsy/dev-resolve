@@ -1,5 +1,6 @@
-import { SESSION_COOKIE } from "@/lib/auth";
+import { revokeSession, sessionCookie, sessionToken } from "@/lib/auth";
 
-export async function POST() {
-  return Response.json({ ok: true }, { headers: { "Set-Cookie": `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0` } });
+export async function POST(req: Request) {
+  await revokeSession(sessionToken(req)).catch(() => {});
+  return Response.json({ ok: true }, { headers: { "Set-Cookie": sessionCookie(req, "", 0) } });
 }

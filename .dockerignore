@@ -1,0 +1,26 @@
+# The image is built from CODE ONLY — private config, knowledge, logins and secrets go on the /data volume or in env.
+**/node_modules
+.next
+.git
+.logs
+.auth
+**/.env*
+!.env.example
+config/config.env
+config/projects.json
+config/metabase_ratelimit.json
+knowledge/*
+!knowledge/README.md
+!knowledge/_template
+!knowledge/_shared
+.claude/skills/ffo-miss-analysis
+services/wms_ticket_digest/.env
+services/wms_ticket_digest/state
+services/wms_ticket_digest/config/*.json
+!services/wms_ticket_digest/config/*.example.json
+**/__pycache__
+*.tsbuildinfo
+*.pem
+*.bundle
+backups
+code

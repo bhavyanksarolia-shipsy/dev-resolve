@@ -4,7 +4,7 @@ import http from "node:http";
 import { execFile } from "node:child_process";
 import path from "node:path";
 import { cfgValue, getAccounts, getConnectionProjects, ROOT, toolEnv } from "./config";
-import { pool } from "./db";
+import { getPool } from "./db";
 import { whoAmI, DevrevError } from "./devrev";
 import { appLogProjects, ensureAppLogAuth } from "./applog";
 
@@ -129,7 +129,8 @@ function checkMetabase(project: string, cfg: NonNullable<ReturnType<typeof getCo
     execFile("python3", [script, "whoami", "--project", project], { env: toolEnv() as NodeJS.ProcessEnv, timeout: 25000 }, (error, stdout, stderr) => {
       const out = `${stdout}\n${stderr}`;
       if (!error) return resolve({ ...base, status: "ok", message: stdout.trim() });
-      if (out.includes("VPN_REQUIRED") || (looksVpnOnly(host) && /Connection error|timed out/i.test(out))) {
+      // Killed by our own timeout while the host is unreachable = the same VPN problem, not a mystery error.
+      if (out.includes("VPN_REQUIRED") || (looksVpnOnly(host) && (/Connection error|timed out/i.test(out) || error.killed))) {
         return resolve({ ...base, status: "vpn_required", message: `Can't reach ${host}`, fix: vpnFix() });
       }
       if (out.includes("AUTH_FAILED") || out.includes("No session token")) {
@@ -162,7 +163,7 @@ async function checkDevrev(): Promise<ConnectionHealth> {
 async function checkPostgres(): Promise<ConnectionHealth> {
   const base = { id: "postgres", kind: "postgres" as const, label: "Postgres (Dev Resolve storage)", host: hostOf(process.env.DATABASE_URL), used_by: ["all accounts"] };
   try {
-    await pool.query("SELECT 1");
+    await getPool().query("SELECT 1");
     return { ...base, status: "ok", message: "Connected" };
   } catch (e) {
     return { ...base, status: "error", message: (e as Error).message, fix: "Start Docker, then run `npm run db:up`" };
@@ -173,6 +174,12 @@ async function checkClaude(): Promise<ConnectionHealth> {
   const base = { id: "claude", kind: "claude" as const, label: "Claude (investigation agent)", host: "api.anthropic.com", used_by: ["all accounts"] };
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) {
+    // Server without an API key: a long-lived token from `claude setup-token` (your Claude subscription login).
+    if (process.env.CLAUDE_CODE_OAUTH_TOKEN) return { ...base, status: "ok", message: "Using your Claude login token (CLAUDE_CODE_OAUTH_TOKEN)" };
+    if (process.env.NODE_ENV === "production") {
+      return { ...base, status: "auth_failed", message: "No Claude login on this server",
+        fix: "Run `claude setup-token` on your laptop and set CLAUDE_CODE_OAUTH_TOKEN (or ANTHROPIC_API_KEY) in the server's secrets" };
+    }
     return { ...base, status: "ok", message: "Using your local Claude Code login (no ANTHROPIC_API_KEY set)" };
   }
   try {

@@ -13,7 +13,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/investigations/
   // Each RCA version can be posted once; a chat revision (v2, v3…) can be posted as an update.
   if (inv.posted_at && inv.posted_version >= inv.rca_version) return Response.json({ error: `RCA v${inv.rca_version} is already posted` }, { status: 409 });
   const isUpdate = !!inv.posted_at;
-  const by = currentUser(req);
+  const by = await currentUser(req);
 
   const body = `${isUpdate ? `**Updated RCA (v${inv.rca_version})** — supersedes the earlier Dev Resolve RCA on this ticket.\n\n` : ""}${rca.trim()}\n\n---\n_Dev Resolve RCA v${inv.rca_version} · investigation #${id} · reviewed & posted by ${by}_`;
   let entry;

@@ -1,61 +1,109 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import { q } from "./db";
+import { hashPassword, verifyPassword } from "./passwords";
 
 /**
- * Minimal shared-login for testing with teammates (before real deployment/SSO).
- * Users: DEV_RESOLVE_USERS="name:password,name:password" in .env.local. Sessions are HMAC-signed cookies.
+ * App login. Accounts live in Postgres (app_users, scrypt-hashed passwords) and are managed with
+ * `npm run user -- add|reset|disable|enable|list|signout` — never through env files.
+ * Sessions are server-side (app_sessions): the cookie holds a random token, the DB only its sha256, so signing
+ * out, disabling a user or resetting a password takes effect immediately.
+ *
+ * Env (optional): SESSION_IDLE_HOURS (default 12), SESSION_MAX_DAYS (default 7).
  */
 export const SESSION_COOKIE = "dr_session";
-const SESSION_DAYS = 7;
+const IDLE_MS = Number(process.env.SESSION_IDLE_HOURS || 12) * 3600e3;
+const MAX_MS = Number(process.env.SESSION_MAX_DAYS || 7) * 864e5;
+const LOCK_AFTER = 5, LOCK_MS = 15 * 60e3;
 
-function secret() {
-  const s = process.env.DEV_RESOLVE_SESSION_SECRET;
-  if (!s || s.length < 32) throw new Error("DEV_RESOLVE_SESSION_SECRET is missing/short in .env.local");
-  return s;
+export interface SessionUser { name: string; isAdmin: boolean }
+
+const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
+
+/**
+ * First start after upgrading: the old DEV_RESOLVE_USERS (name:password pairs) are imported once, hashed,
+ * so nobody gets locked out. Remove DEV_RESOLVE_USERS from the env afterwards.
+ */
+let seeded: Promise<void> | null = null;
+function seedFromEnvOnce() {
+  seeded ??= (async () => {
+    const [{ n }] = await q<{ n: string }>(`SELECT count(*) AS n FROM app_users`);
+    if (Number(n) > 0 || !process.env.DEV_RESOLVE_USERS) return;
+    for (const pair of process.env.DEV_RESOLVE_USERS.split(",")) {
+      const i = pair.indexOf(":");
+      if (i <= 0) continue;
+      const name = pair.slice(0, i).trim().toLowerCase();
+      await q(`INSERT INTO app_users (name, password_hash, is_admin) VALUES ($1, $2, $3) ON CONFLICT (name) DO NOTHING`,
+        [name, await hashPassword(pair.slice(i + 1).trim()), name === "admin"]);
+    }
+    console.warn("[auth] imported DEV_RESOLVE_USERS into the database — manage users with `npm run user` and remove it from the env");
+  })().catch((e) => { seeded = null; throw e; });
+  return seeded;
 }
 
-function users(): Map<string, string> {
-  const m = new Map<string, string>();
-  for (const pair of (process.env.DEV_RESOLVE_USERS || "").split(",")) {
-    const i = pair.indexOf(":");
-    if (i > 0) m.set(pair.slice(0, i).trim().toLowerCase(), pair.slice(i + 1).trim());
+// Hash of a random password — compared against when the name doesn't exist, so timing doesn't reveal valid names.
+const DUMMY = hashPassword(randomBytes(16).toString("hex"));
+
+export async function login(nameRaw: string, password: string, meta: { ip?: string; userAgent?: string }):
+  Promise<{ ok: true; token: string; maxAge: number; user: SessionUser } | { ok: false; error: string; status: number }> {
+  await seedFromEnvOnce();
+  const name = nameRaw.trim().toLowerCase();
+  const [u] = await q<{ id: number; name: string; password_hash: string; is_admin: boolean; disabled_at: string | null; locked_until: string | null }>(
+    `SELECT id, name, password_hash, is_admin, disabled_at, locked_until FROM app_users WHERE name = $1`, [name]);
+  const good = await verifyPassword(password, u?.password_hash ?? (await DUMMY));
+  if (u?.locked_until && new Date(u.locked_until).getTime() > Date.now()) {
+    return { ok: false, status: 429, error: "Too many wrong passwords — this account is locked for 15 minutes" };
   }
-  return m;
+  if (!u || !good || u.disabled_at) {
+    if (u && !good) {
+      await q(`UPDATE app_users SET failed_logins = failed_logins + 1,
+                 locked_until = CASE WHEN failed_logins + 1 >= $2 THEN now() + ($3 || ' milliseconds')::interval END
+               WHERE id = $1`, [u.id, LOCK_AFTER, String(LOCK_MS)]);
+    }
+    return { ok: false, status: 401, error: "Wrong name or password" };
+  }
+  await q(`UPDATE app_users SET failed_logins = 0, locked_until = NULL, last_login_at = now() WHERE id = $1`, [u.id]);
+  const token = randomBytes(32).toString("base64url");
+  await q(`INSERT INTO app_sessions (token_hash, user_id, expires_at, ip, user_agent) VALUES ($1, $2, now() + ($3 || ' milliseconds')::interval, $4, $5)`,
+    [sha256(token), u.id, String(MAX_MS), meta.ip?.slice(0, 64) ?? null, meta.userAgent?.slice(0, 300) ?? null]);
+  // Housekeeping: old sessions are useless — drop them now and then.
+  if (Math.random() < 0.05) q(`DELETE FROM app_sessions WHERE expires_at < now() - interval '7 days'`).catch(() => {});
+  return { ok: true, token, maxAge: Math.floor(MAX_MS / 1000), user: { name: u.name, isAdmin: u.is_admin } };
 }
 
-const sign = (payload: string) => createHmac("sha256", secret()).update(payload).digest("base64url");
-
-function safeEqual(a: string, b: string) {
-  const x = Buffer.from(a), y = Buffer.from(b);
-  return x.length === y.length && timingSafeEqual(x, y);
+export async function verifySession(token: string | undefined): Promise<SessionUser | null> {
+  if (!token || token.length > 100) return null;
+  // Checked against the DB on every request (one primary-key lookup), so sign-out / disable / reset is instant.
+  const [s] = await q<{ name: string; is_admin: boolean; last_seen_at: string }>(
+    `SELECT u.name, u.is_admin, s.last_seen_at FROM app_sessions s JOIN app_users u ON u.id = s.user_id
+      WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now() AND u.disabled_at IS NULL
+        AND s.created_at > u.password_changed_at AND s.last_seen_at > now() - ($2 || ' milliseconds')::interval`,
+    [sha256(token), String(IDLE_MS)]);
+  const user = s ? { name: s.name, isAdmin: s.is_admin } : null;
+  if (s && Date.now() - new Date(s.last_seen_at).getTime() > 5 * 60e3) {
+    q(`UPDATE app_sessions SET last_seen_at = now() WHERE token_hash = $1`, [sha256(token)]).catch(() => {});
+  }
+  return user;
 }
 
-export function checkLogin(name: string, password: string): string | null {
-  const user = name.trim().toLowerCase();
-  const expected = users().get(user);
-  // Compare even when the user is unknown, so timing doesn't reveal which names exist.
-  const ok = safeEqual(expected ?? "\u0000".repeat(password.length || 1), password);
-  return expected && ok ? user : null;
+export async function revokeSession(token: string | undefined) {
+  if (!token) return;
+  await q(`UPDATE app_sessions SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL`, [sha256(token)]);
 }
 
-export function createSession(user: string) {
-  const exp = Date.now() + SESSION_DAYS * 864e5;
-  const payload = `${Buffer.from(user).toString("base64url")}.${exp}`;
-  return { value: `${payload}.${sign(payload)}`, maxAge: SESSION_DAYS * 86400 };
-}
-
-export function verifySession(token: string | undefined): string | null {
-  if (!token) return null;
-  const parts = token.split(".");
-  if (parts.length !== 3) return null;
-  const [u, exp, sig] = parts;
-  if (!safeEqual(sign(`${u}.${exp}`), sig) || Number(exp) < Date.now()) return null;
-  const user = Buffer.from(u, "base64url").toString();
-  return users().has(user) ? user : null; // removing someone from DEV_RESOLVE_USERS revokes them
-}
+const tokenFrom = (req: Request) =>
+  (req.headers.get("cookie") || "").match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([^;]+)`))?.[1];
 
 /** The signed-in user for an API route (the proxy already rejected unauthenticated requests). */
-export function currentUser(req: Request): string {
-  const cookie = req.headers.get("cookie") || "";
-  const m = cookie.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([^;]+)`));
-  return verifySession(m?.[1]) ?? "unknown";
+export async function sessionUser(req: Request) {
+  return verifySession(tokenFrom(req));
+}
+export async function currentUser(req: Request): Promise<string> {
+  return (await sessionUser(req))?.name ?? "unknown";
+}
+export { tokenFrom as sessionToken };
+
+/** Secure only over HTTPS (behind a proxy: X-Forwarded-Proto), so plain-http localhost keeps working. */
+export function sessionCookie(req: Request, value: string, maxAge: number) {
+  const secure = new URL(req.url).protocol === "https:" || req.headers.get("x-forwarded-proto") === "https";
+  return `${SESSION_COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? "; Secure" : ""}`;
 }
