@@ -163,11 +163,11 @@ export function Workspace({ ticketId }: { ticketId: string }) {
             <Markdown>{t.body}</Markdown>
           </div>
         )}
-        {data.attachments.length > 0 && <Attachments items={data.attachments} />}
+        <Attachments items={data.attachments} />
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">Timeline · {data.timeline.length}</h2>
         <ol className="space-y-3">
           {data.timeline.slice().reverse().map((c, i) => (
-            <CommentCard key={c.id} c={c} attachments={data.attachments.filter((a) => a.comment_id === c.id).length} defaultOpen={i === 0} />
+            <CommentCard key={c.id} c={c} attachments={data.attachments.filter((a) => a.comment_id === c.id && !a.signature).length} defaultOpen={i === 0} />
           ))}
         </ol>
       </section>
@@ -375,6 +375,14 @@ function Attachments({ items }: { items: Attachment[] }) {
     count("file") && `${count("file")} file${count("file") > 1 ? "s" : ""}`,
     logos.length && `${logos.length} signature logo${logos.length > 1 ? "s" : ""} hidden`,
   ].filter(Boolean);
+  if (!items.length) {
+    return (
+      <div className="card mb-4 flex items-center gap-2 px-4 py-3 text-sm">
+        <span className="text-muted">▸</span><span className="font-semibold">Attachments (0)</span>
+        <span className="text-xs text-muted">none on this ticket</span>
+      </div>
+    );
+  }
   return (
     <details className="card group mb-4 overflow-hidden">
       <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm hover:bg-accent-soft/60 [&::-webkit-details-marker]:hidden">

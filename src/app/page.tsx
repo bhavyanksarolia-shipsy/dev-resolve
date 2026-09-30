@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { HealthBanner } from "@/components/HealthBanner";
 import { AccountPicker, type PickerAccount } from "@/components/AccountPicker";
@@ -31,10 +31,23 @@ function Inbox() {
   const router = useRouter();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const firstActive = accounts.find((a) => a.status === "active" && a.client_active !== false)?.slug ?? "";
-  const account = useSearchParams().get("account") || firstActive;
-  // Pagination: DevRev is cursor-based, so keep the stack of cursors that led to each page.
-  const [nav, setNav] = useState<{ account: string; stack: (string | undefined)[] }>({ account, stack: [undefined] });
-  const stack = nav.account === account ? nav.stack : [undefined];
+  const params = useSearchParams();
+  const account = params.get("account") || firstActive;
+  // Pagination: DevRev is cursor-based, so keep the stack of cursors that led to each page — in the URL (?pages=),
+  // so opening a ticket and pressing Back returns to the same page.
+  const pagesParam = params.get("pages");
+  const stack = useMemo<(string | undefined)[]>(() => {
+    try {
+      const c = pagesParam ? (JSON.parse(pagesParam) as unknown) : [];
+      return [undefined, ...(Array.isArray(c) ? c.filter((x): x is string => typeof x === "string") : [])];
+    } catch {
+      return [undefined];
+    }
+  }, [pagesParam]);
+  const setStack = (st: (string | undefined)[]) => {
+    const rest = st.slice(1) as string[];
+    router.replace(`/?account=${account}${rest.length ? `&pages=${encodeURIComponent(JSON.stringify(rest))}` : ""}`, { scroll: false });
+  };
   const cursor = stack[stack.length - 1];
   const [tick, setTick] = useState(0); // bump to refetch the current page
   const [result, setResult] = useState<Result | null>(null);
@@ -96,11 +109,11 @@ function Inbox() {
   }, [anyRunning]);
 
   const setAccount = (slug: string) => router.replace(`/?account=${slug}`);
-  const next = () => fresh?.next_cursor && setNav({ account, stack: [...stack, fresh.next_cursor] });
-  const prev = () => stack.length > 1 && setNav({ account, stack: stack.slice(0, -1) });
+  const next = () => fresh?.next_cursor && setStack([...stack, fresh.next_cursor]);
+  const prev = () => stack.length > 1 && setStack(stack.slice(0, -1));
   const refresh = () => {
     refreshing.current = true;
-    setNav({ account, stack: [undefined] });
+    if (stack.length > 1) setStack([undefined]);
     setTick((n) => n + 1);
   };
 
