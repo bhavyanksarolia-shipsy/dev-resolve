@@ -22,7 +22,7 @@ const CURRENT_STATUS: Record<string, [string, string]> = {
   unknown: ["Current status unknown", "text-muted border-line"],
 };
 interface TicketData {
-  ticket: { id: string; display_id: string; title: string; body?: string; created_date: string; stage?: { display_name?: string; name?: string }; account?: { display_name?: string } };
+  ticket: { id: string; display_id: string; title: string; body?: string; created_date: string; stage?: { display_name?: string; name?: string }; account?: { display_name?: string }; custom_fields?: Record<string, unknown> };
   timeline: { id: string; body?: string; visibility?: string; created_date: string; created_by?: { display_name?: string; email?: string } }[];
   investigations: { id: number; status: string }[];
   attachments: Attachment[];
@@ -141,6 +141,9 @@ export function Workspace({ ticketId }: { ticketId: string }) {
         <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
           <span className="rounded-md bg-accent-soft px-2 py-0.5 font-mono font-semibold text-accent-strong">{t.display_id}</span>
           <span className="rounded-full bg-panel px-2 py-0.5 text-muted ring-1 ring-line">{t.stage?.display_name ?? t.stage?.name}</span>
+          {typeof t.custom_fields?.tnt__pod === "string"
+            ? <span className="rounded-full bg-accent-soft px-2 py-0.5 font-semibold text-accent-strong" title="Pod (DevRev)">Pod: {t.custom_fields.tnt__pod}</span>
+            : <span className="text-muted" title="Pod isn't set on this ticket in DevRev yet">Pod: not set</span>}
           <span className="text-muted">{t.account?.display_name}</span>
         </div>
         <h1 className="mb-2 text-2xl font-semibold leading-tight tracking-tight">{t.title}</h1>

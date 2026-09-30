@@ -8,7 +8,7 @@ import { AccountPicker, type PickerAccount } from "@/components/AccountPicker";
 type Account = PickerAccount;
 interface Ticket {
   id: string; display_id: string; title: string; stage?: string; severity?: string; created_date: string;
-  part?: string; default_part?: boolean; devrev_url: string;
+  part?: string; default_part?: boolean; pod?: string | null; devrev_url: string;
   investigation: { id: number; status: string; confidence: string | null } | null;
 }
 interface Counts { account: { total: number; wms: number; default_part: number }; org: { total: number; wms: number } }
@@ -194,7 +194,7 @@ function Inbox() {
             <table className="w-full text-sm">
               <thead className="bg-head text-left text-xs font-semibold uppercase tracking-wide text-head-fg">
                 <tr>
-                  <th className="px-5 py-3">Ticket</th><th className="px-4 py-3">Title</th><th className="px-4 py-3">Part</th>
+                  <th className="px-5 py-3">Ticket</th><th className="px-4 py-3">Title</th><th className="px-4 py-3">Pod</th><th className="px-4 py-3">Part</th>
                   <th className="px-4 py-3">Stage</th><th className="px-4 py-3">Created</th><th className="px-5 py-3">Dev Resolve</th>
                 </tr>
               </thead>
@@ -211,6 +211,11 @@ function Inbox() {
                         {marked.has(t.display_id) && <span className="ml-2 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-semibold uppercase text-white">new</span>}
                       </td>
                       <td className="min-w-72 px-4 py-3.5">{t.title}</td>
+                      <td className="whitespace-nowrap px-4 py-3.5">
+                        {t.pod
+                          ? <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs font-semibold text-accent-strong">{t.pod}</span>
+                          : <span className="text-xs text-muted" title="Pod isn't set on this ticket in DevRev yet">not set</span>}
+                      </td>
                       <td className="whitespace-nowrap px-4 py-3.5 text-muted">
                         {t.default_part
                           ? <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-warn ring-1 ring-amber-200" title="Default part — not triaged to WMS yet, so not in DevRev's WMS view">TMS (default)</span>
@@ -235,7 +240,7 @@ function Inbox() {
                     </tr>
                   );
                 })}
-                {tickets && !tickets.length && <tr><td colSpan={6} className="px-5 py-10 text-center text-muted">No open Support tickets for this account.</td></tr>}
+                {tickets && !tickets.length && <tr><td colSpan={7} className="px-5 py-10 text-center text-muted">No open Support tickets for this account.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -250,6 +255,7 @@ function SkeletonRow() {
     <tr>
       <td className="px-5 py-4"><div className="skeleton h-4 w-24" /></td>
       <td className="px-4 py-4"><div className="skeleton h-4 w-72 max-w-full" /></td>
+      <td className="px-4 py-4"><div className="skeleton h-5 w-12 rounded-full" /></td>
       <td className="px-4 py-4"><div className="skeleton h-4 w-16" /></td>
       <td className="px-4 py-4"><div className="skeleton h-5 w-20 rounded-full" /></td>
       <td className="px-4 py-4"><div className="skeleton h-4 w-32" /></td>
