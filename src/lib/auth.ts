@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { q } from "./db";
 import { hashPassword, verifyPassword } from "./passwords";
+import { googleAdminEmails, googleAutoCreate } from "./google";
 
 /**
  * App login. Accounts live in Postgres (app_users, scrypt-hashed passwords) and are managed with
@@ -84,10 +85,10 @@ export async function loginWithGoogle(email: string, displayName: string, meta: 
   let [u] = await q<{ id: number; name: string; is_admin: boolean; disabled_at: string | null }>(
     `SELECT id, name, is_admin, disabled_at FROM app_users WHERE lower(email) = $1`, [email]);
   if (!u) {
-    if (["off", "0", "false"].includes((process.env.GOOGLE_AUTO_CREATE || "on").toLowerCase())) {
+    if (!googleAutoCreate()) {
       return { ok: false, error: `${email} doesn't have a Dev Resolve login yet — ask an admin to add you` };
     }
-    const admins = (process.env.GOOGLE_ADMIN_EMAILS || "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+    const admins = googleAdminEmails();
     const base = email.split("@")[0].toLowerCase().replace(/[^a-z0-9._-]/g, "-").slice(0, 60) || "user";
     for (let i = 0; !u && i < 20; i++) {
       [u] = await q(`INSERT INTO app_users (name, email, display_name, is_admin) VALUES ($1, $2, $3, $4)

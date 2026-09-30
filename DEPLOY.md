@@ -32,8 +32,9 @@ client ID* → **Web application**:
 - Authorized redirect URI: `https://<your-domain>/api/auth/google/callback`
 - OAuth consent screen: **Internal** (only your Google Workspace users)
 
-Then set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_ALLOWED_DOMAINS=<your company domain>` and
-`GOOGLE_ADMIN_EMAILS=<you>`. People of that domain get a member login on first sign-in
+Then set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_ALLOWED_DOMAINS=<your company domain>` (falls back to
+`SSO_ACCOUNT_DOMAIN`) and `GOOGLE_ADMIN_EMAILS=<you>` — in the environment or in `config/config.env`.
+For local testing also add `http://localhost:3001/api/auth/google/callback` as a redirect URI. People of that domain get a member login on first sign-in
 (`GOOGLE_AUTO_CREATE=off` to allow only people you add with `npm run user -- add-google <email>`).
 Password logins stay as a break-glass; `DEV_RESOLVE_PASSWORD_LOGIN=off` hides them.
 

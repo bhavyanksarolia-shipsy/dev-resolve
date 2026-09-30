@@ -1,19 +1,35 @@
 import "server-only";
 import { createHash, createPublicKey, randomBytes, verify, type JsonWebKey } from "node:crypto";
+import { cfgValue } from "./config";
+
+/** Env first (Render / .env.local), then config/config.env. */
+const setting = (k: string) => cfgValue(k)?.trim() || "";
 
 /**
  * "Sign in with Google" (OpenID Connect, authorization code + PKCE) for the Dev Resolve login itself.
  * Env: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET (a "Web application" OAuth client whose authorized redirect URI is
  * <APP_URL>/api/auth/google/callback), GOOGLE_ALLOWED_DOMAINS (comma list, e.g. your company domain — required),
  * GOOGLE_ADMIN_EMAILS (made admin on first sign-in), GOOGLE_AUTO_CREATE (default on: new people get a member login).
+ * Each can be in the environment or in config/config.env. GOOGLE_ALLOWED_DOMAINS falls back to SSO_ACCOUNT_DOMAIN.
  */
-export const googleEnabled = () => !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && allowedDomains().length);
-export const allowedDomains = () => (process.env.GOOGLE_ALLOWED_DOMAINS || "").split(",").map((d) => d.trim().toLowerCase()).filter(Boolean);
-export const passwordLoginEnabled = () => !["off", "0", "false"].includes((process.env.DEV_RESOLVE_PASSWORD_LOGIN || "on").toLowerCase());
+export const googleClientId = () => setting("GOOGLE_CLIENT_ID");
+const googleClientSecret = () => setting("GOOGLE_CLIENT_SECRET");
+export const allowedDomains = () =>
+  (setting("GOOGLE_ALLOWED_DOMAINS") || setting("SSO_ACCOUNT_DOMAIN")).split(",").map((d) => d.trim().toLowerCase().replace(/^@/, "")).filter(Boolean);
+export const googleEnabled = () => !!(googleClientId() && googleClientSecret() && allowedDomains().length);
+export const passwordLoginEnabled = () => !["off", "0", "false"].includes((setting("DEV_RESOLVE_PASSWORD_LOGIN") || "on").toLowerCase());
+export const googleAdminEmails = () => setting("GOOGLE_ADMIN_EMAILS").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+export const googleAutoCreate = () => !["off", "0", "false"].includes((setting("GOOGLE_AUTO_CREATE") || "on").toLowerCase());
+
+/** Why Google sign-in is off (for the server log / setup), or null when it's ready. */
+export function googleProblem() {
+  const missing = [!googleClientId() && "GOOGLE_CLIENT_ID", !googleClientSecret() && "GOOGLE_CLIENT_SECRET", !allowedDomains().length && "GOOGLE_ALLOWED_DOMAINS"].filter(Boolean);
+  return missing.length ? `Google sign-in is off — missing ${missing.join(", ")}` : null;
+}
 
 /** The URL people use to reach Dev Resolve: APP_URL when set, else what the browser asked for (Host header). */
 export function publicOrigin(req: Request) {
-  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
+  if (setting("APP_URL")) return setting("APP_URL").replace(/\/+$/, "");
   const u = new URL(req.url);
   const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || u.host;
   return `${req.headers.get("x-forwarded-proto") || u.protocol.replace(":", "")}://${host}`;
@@ -29,7 +45,7 @@ export function startAuth(req: Request) {
   const verifier = randomBytes(32).toString("base64url");
   const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   url.search = new URLSearchParams({
-    client_id: process.env.GOOGLE_CLIENT_ID!, redirect_uri: redirectUri(req), response_type: "code",
+    client_id: googleClientId(), redirect_uri: redirectUri(req), response_type: "code",
     scope: "openid email profile", state, nonce, prompt: "select_account",
     code_challenge: createHash("sha256").update(verifier).digest("base64url"), code_challenge_method: "S256",
     // Only shows / accepts accounts of this domain in Google's chooser (still checked again below).
@@ -58,7 +74,7 @@ export async function finishAuth(req: Request, code: string, verifier: string, n
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "authorization_code", code, code_verifier: verifier, redirect_uri: redirectUri(req),
-      client_id: process.env.GOOGLE_CLIENT_ID!, client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+      client_id: googleClientId(), client_secret: googleClientSecret(),
     }),
   });
   const t = await r.json();
@@ -69,7 +85,7 @@ export async function finishAuth(req: Request, code: string, verifier: string, n
   if (!verify("RSA-SHA256", Buffer.from(`${h}.${p}`), await googleKey(header.kid), Buffer.from(s, "base64url"))) throw new Error("bad token signature");
   const c = JSON.parse(Buffer.from(p, "base64url").toString()) as IdClaims;
   if (!["https://accounts.google.com", "accounts.google.com"].includes(c.iss)) throw new Error("wrong issuer");
-  if (c.aud !== process.env.GOOGLE_CLIENT_ID) throw new Error("token is for another app");
+  if (c.aud !== googleClientId()) throw new Error("token is for another app");
   if (c.exp * 1000 < Date.now() - 60_000) throw new Error("token expired");
   if (c.nonce !== nonce) throw new Error("sign-in didn't match (nonce)");
   const email = (c.email || "").toLowerCase();
