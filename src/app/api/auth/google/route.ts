@@ -1,10 +1,10 @@
-import { googleEnabled, startAuth } from "@/lib/google";
+import { googleEnabled, publicOrigin, startAuth } from "@/lib/google";
 
 const OAUTH_COOKIE = "dr_oauth";
 
 /** Step 1: send the browser to Google. state / nonce / PKCE verifier ride in a short-lived HttpOnly cookie. */
 export async function GET(req: Request) {
-  if (!googleEnabled()) return Response.redirect(new URL("/login?error=Google+sign-in+isn%27t+set+up", req.url), 302);
+  if (!googleEnabled()) return Response.redirect(`${publicOrigin(req)}/login?error=Google+sign-in+isn%27t+set+up`, 302);
   const nextRaw = new URL(req.url).searchParams.get("next") || "/";
   const next = nextRaw.startsWith("/") && !nextRaw.startsWith("//") ? nextRaw : "/";
   const a = startAuth(req);

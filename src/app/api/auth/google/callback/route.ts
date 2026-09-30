@@ -1,10 +1,10 @@
 import { loginWithGoogle, sessionCookie } from "@/lib/auth";
-import { finishAuth, googleEnabled } from "@/lib/google";
+import { finishAuth, googleEnabled, publicOrigin } from "@/lib/google";
 
 /** Step 2: Google sends the browser back here with a code; verify everything, then open a Dev Resolve session. */
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const base = process.env.APP_URL || url.origin;
+  const base = publicOrigin(req);
   const fail = (msg: string) => new Response(null, {
     status: 302,
     headers: [["Location", `${base}/login?error=${encodeURIComponent(msg)}`], ["Set-Cookie", "dr_oauth=; Path=/api/auth/google; Max-Age=0"]],

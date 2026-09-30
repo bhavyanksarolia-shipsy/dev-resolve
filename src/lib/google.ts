@@ -11,8 +11,16 @@ export const googleEnabled = () => !!(process.env.GOOGLE_CLIENT_ID && process.en
 export const allowedDomains = () => (process.env.GOOGLE_ALLOWED_DOMAINS || "").split(",").map((d) => d.trim().toLowerCase()).filter(Boolean);
 export const passwordLoginEnabled = () => !["off", "0", "false"].includes((process.env.DEV_RESOLVE_PASSWORD_LOGIN || "on").toLowerCase());
 
+/** The URL people use to reach Dev Resolve: APP_URL when set, else what the browser asked for (Host header). */
+export function publicOrigin(req: Request) {
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, "");
+  const u = new URL(req.url);
+  const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || u.host;
+  return `${req.headers.get("x-forwarded-proto") || u.protocol.replace(":", "")}://${host}`;
+}
+
 export function redirectUri(req: Request) {
-  return `${process.env.APP_URL || new URL(req.url).origin}/api/auth/google/callback`;
+  return `${publicOrigin(req)}/api/auth/google/callback`;
 }
 
 export function startAuth(req: Request) {
