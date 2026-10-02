@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { btn, btnPrimary, Field, input, Note, post, Switch } from "./ui";
+import { btn, btnPrimary, Field, input, Note, post, Select, Switch } from "./ui";
 import { confirmDialog } from "@/components/Dialog";
 
 interface U {
@@ -114,10 +114,10 @@ export function UsersTab() {
               <Field label="Google email" hint="optional · enables Sign in with Google"><input className={input} type="email" value={nu.email} placeholder="asha@company.com" onChange={(e) => setNu({ ...nu, email: e.target.value })} /></Field>
             </div>
             <Field label="Role">
-              <select className={input} value={nu.admin ? "admin" : "member"} onChange={(e) => setNu({ ...nu, admin: e.target.value === "admin" })}>
-                <option value="member">Member — investigates tickets</option>
-                <option value="admin">Admin — also manages users, clients and connections</option>
-              </select>
+              <Select value={nu.admin ? "admin" : "member"} onChange={(v) => setNu({ ...nu, admin: v === "admin" })} options={[
+                { value: "member", label: "Member", hint: "Investigates tickets" },
+                { value: "admin", label: "Admin", hint: "Also manages users, clients and connections" },
+              ]} />
             </Field>
             {msg && !msg.ok && <Note ok={false}>{msg.text}</Note>}
             <div className="flex justify-end gap-2 pt-1">

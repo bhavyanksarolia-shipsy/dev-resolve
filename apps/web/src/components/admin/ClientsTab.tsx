@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import type { Acc, AdminConfig } from "./types";
 import { ClientActiveToggle } from "@/components/ClientActiveToggle";
-import { btn, btnPrimary, Field, input, Note, post, Switch } from "./ui";
+import { btn, btnPrimary, Field, input, Note, post, Select, Switch } from "./ui";
 
 const SLOTS = ["app", "audit", "integration"] as const;
 interface Form {
@@ -168,17 +168,15 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
             {form.logsKind === "opensearch" && (
               <div className="space-y-3">
                 <Field label="Cluster" hint={<>Not listed? <button type="button" className="text-accent-strong underline" onClick={openConnections}>Add it under Connections</button>.</>}>
-                  <select className={input} value={form.osProject} onChange={(e) => set({ osProject: e.target.value, logTypes: {} })}>
-                    <option value="">Choose…</option>{osConns.map((c) => <option key={c.name} value={c.name}>{c.name}{c.opensearch?.vpn ? " (VPN)" : ""}</option>)}
-                  </select>
+                  <Select value={form.osProject} onChange={(v) => set({ osProject: v, logTypes: {} })}
+                    options={osConns.map((c) => ({ value: c.name, label: c.name, hint: [c.opensearch?.host, c.opensearch?.vpn && "needs VPN"].filter(Boolean).join(" · ") }))} />
                 </Field>
                 {form.osProject && (
                   <div className="grid gap-3 sm:grid-cols-3">
                     {SLOTS.map((slot) => (
                       <Field key={slot} label={`${slot[0].toUpperCase()}${slot.slice(1)} logs`}>
-                        <select className={input} value={form.logTypes[slot] ?? ""} onChange={(e) => set({ logTypes: { ...form.logTypes, [slot]: e.target.value } })}>
-                          <option value="">—</option>{Object.entries(conn(form.osProject)?.opensearch?.logTypes ?? {}).map(([lt, idx]) => <option key={lt} value={lt}>{lt} ({idx})</option>)}
-                        </select>
+                        <Select value={form.logTypes[slot] ?? ""} placeholder="—" onChange={(v) => set({ logTypes: { ...form.logTypes, [slot]: v } })}
+                          options={[{ value: "", label: "—", hint: "not used" }, ...Object.entries(conn(form.osProject)?.opensearch?.logTypes ?? {}).map(([lt, idx]) => ({ value: lt, label: lt, hint: idx }))]} />
                       </Field>
                     ))}
                   </div>
@@ -188,7 +186,7 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
             {form.logsKind === "app_log" && (
               <div className="space-y-3">
                 {appConns.length > 1 && (
-                  <Field label="App-logs connection"><select className={input} value={form.appProject} onChange={(e) => set({ appProject: e.target.value })}>{appConns.map((c) => <option key={c.name}>{c.name}</option>)}</select></Field>
+                  <Field label="App-logs connection"><Select value={form.appProject} onChange={(v) => set({ appProject: v })} options={appConns.map((c) => ({ value: c.name, label: c.name, hint: c.label }))} /></Field>
                 )}
                 <div className="grid gap-3 sm:grid-cols-3">
                   {SLOTS.map((slot) => (
@@ -215,16 +213,14 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
             {form.dbKind === "metabase" && (
               <div className="space-y-3">
                 <Field label="Metabase instance" hint={<>Not listed? <button type="button" className="text-accent-strong underline" onClick={openConnections}>Add it under Connections</button>.</>}>
-                  <select className={input} value={form.mbProject} onChange={(e) => set({ mbProject: e.target.value, database: String(conn(e.target.value)?.metabase?.defaultDatabase ?? "") })}>
-                    <option value="">Choose…</option>{mbConns.map((c) => <option key={c.name} value={c.name}>{c.name}{c.metabase?.vpn ? " (VPN)" : ""}{c.metabase?.auth === "google" ? " · Google sign-in" : ""}</option>)}
-                  </select>
+                  <Select value={form.mbProject} onChange={(v) => set({ mbProject: v, database: String(conn(v)?.metabase?.defaultDatabase ?? "") })}
+                    options={mbConns.map((c) => ({ value: c.name, label: c.name, hint: [c.metabase?.host, c.metabase?.vpn && "needs VPN", c.metabase?.auth === "google" && "each person's Google sign-in"].filter(Boolean).join(" · ") }))} />
                 </Field>
                 {form.mbProject && (
                   <div className="grid gap-3 sm:grid-cols-3">
                     <Field label="Main database">
-                      <select className={input} value={form.database} onChange={(e) => set({ database: e.target.value })}>
-                        <option value="">Choose…</option>{Object.entries(conn(form.mbProject)?.metabase?.databases ?? {}).map(([id, l]) => <option key={id} value={id}>{id} — {l}</option>)}
-                      </select>
+                      <Select value={form.database} onChange={(v) => set({ database: v })}
+                        options={Object.entries(conn(form.mbProject)?.metabase?.databases ?? {}).map(([id, l]) => ({ value: id, label: `Database ${id}`, hint: l }))} />
                     </Field>
                     <Field label="Postgres db id (optional)"><input className={input} value={form.databases.postgres ?? ""} onChange={(e) => set({ databases: { ...form.databases, postgres: e.target.value } })} /></Field>
                     <Field label="Mongo db id (optional)"><input className={input} value={form.databases.mongo ?? ""} onChange={(e) => set({ databases: { ...form.databases, mongo: e.target.value } })} /></Field>

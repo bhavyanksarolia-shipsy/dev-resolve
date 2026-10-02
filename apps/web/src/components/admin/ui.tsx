@@ -1,5 +1,5 @@
 "use client";
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useId, useRef, useState } from "react";
 
 /** Small shared pieces for the admin screens. */
 export const btn = "rounded-lg border border-line px-3 py-1.5 text-xs font-medium hover:border-accent disabled:opacity-40";
@@ -53,6 +53,68 @@ export function Rows({ rows, onChange, keyLabel, valueLabel, keyPlaceholder, val
         </div>
       ))}
       <button type="button" className="text-xs text-accent-strong hover:underline" onClick={() => onChange([...rows, ["", ""]])}>+ Add row</button>
+    </div>
+  );
+}
+
+export interface Option { value: string; label: string; hint?: string }
+
+/** Dropdown in the app's style (replaces the browser's <select>): keyboard, click-outside, checkmark, optional hint line. */
+export function Select({ value, onChange, options, placeholder = "Choose…", disabled }: {
+  value: string; onChange: (v: string) => void; options: Option[]; placeholder?: string; disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const box = useRef<HTMLDivElement>(null);
+  const id = useId();
+  const current = options.find((o) => o.value === value);
+
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+  }, [open]);
+
+  const show = () => { setActive(Math.max(0, options.findIndex((o) => o.value === value))); setOpen(true); };
+  const pick = (o: Option) => { onChange(o.value); setOpen(false); };
+  const onKey = (e: React.KeyboardEvent) => {
+    if (disabled) return;
+    if (!open && ["ArrowDown", "ArrowUp", "Enter", " "].includes(e.key)) { e.preventDefault(); show(); return; }
+    if (!open) return;
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setOpen(false); }
+    if (e.key === "ArrowDown") { e.preventDefault(); setActive((i) => Math.min(options.length - 1, i + 1)); }
+    if (e.key === "ArrowUp") { e.preventDefault(); setActive((i) => Math.max(0, i - 1)); }
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (options[active]) pick(options[active]); }
+    if (e.key === "Tab") setOpen(false);
+  };
+
+  return (
+    <div ref={box} className="relative" onKeyDown={onKey}>
+      <button type="button" disabled={disabled} aria-haspopup="listbox" aria-expanded={open} aria-controls={id}
+        onClick={(e) => { e.preventDefault(); if (open) setOpen(false); else show(); }}
+        className={`${input} flex items-center gap-2 text-left disabled:opacity-50 ${open ? "border-accent ring-2 ring-accent-soft" : ""}`}>
+        <span className={`min-w-0 flex-1 truncate ${current ? "" : "text-muted"}`}>{current?.label ?? placeholder}</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-muted" aria-hidden>
+          <path d={open ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} />
+        </svg>
+      </button>
+      {open && (
+        <ul id={id} role="listbox" className="absolute left-0 right-0 z-50 mt-1 max-h-64 overflow-auto rounded-lg border border-line bg-panel py-1 shadow-lg">
+          {options.length === 0 && <li className="px-3 py-2 text-sm text-muted">Nothing to choose yet</li>}
+          {options.map((o, i) => {
+            const sel = o.value === value;
+            return (
+              <li key={o.value} role="option" aria-selected={sel} onMouseEnter={() => setActive(i)} onMouseDown={(e) => { e.preventDefault(); pick(o); }}
+                className={`flex cursor-pointer items-start gap-2 px-3 py-2 text-sm ${i === active ? "bg-accent-soft" : ""}`}>
+                <span className={`mt-0.5 w-4 shrink-0 text-accent-strong ${sel ? "" : "invisible"}`}>✓</span>
+                <span className="min-w-0"><span className={`block truncate ${sel ? "font-medium text-accent-strong" : ""}`}>{o.label}</span>
+                  {o.hint && <span className="block text-xs text-muted">{o.hint}</span>}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
