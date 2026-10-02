@@ -12,15 +12,19 @@ export function AppHeader() {
   const pathname = usePathname();
   const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
+  const [down, setDown] = useState<string | null>(null);
 
   useEffect(() => {
     if (pathname === "/login") return;
     let live = true;
     fetch("/api/auth/me", { cache: "no-store" }).then(async (r) => {
       if (!live) return;
+      setDown(null);
       if (r.status === 401) router.replace(`/login?next=${encodeURIComponent(pathname + window.location.search)}`);
       else if (r.ok) setMe(await r.json());
-    }).catch(() => {});
+      // 5xx with a non-JSON body = the forwarding to the backend failed (wrong BACKEND_URL, backend down/redeploying).
+      else if (r.status >= 500) setDown(`The backend isn't reachable (HTTP ${r.status}). If this lasts, check BACKEND_URL on Vercel and that the Railway service is running.`);
+    }).catch(() => live && setDown("The backend isn't reachable — check your connection, BACKEND_URL on Vercel, and the Railway service."));
     return () => { live = false; };
   }, [pathname, router]);
 
@@ -47,6 +51,7 @@ export function AppHeader() {
           </div>
         )}
       </div>
+      {down && <div className="border-t border-red-200 bg-red-50 px-4 py-2 text-sm text-bad sm:px-6">{down}</div>}
     </header>
   );
 }
