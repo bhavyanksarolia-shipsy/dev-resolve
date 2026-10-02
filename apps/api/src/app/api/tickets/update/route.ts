@@ -79,11 +79,14 @@ export async function POST(req: Request) {
           if (b.pod !== null && !(await podValues(cur)).includes(b.pod)) throw new Error(`"${b.pod}" isn't a Pod value in DevRev`);
           change.pod = b.pod;
         }
-        const w = await updateTicket(cur.id, change);
+        const w = await updateTicket(cur.id, change, cur.subtype);
         results.push({ ticket: t, ok: true, stage: w.stage?.name, pod: typeof w.custom_fields?.tnt__pod === "string" ? w.custom_fields.tnt__pod : null });
         await q(`INSERT INTO ticket_updates (ticket, changed_by, change, ok) VALUES ($1,$2,$3,true)`, [t, by, JSON.stringify({ stage: b.stage, pod: b.pod, fields: change.fields })]);
       } catch (e) {
-        const error = (e as Error).message.replace(/^DevRev \/works\.update HTTP \d+: /, "");
+        // DevRev answers with JSON ({"message","reason",…}) — show its reason, not the raw body.
+        const raw = (e as Error).message.replace(/^DevRev \/works\.update HTTP \d+: /, "");
+        let error = raw;
+        try { const j = JSON.parse(raw); error = j.reason || j.message || raw; } catch { /* plain text */ }
         results.push({ ticket: t, ok: false, error });
         await q(`INSERT INTO ticket_updates (ticket, changed_by, change, ok, error) VALUES ($1,$2,$3,false,$4)`, [t, by, JSON.stringify({ stage: b.stage, pod: b.pod }), error]).catch(() => {});
       }
