@@ -262,12 +262,13 @@ export async function podValues(sample: TicketSummary): Promise<string[]> {
   return [];
 }
 
-/** Moves a ticket to another stage and/or sets its Pod (null clears it). */
-export async function updateTicket(id: string, change: { stageId?: string; pod?: string | null }) {
+/** Moves a ticket to another stage, sets its Pod (null clears it) and/or other custom fields (keys with their tnt__/ctype__ prefix). */
+export async function updateTicket(id: string, change: { stageId?: string; pod?: string | null; fields?: Record<string, unknown> }) {
+  const custom = { ...(change.fields ?? {}), ...(change.pod !== undefined && { tnt__pod: change.pod }) };
   const r = await call<{ work: TicketSummary }>("/works.update", {
     id, type: "ticket",
     ...(change.stageId && { stage: { stage: change.stageId } }),
-    ...(change.pod !== undefined && { custom_fields: { tnt__pod: change.pod } }),
+    ...(Object.keys(custom).length && { custom_fields: custom }),
   });
   return r.work;
 }
@@ -280,4 +281,49 @@ export async function revUser(id: string) {
   const u = { name: r?.rev_user.full_name || r?.rev_user.display_name, email: r?.rev_user.email };
   revUsers.set(id, u);
   return u;
+}
+
+export interface DevUser { id: string; name: string; email?: string }
+let devUserCache: { at: number; list: DevUser[] } | null = null;
+/** Active DevRev users (for picking a CX Lead). ~hundreds, so loaded once and searched in the browser. Cached 1 h. */
+export async function devUsers(): Promise<DevUser[]> {
+  if (devUserCache && Date.now() - devUserCache.at < 60 * 60 * 1000) return devUserCache.list;
+  const list: DevUser[] = [];
+  let cursor: string | undefined;
+  for (let i = 0; i < 30; i++) {
+    const r = await call<{ dev_users: { id: string; display_name?: string; full_name?: string; email?: string }[]; next_cursor?: string }>(
+      `/dev-users.list?limit=100&state=active${cursor ? `&cursor=${cursor}` : ""}`);
+    list.push(...r.dev_users.map((u) => ({ id: u.id, name: u.full_name || u.display_name || u.email || u.id, email: u.email })));
+    cursor = r.next_cursor;
+    if (!cursor) break;
+  }
+  list.sort((a, b) => a.name.localeCompare(b.name));
+  devUserCache = { at: Date.now(), list };
+  return list;
+}
+
+export interface ResolveField { key: string; label: string; type: "user" | "enum" | "text"; options?: string[] }
+/** Fields the team fills when resolving a ticket (DevRev names, without prefix). Override with DEVREV_RESOLVE_FIELDS. */
+const RESOLVE_FIELDS = () => (process.env.DEVREV_RESOLVE_FIELDS || "assignee,friday_review,root_cause_and_resolution_details,resolution,resolved_by")
+  .split(",").map((x) => x.trim()).filter(Boolean);
+let resolveCache: { at: number; fields: ResolveField[] } | null = null;
+/** The resolve-time fields with their labels, types and choices, read from the ticket's schema fragments. Cached 1 h. */
+export async function resolveFields(sample: TicketSummary): Promise<ResolveField[]> {
+  if (resolveCache && Date.now() - resolveCache.at < 60 * 60 * 1000) return resolveCache.fields;
+  const want = RESOLVE_FIELDS();
+  const found = new Map<string, ResolveField>();
+  for (const frag of sample.custom_schema_fragments || []) {
+    const prefix = frag.includes(":tenant_fragment/") ? "tnt__" : frag.includes(":custom_type_fragment/") ? "ctype__" : null;
+    if (!prefix) continue;
+    const r = await call<{ fragment: { fields?: { name: string; field_type: string; id_type?: string[]; allowed_values?: string[]; ui?: { display_name?: string } }[] } }>(
+      `/schemas.custom.get?id=${encodeURIComponent(frag)}`);
+    for (const f of r.fragment.fields ?? []) {
+      if (!want.includes(f.name) || found.has(f.name)) continue;
+      const type = f.field_type === "id" && f.id_type?.includes("devu") ? "user" : f.field_type === "enum" ? "enum" : "text";
+      found.set(f.name, { key: prefix + f.name, label: f.ui?.display_name || f.name, type, ...(f.allowed_values && { options: f.allowed_values }) });
+    }
+  }
+  const fields = want.map((n) => found.get(n)).filter(Boolean) as ResolveField[];
+  resolveCache = { at: Date.now(), fields };
+  return fields;
 }

@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Select } from "./admin/ui";
 import { confirmDialog, notify } from "./Dialog";
+import { ResolveDialog } from "./ResolveDialog";
 
 export interface StageOption { id: string; name: string; final: boolean }
 interface Options { stage: { id: string | null; name: string | null }; pod: string | null; stages: StageOption[]; pods: string[] }
@@ -89,6 +90,7 @@ export function TicketControls({ ticket, onChanged }: { ticket: string; onChange
   const [reload, setReload] = useState(0);
   const opts = useTicketOptions(ticket, reload);
   const [busy, setBusy] = useState(false);
+  const [resolving, setResolving] = useState<string[] | null>(null);
   async function apply(change: { stage?: string; pod?: string | null }) {
     setBusy(true);
     const d = await updateTickets([ticket], change);
@@ -106,12 +108,13 @@ export function TicketControls({ ticket, onChanged }: { ticket: string; onChange
         items={[...opts.pods.filter((p) => p !== opts.pod).map((p) => ({ value: p, label: p })), ...(opts.pod ? [{ value: CLEAR_POD, label: "Clear Pod" }] : [])]}
         onPick={(v) => apply({ pod: v === CLEAR_POD ? null : v })} />
       {canResolve && (
-        <button onClick={() => apply({ stage: "resolved" })} disabled={busy}
+        <button onClick={() => setResolving([ticket])} disabled={busy}
           className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium text-ok ring-1 ring-ok/40 transition hover:bg-ok hover:text-white disabled:opacity-50">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M20 6 9 17l-5-5" /></svg>
           Resolve
         </button>
       )}
+      {resolving && <ResolveDialog tickets={resolving} onClose={() => setResolving(null)} onDone={() => { setReload((n) => n + 1); onChanged(); }} />}
     </div>
   );
 }
@@ -120,6 +123,7 @@ export function TicketControls({ ticket, onChanged }: { ticket: string; onChange
 export function BulkBar({ selected, onDone, onClear }: { selected: string[]; onDone: (resolved: string[]) => void; onClear: () => void }) {
   const opts = useTicketOptions(selected[0] ?? null);
   const [busy, setBusy] = useState(false);
+  const [resolving, setResolving] = useState<string[] | null>(null);
   async function apply(change: { stage?: string; pod?: string | null }) {
     setBusy(true);
     const d = await updateTickets(selected, change);
@@ -144,12 +148,13 @@ export function BulkBar({ selected, onDone, onClear }: { selected: string[]; onD
           options={[...(opts?.pods ?? []).map((p) => ({ value: p, label: p })), { value: CLEAR_POD, label: "Clear Pod" }]}
           onChange={(v) => apply({ pod: v === CLEAR_POD ? null : v })} />
       </div>
-      <button onClick={() => apply({ stage: "resolved" })} disabled={busy}
+      <button onClick={() => setResolving([...selected])} disabled={busy}
         className="flex items-center gap-1.5 rounded-md bg-ok px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M20 6 9 17l-5-5" /></svg>
         {busy ? "Updating…" : `Mark ${selected.length} resolved`}
       </button>
       <button onClick={onClear} disabled={busy} className="text-sm text-muted hover:text-fg">Clear</button>
+      {resolving && <ResolveDialog tickets={resolving} onClose={() => setResolving(null)} onDone={(done) => onDone(done)} />}
     </div>
   );
 }
