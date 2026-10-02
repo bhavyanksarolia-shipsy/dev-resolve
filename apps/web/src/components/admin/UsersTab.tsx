@@ -89,7 +89,17 @@ export function UsersTab() {
                       label={<span className="text-xs">{u.is_admin ? "Admin" : "Member"}</span>} />
                   </td>
                   <td className="px-4 py-3 text-xs">{u.disabled_at ? <span className="text-bad">Disabled</span> : locked ? <span className="text-warn">Locked (wrong passwords)</span> : <span className="text-ok">Active</span>}
-                    <div className="text-muted">{u.sessions} open session{u.sessions === 1 ? "" : "s"}</div></td>
+                    <div className="text-muted">{u.sessions} open session{u.sessions === 1 ? "" : "s"}
+                      {u.sessions > 0 && (
+                        <> · <button type="button" disabled={busy} className="text-accent-strong underline-offset-2 hover:underline disabled:opacity-50"
+                          title="Sign them out on every device and browser"
+                          onClick={async () => { const ok = await act({ action: "signout", name: u.name }, {
+                            title: me ? "Sign out everywhere?" : `End all of ${u.display_name || u.name}'s sessions?`,
+                            message: me ? `Ends all ${u.sessions} of your sessions, including this one — you'll need to sign in again.`
+                              : `They're signed out on every device (${u.sessions} session${u.sessions === 1 ? "" : "s"}). They can sign in again right away; to block them, use Disable.`,
+                            confirmLabel: "End sessions" }); if (ok && me) window.location.assign("/login"); }}>End all</button></>
+                      )}
+                    </div></td>
                   <td className="px-4 py-3 text-xs text-muted">{when(u.last_login_at)}</td>
                   <td className="px-4 py-3 text-xs text-muted">{u.connector_seen ? `seen ${when(u.connector_seen)}` : "not set up"}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{u.investigations}</td>
