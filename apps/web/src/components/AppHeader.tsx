@@ -17,7 +17,9 @@ export function AppHeader() {
   useEffect(() => {
     if (pathname === "/login" || pathname === "/privacy") return;
     let live = true;
-    fetch("/api/auth/me", { cache: "no-store" }).then(async (r) => {
+    // Check the session on every page change, when you come back to the tab, and every 20 s — a session ended
+    // elsewhere (expired, signed out by an admin, account disabled) lands on the login page right away.
+    const check = () => fetch("/api/auth/me", { cache: "no-store" }).then(async (r) => {
       if (!live) return;
       setDown(null);
       if (r.status === 401) router.replace(`/login?next=${encodeURIComponent(pathname + window.location.search)}`);
@@ -25,7 +27,12 @@ export function AppHeader() {
       // 5xx with a non-JSON body = the forwarding to the backend failed (wrong BACKEND_URL, backend down/redeploying).
       else if (r.status >= 500) setDown(`The backend isn't reachable (HTTP ${r.status}). If this lasts, check BACKEND_URL on Vercel and that the Railway service is running.`);
     }).catch(() => live && setDown("The backend isn't reachable — check your connection, BACKEND_URL on Vercel, and the Railway service."));
-    return () => { live = false; };
+    check();
+    const t = setInterval(check, 20000);
+    const onFocus = () => { if (document.visibilityState === "visible") check(); };
+    document.addEventListener("visibilitychange", onFocus);
+    window.addEventListener("focus", onFocus);
+    return () => { live = false; clearInterval(t); document.removeEventListener("visibilitychange", onFocus); window.removeEventListener("focus", onFocus); };
   }, [pathname, router]);
 
   const link = "rounded-md px-2.5 py-1 text-muted hover:bg-accent-soft hover:text-accent-strong";

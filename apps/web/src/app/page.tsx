@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { HealthBanner } from "@/components/HealthBanner";
 import { AccountPicker, type PickerAccount } from "@/components/AccountPicker";
 import { notify } from "@/components/Dialog";
+import { ColumnMenu, Pager } from "@/components/TableTools";
 
 type Account = PickerAccount;
 interface Ticket {
@@ -35,22 +36,20 @@ function Inbox() {
   const firstActive = accounts.find((a) => a.status === "active" && a.client_active !== false)?.slug ?? "";
   const params = useSearchParams();
   const account = params.get("account") || firstActive;
-  // Pagination: DevRev is cursor-based, so keep the stack of cursors that led to each page — in the URL (?pages=),
-  // so opening a ticket and pressing Back returns to the same page.
-  const pagesParam = params.get("pages");
-  const stack = useMemo<(string | undefined)[]>(() => {
-    try {
-      const c = pagesParam ? (JSON.parse(pagesParam) as unknown) : [];
-      return [undefined, ...(Array.isArray(c) ? c.filter((x): x is string => typeof x === "string") : [])];
-    } catch {
-      return [undefined];
-    }
-  }, [pagesParam]);
-  const setStack = (st: (string | undefined)[]) => {
-    const rest = st.slice(1) as string[];
-    router.replace(`/?account=${account}${rest.length ? `&pages=${encodeURIComponent(JSON.stringify(rest))}` : ""}`, { scroll: false });
+  // All of the account's open tickets are loaded once; page, sort and column filters live in the URL so opening a
+  // ticket and pressing Back returns to exactly the same view.
+  const page = Math.max(1, Number(params.get("page")) || 1);
+  const sort = params.get("sort") || ""; // "stage:asc" | "pod:desc" | "" (newest first)
+  const listParam = (k: string) => (params.get(k) ? params.get(k)!.split("|") : null);
+  const filters = { stage: listParam("fstage"), pod: listParam("fpod") };
+  const texts = { stage: params.get("qstage") || "", pod: params.get("qpod") || "" };
+  const setView = (patch: Record<string, string | null>, keepPage = false) => {
+    const sp = new URLSearchParams(params.toString());
+    sp.set("account", account);
+    for (const [k, v] of Object.entries(patch)) { if (v === null || v === "") sp.delete(k); else sp.set(k, v); }
+    if (!keepPage) sp.delete("page");
+    router.replace(`/?${sp.toString()}`, { scroll: false });
   };
-  const cursor = stack[stack.length - 1];
   const [tick, setTick] = useState(0); // bump to refetch the current page
   const [result, setResult] = useState<Result | null>(null);
   const [newIds, setNewIds] = useState<{ account: string; ids: Set<string> }>({ account, ids: new Set() });
@@ -64,12 +63,12 @@ function Inbox() {
     fetch("/api/accounts").then((r) => r.json()).then((d) => { setAccounts(d.accounts ?? []); setAccountsLoaded(true); });
   }, []);
 
-  const key = `${account}|${cursor ?? ""}`;
+  const key = account;
   useEffect(() => {
     if (!account) return; // wait until the account list tells us the default
     let live = true;
     const force = loadInactive === account ? "&force=1" : "";
-    fetch(`/api/tickets?account=${account}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}${force}`, { cache: "no-store" }).then(async (r) => {
+    fetch(`/api/tickets?account=${account}&all=1${force}`, { cache: "no-store" }).then(async (r) => {
       const d = await r.json();
       if (!live) return;
       if (!r.ok) return setResult({ key, tick, error: `${d.tag ?? "Error"} (${d.connection ?? "?"}): ${d.error}` });
@@ -85,13 +84,13 @@ function Inbox() {
       setResult({ key, tick, tickets, next_cursor: d.next_cursor, counts: d.counts ?? undefined, inactive: !!d.inactive });
     });
     return () => { live = false; };
-  }, [account, cursor, key, tick, loadInactive]);
+  }, [account, key, tick, loadInactive]);
 
   const fresh = result?.key === key ? result : null;
   // Anything in flight: first load, page change, manual refresh or the background status refresh.
   const fetching = !result || result.key !== key || result.tick !== tick;
   const tickets = fresh?.tickets ?? null;
-  const counts = fresh?.counts ?? (result?.key.startsWith(`${account}|`) ? result.counts : undefined);
+  const counts = fresh?.counts ?? (result?.key === account ? result.counts : undefined);
   const error = fresh?.error ?? null;
   const inactive = !!fresh?.inactive;
   const anyRunning = !inactive && !!tickets?.some((t) => t.investigation?.status === "running");
@@ -111,13 +110,50 @@ function Inbox() {
   }, [anyRunning]);
 
   const setAccount = (slug: string) => router.replace(`/?account=${slug}`);
-  const next = () => fresh?.next_cursor && setStack([...stack, fresh.next_cursor]);
-  const prev = () => stack.length > 1 && setStack(stack.slice(0, -1));
-  const refresh = () => {
-    refreshing.current = true;
-    if (stack.length > 1) setStack([undefined]);
-    setTick((n) => n + 1);
+  const refresh = () => { refreshing.current = true; setTick((n) => n + 1); };
+
+  // Sort / filter / page on the client (all tickets are loaded).
+  const valueOf = (t: Ticket, col: "stage" | "pod") => (col === "pod" ? t.pod || "" : t.stage || "");
+  const view = useMemo(() => {
+    let list = tickets ?? [];
+    for (const col of ["stage", "pod"] as const) {
+      const sel = filters[col], txt = texts[col].trim().toLowerCase();
+      if (sel) list = list.filter((t) => sel.includes(valueOf(t, col)));
+      if (txt) list = list.filter((t) => (valueOf(t, col) || "not set").toLowerCase().includes(txt));
+    }
+    const [col, dir] = sort.split(":") as ["stage" | "pod" | "", "asc" | "desc"];
+    if (col) {
+      list = [...list].sort((x, y) => {
+        const a = valueOf(x, col), b = valueOf(y, col);
+        if (!a !== !b) return a ? -1 : 1; // "not set" always last
+        return (dir === "desc" ? -1 : 1) * a.localeCompare(b) || +new Date(y.created_date) - +new Date(x.created_date);
+      });
+    }
+    return list;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tickets, sort, params]);
+  const PAGE = 25;
+  const pages = Math.max(1, Math.ceil(view.length / PAGE));
+  const pageNow = Math.min(page, pages);
+  const rows = view.slice((pageNow - 1) * PAGE, pageNow * PAGE);
+  const goto = (n: number) => { setView({ page: n > 1 ? String(n) : null }, true); };
+  const distinct = (col: "stage" | "pod") => {
+    const m = new Map<string, number>();
+    for (const t of tickets ?? []) m.set(valueOf(t, col), (m.get(valueOf(t, col)) ?? 0) + 1);
+    return [...m.entries()].sort((a, b) => (!a[0] ? 1 : !b[0] ? -1 : a[0].localeCompare(b[0]))).map(([value, count]) => ({ value, count }));
   };
+  const anyFilter = !!(filters.stage || filters.pod || texts.stage || texts.pod || sort);
+  const colMenu = (col: "stage" | "pod", label: string) => (
+    <ColumnMenu label={label} values={distinct(col)} selected={filters[col]} text={texts[col]}
+      sort={sort.startsWith(`${col}:`) ? (sort.split(":")[1] as "asc" | "desc") : null}
+      onSort={(d) => setView({ sort: d ? `${col}:${d}` : null })}
+      onSelected={(v) => setView({ [`f${col}`]: v ? v.join("|") : null })}
+      onText={(v) => setView({ [`q${col}`]: v || null })} />
+  );
+  const pager = (where: "top" | "bottom") => (
+    <Pager where={where} from={view.length ? (pageNow - 1) * PAGE + 1 : 0} to={Math.min(pageNow * PAGE, view.length)} total={view.length}
+      all={tickets?.length ?? 0} page={pageNow} pages={pages} onPage={goto} disabled={fetching && !tickets} />
+  );
 
   async function investigate(t: Ticket) {
     setStarting((s) => new Set(s).add(t.display_id));
@@ -193,7 +229,8 @@ function Inbox() {
         <div className="flex flex-wrap items-center gap-3 px-5 py-4">
           <div>
             <h2 className="font-semibold">Open Support tickets</h2>
-            <p className="text-xs text-muted">DevRev support stages · newest first · page {stack.length}</p>
+            <p className="text-xs text-muted">DevRev support stages · {sort ? `sorted by ${sort.split(":")[0]} ${sort.endsWith("desc") ? "Z→A" : "A→Z"}` : "newest first"}
+              {anyFilter && <> · <button className="text-accent-strong underline" onClick={() => setView({ sort: null, fstage: null, fpod: null, qstage: null, qpod: null })}>clear sort &amp; filters</button></>}</p>
           </div>
           {marked.size > 0 && <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent-strong">{marked.size} new since last refresh</span>}
           <div className="ml-auto flex gap-2 text-sm">
@@ -201,9 +238,8 @@ function Inbox() {
               className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-3 py-1.5 font-medium hover:border-accent hover:text-accent-strong disabled:opacity-70">
               <span className={`inline-block ${fetching ? "spin" : ""}`}>↻</span>{fetching ? "Refreshing…" : "Refresh"}
             </button>
-            <button onClick={prev} disabled={stack.length <= 1 || fetching} className="rounded-lg border border-line bg-panel px-3 py-1.5 hover:border-accent disabled:opacity-40">← Prev</button>
-            <button onClick={next} disabled={!fresh?.next_cursor || fetching} className="rounded-lg border border-line bg-panel px-3 py-1.5 hover:border-accent disabled:opacity-40">Next →</button>
           </div>
+          <div className="w-full sm:w-auto">{pager("top")}</div>
         </div>
         <div className={fetching ? "progress" : "h-0.5"} />
 
@@ -220,13 +256,13 @@ function Inbox() {
             <table className="w-full text-sm">
               <thead className="bg-head text-left text-xs font-semibold uppercase tracking-wide text-head-fg">
                 <tr>
-                  <th className="px-5 py-3">Ticket</th><th className="px-4 py-3">Title</th><th className="px-4 py-3">Pod</th><th className="px-4 py-3">Part</th>
-                  <th className="px-4 py-3">Stage</th><th className="px-4 py-3">Created</th><th className="px-5 py-3">Dev Resolve</th>
+                  <th className="px-5 py-3">Ticket</th><th className="px-4 py-3">Title</th><th className="px-4 py-3">{colMenu("pod", "Pod")}</th><th className="px-4 py-3">Part</th>
+                  <th className="px-4 py-3">{colMenu("stage", "Stage")}</th><th className="px-4 py-3">Created</th><th className="px-5 py-3">Dev Resolve</th>
                 </tr>
               </thead>
               <tbody className={`divide-y divide-line transition-opacity ${fetching && tickets ? "opacity-60" : ""}`}>
                 {!tickets && Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)}
-                {tickets?.map((t) => {
+                {tickets && rows.map((t) => {
                   const inv = t.investigation;
                   const busy = starting.has(t.display_id) || inv?.status === "running";
                   return (
@@ -267,10 +303,15 @@ function Inbox() {
                   );
                 })}
                 {tickets && !tickets.length && <tr><td colSpan={7} className="px-5 py-10 text-center text-muted">No open Support tickets for this account.</td></tr>}
+                {tickets && tickets.length > 0 && !view.length && (
+                  <tr><td colSpan={7} className="px-5 py-10 text-center text-muted">No tickets match these filters.{" "}
+                    <button className="text-accent-strong underline" onClick={() => setView({ sort: null, fstage: null, fpod: null, qstage: null, qpod: null })}>Clear filters</button></td></tr>
+                )}
               </tbody>
             </table>
           </div>
         )}
+        {!error && tickets && view.length > PAGE && <div className="border-t border-line px-5 py-3">{pager("bottom")}</div>}
       </section>
     </div>
   );

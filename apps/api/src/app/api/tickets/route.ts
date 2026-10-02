@@ -12,8 +12,21 @@ export async function GET(req: Request) {
     return Response.json({ inactive: true, tickets: [], next_cursor: null, counts: null });
   }
   try {
+    // all=1: every open ticket of the account (the inbox sorts / filters / pages them itself). Capped at 1000.
+    const all = sp.get("all") === "1";
+    const loadAll = async () => {
+      const works: Awaited<ReturnType<typeof listTickets>>["works"] = [];
+      let cursor: string | undefined;
+      for (let i = 0; i < 10; i++) {
+        const r = await listTickets(account.devrev.account_ids, { limit: 100, cursor });
+        works.push(...r.works);
+        cursor = r.next_cursor;
+        if (!cursor) break;
+      }
+      return { works, next_cursor: undefined as string | undefined };
+    };
     const [{ works, next_cursor }, counts] = await Promise.all([
-      listTickets(account.devrev.account_ids, { limit: 25, cursor: sp.get("cursor") || undefined }),
+      all ? loadAll() : listTickets(account.devrev.account_ids, { limit: 25, cursor: sp.get("cursor") || undefined }),
       ticketCounts(account.devrev.account_ids),
     ]);
     const ids = works.map((w) => w.display_id);

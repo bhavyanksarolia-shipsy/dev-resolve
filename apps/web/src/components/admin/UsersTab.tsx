@@ -5,7 +5,7 @@ import { confirmDialog } from "@/components/Dialog";
 
 interface U {
   name: string; email: string | null; display_name: string | null; is_admin: boolean; disabled_at: string | null; last_login_at: string | null;
-  created_at: string; locked_until: string | null; has_password: boolean; sessions: number; investigations: number; connector_seen: string | null;
+  created_at: string; locked_until: string | null; has_password: boolean; sessions: number; investigations: number; connector_seen: string | null; connector_online?: boolean; connector_kind?: string | null;
 }
 const when = (d: string | null) => (d ? new Date(d).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "—");
 
@@ -17,7 +17,11 @@ export function UsersTab() {
   const [nu, setNu] = useState(blank);
   const [pw, setPw] = useState<{ name: string; value: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const load = useCallback(() => fetch("/api/admin/users", { cache: "no-store" }).then((r) => r.json()).then(setData), []);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const load = useCallback(() => fetch("/api/admin/users", { cache: "no-store" }).then(async (r) => {
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && Array.isArray(d.users)) { setData(d); setLoadError(null); } else setLoadError(d.error || `HTTP ${r.status}`);
+  }).catch(() => setLoadError("Couldn't reach the backend")), []);
   useEffect(() => { load(); }, [load]);
   const [adding, setAdding] = useState(false);
   const [query, setQuery] = useState("");
@@ -33,7 +37,7 @@ export function UsersTab() {
     return !r.error;
   }
 
-  if (!data) return <div className="skeleton h-48 w-full rounded-xl" />;
+  if (!data) return loadError ? <Note ok={false}>{loadError === "Admins only" ? "Only admins can see this." : loadError}</Note> : <div className="skeleton h-48 w-full rounded-xl" />;
   const active = data.users.filter((u) => !u.disabled_at);
   const q = query.trim().toLowerCase();
   const shown = data.users.filter((u) =>
@@ -101,7 +105,9 @@ export function UsersTab() {
                       )}
                     </div></td>
                   <td className="px-4 py-3 text-xs text-muted">{when(u.last_login_at)}</td>
-                  <td className="px-4 py-3 text-xs text-muted">{u.connector_seen ? `seen ${when(u.connector_seen)}` : "not set up"}</td>
+                  <td className="px-4 py-3 text-xs">{u.connector_online
+                    ? <span className="inline-flex items-center gap-1.5 text-ok"><span className="h-2 w-2 rounded-full bg-ok" />running now{u.connector_kind === "terminal" ? " (terminal)" : ""}</span>
+                    : <span className="text-muted">{u.connector_seen ? `last seen ${when(u.connector_seen)}` : "not set up on this server"}</span>}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{u.investigations}</td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1.5">

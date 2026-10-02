@@ -7,6 +7,7 @@ let cfg = null;               // { server, app }
 let loopRunning = false;
 let vpn = {};
 let hello = null, helloAt = 0;
+let lastOk = 0, lastError = null; // last successful contact with Dev Resolve, and the last problem
 
 const store = {
   get: async (k) => (await chrome.storage.local.get(k))[k],
@@ -153,7 +154,7 @@ async function loop() {
           await doSignins(hello); // silently picks up existing Metabase sign-ins
         }
         const { jobs, signin } = await api("/api/connector/poll", { headers: { "x-connector-vpn": JSON.stringify(vpn) }, timeout: 35000 });
-        backoff = 2000;
+        backoff = 2000; lastOk = Date.now(); lastError = null;
         if (signin?.length) api("/api/connector/hello").then((h) => { hello = h; return doSignins(h, signin); }).catch(() => {});
         for (const job of jobs) {
           doRequest(job.req)
@@ -161,6 +162,7 @@ async function loop() {
             .catch((e) => api("/api/connector/result", { method: "POST", body: { id: job.id, ok: false, error: e.message } }).catch(() => {}));
         }
       } catch (e) {
+        lastError = e.code === "NO_TOKEN" ? "not linked" : e.message;
         if (e.code === "NO_TOKEN") { chrome.action.setBadgeText({ text: "!" }); chrome.action.setBadgeBackgroundColor({ color: "#b45309" }); return; }
         await sleep(backoff); backoff = Math.min(backoff * 2, 30000);
       }
@@ -192,7 +194,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       return { ok: true };
     }
     if (msg.type === "status") {
-      return { version: VERSION, linked: !!(await store.get("token")), user: await store.get("user"), vpn, server: (await config()).server, app: (await config()).app };
+      const c = await config();
+      const s = hello?.signins;
+      return {
+        version: VERSION, linked: !!(await store.get("token")), user: await store.get("user"), vpn, server: c.server, app: c.app,
+        connected: Date.now() - lastOk < 60000, lastOk, lastError,
+        signins: s ? [...s.metabase.map((m) => ({ label: `Metabase · ${m.project}`, ok: m.signedIn })), ...(s.appLog ? [{ label: "App logs", ok: s.appLog.signedIn }] : [])] : [],
+      };
+    }
+    if (msg.type === "recheck") {
+      hello = await api("/api/connector/hello").catch(() => hello); helloAt = Date.now();
+      if (hello) await checkVpn(hello.vpnHosts);
+      loop();
+      return { ok: true };
     }
     if (msg.type === "signin" && Array.isArray(msg.what)) { const h = await api("/api/connector/hello"); hello = h; await doSignins(h, msg.what); return { ok: true }; }
     return { error: "unknown message" };

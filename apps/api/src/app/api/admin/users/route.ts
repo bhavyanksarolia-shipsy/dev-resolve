@@ -2,7 +2,7 @@ import { requireAdmin } from "@/lib/adminGuard";
 import { q } from "@/lib/db";
 import { hashPassword, passwordProblem } from "@/lib/passwords";
 import { rmSync } from "node:fs";
-import { userAuthDir } from "@/lib/connector";
+import { connectorStatus, userAuthDir } from "@/lib/connector";
 
 /** User access control: list everyone; add / promote / demote / disable / enable / sign out / set a password. */
 export async function GET(req: Request) {
@@ -15,7 +15,10 @@ export async function GET(req: Request) {
             (SELECT count(*)::int FROM investigations i WHERE i.started_by = u.name) AS investigations,
             (SELECT max(t.last_seen_at) FROM connector_tokens t WHERE t.user_id = u.id AND t.revoked_at IS NULL) AS connector_seen
        FROM app_users u ORDER BY u.disabled_at NULLS FIRST, u.is_admin DESC, u.name`);
-  return Response.json({ users, me: g.user.name });
+  return Response.json({
+    users: users.map((u) => { const c = connectorStatus(String(u.name)); return { ...u, connector_online: c.online, connector_kind: c.version?.startsWith("ext-") ? "extension" : c.version ? "terminal" : null }; }),
+    me: g.user.name,
+  });
 }
 
 export async function POST(req: Request) {

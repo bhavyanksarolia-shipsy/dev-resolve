@@ -18,10 +18,10 @@ export function FilesTab() {
   const [store, setStore] = useState("");
   // The site's own address (browser only — empty while rendering on the server, so the HTML matches).
   const origin = useSyncExternalStore(() => () => {}, () => window.location.origin, () => "");
-  const load = () => fetch("/api/admin/private-files", { cache: "no-store" }).then((r) => r.json()).then(setInfo);
+  const load = () => fetch("/api/admin/private-files", { cache: "no-store" }).then(async (r) => { if (r.ok) setInfo(await r.json()); }).catch(() => {});
   useEffect(() => {
     load();
-    fetch("/api/admin/settings").then((r) => r.json()).then((d) => { setSettings(d); setStore(d.EXTENSION_STORE_URL?.value ?? ""); });
+    fetch("/api/admin/settings").then(async (r) => { if (!r.ok) return; const d = await r.json(); setSettings(d); setStore(d.EXTENSION_STORE_URL?.value ?? ""); }).catch(() => {});
   }, []);
 
   async function upload(kind: string, file?: File) {

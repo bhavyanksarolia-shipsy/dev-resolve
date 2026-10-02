@@ -95,3 +95,25 @@ button:disabled { cursor: not-allowed; }
 .md tbody tr:nth-child(even) td { background: #fafcfb; }
 .md.compact { font-size: 0.82rem; }
 .md.compact h2 { font-size: 0.9rem; margin-top: 1em; }
+
+/* ── 404 page animations ── */
+@keyframes nf-sweep {
+  0%   { transform: translate(-115%, -95%) rotate(-8deg); }
+  25%  { transform: translate(-5%, -70%) rotate(6deg); }
+  50%  { transform: translate(-25%, -10%) rotate(-4deg); }
+  75%  { transform: translate(-105%, -25%) rotate(8deg); }
+  100% { transform: translate(-115%, -95%) rotate(-8deg); }
+}
+@keyframes nf-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+@keyframes nf-scan { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+@keyframes nf-glow { 0%, 100% { transform: scale(.92); opacity: .6; } 50% { transform: scale(1.06); opacity: 1; } }
+@keyframes nf-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.nf .nf-lens { animation: nf-sweep 6s ease-in-out infinite; }
+.nf .nf-num { animation: nf-float 4s ease-in-out infinite; }
+.nf .nf-line { animation: nf-scan 1.8s ease-in-out infinite; }
+.nf .nf-glow { animation: nf-glow 5s ease-in-out infinite; }
+.nf > div { animation: nf-in .5s ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .nf .nf-lens, .nf .nf-num, .nf .nf-line, .nf .nf-glow, .nf > div { animation: none; }
+  .nf .nf-lens { transform: translate(-30%, -40%); }
+}
