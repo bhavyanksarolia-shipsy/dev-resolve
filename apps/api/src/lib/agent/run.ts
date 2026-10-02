@@ -221,6 +221,24 @@ async function runAgent(id: number, ticket: Awaited<ReturnType<typeof getTicket>
  * investigation's own agent session, so it keeps every log search / query / code read from the first run.
  * If the findings change, the agent calls submit_rca again → a new draft version.
  */
+/** How chat answers read: one finished explanation, like a senior engineer briefing a colleague — not a log dump. */
+const CHAT_REPLY_STYLE = `How to write your reply (the reviewer sees ONLY your last message, so it must stand on its own):
+- Do all the checks first, then write ONE complete answer at the end. No "let me check…" text in the answer.
+- Start with the answer in 1–2 plain sentences (bold the key fact). What happened, and why.
+- Then explain it simply. Any timeline or sequence of events MUST be a markdown table (the "no tables" rule is only for
+  the RCA posted to DevRev — chat replies are shown in Dev Resolve, where tables render well):
+  | When (IST) | What happened | Result |
+  One row per meaningful step, dates in the When cell ("1 Oct 19:47"); merge repeats into one row
+  ("1 Oct 20:03 – 2 Oct 12:06 | 20 close attempts by 5 users | all failed, same error"). Other comparisons
+  (before/after, expected vs actual, per-store status) are tables too.
+- Use everyday words. Name a thing once with its id in \`code\`, then refer to it in words ("the LPN", "the trip").
+  Leave out request ids, user ids and other raw identifiers unless the reviewer asked for them or one is the proof of
+  the point. Never write lists of request ids like "fail [54ca5482, 0130fb7a, …]" — say "4 attempts, all failed" instead.
+  If an id really matters, give one example in a final "Evidence" line.
+- Say plainly what's confirmed vs not, in a final "Still open" line (only if something is).
+- If the RCA changed, say in one line what changed. Otherwise don't mention the RCA.
+- Keep it short: about 150–250 words unless they asked for the full detail. No preamble, no sign-off, no repeating their question.`;
+
 export async function sendChatMessage(id: number, text: string, by = "unknown", files: { id: number; name: string; type: string; size: number; body: Buffer }[] = []) {
   const [inv] = await q<{
     ticket_id: string; ticket_display: string; account_slug: string; candidate_slugs: string[] | null;
@@ -240,8 +258,9 @@ export async function sendChatMessage(id: number, text: string, by = "unknown", 
   const followUp =
     `Follow-up from reviewer "${by}" on ${inv.ticket_display}:\n\n${text || "(no message — see the attached files)"}\n\n` +
     (files.length ? `They attached ${files.length} file(s): ${files.map((f) => f.name).join(", ")} — included below; read them.\n\n` : "") +
-    `Answer them directly and concisely. Run any log / DB / code checks needed to verify — don't answer from memory when the data can be checked. ` +
-    `If the findings change the RCA (including Current status), call submit_rca again with the FULL revised RCA; otherwise just reply.`;
+    `Run any log / DB / code checks needed to verify — don't answer from memory when the data can be checked. ` +
+    `If the findings change the RCA (including Current status), call submit_rca again with the FULL revised RCA.\n\n` +
+    CHAT_REPLY_STYLE;
   let message: SDKUserMessage;
   if (inv.session_id) {
     message = userMessage([{ type: "text", text: followUp }, ...fileBlocks]);

@@ -14,6 +14,11 @@ const kb = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB
 const isImage = (t: string) => /^image\/(png|jpeg|gif|webp)$/.test(t);
 const time = (d: string) => new Date(d).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 
+/** Drops inline lists of request ids ("fail [54ca5482, 0130fb7a]", "[e.g. `9b2150fc`]") from chat replies — noise in a chat. */
+const ID = "`?[0-9a-f]{8}(?:[-…][0-9a-f]*)?`?";
+const ID_LIST = new RegExp(`\\s?\\[(?:e\\.g\\.\\s*)?${ID}(?:\\s*(?:,|and)\\s*${ID})*\\s*\\]`, "gi");
+const tidy = (text: string | null | undefined) => hidePaths(text).replace(ID_LIST, "");
+
 /** The RCA's "## Summary" section, used as the agent's opening message in the chat. */
 function summaryOf(rca: string | null) {
   if (!rca) return null;
@@ -214,7 +219,7 @@ function Message({ s, onOpenRca, animate, onTick }: { s: Step; onOpenRca?: () =>
   return (
     <div className={animate ? "chat-pop" : ""}>
       <Bot error={s.kind === "system"}>
-        {animate && s.kind === "text" ? <Typewriter text={hidePaths(s.output)} onTick={onTick} /> : <Markdown compact>{hidePaths(s.output)}</Markdown>}
+        {animate && s.kind === "text" ? <Typewriter text={tidy(s.output)} onTick={onTick} /> : <Markdown compact>{tidy(s.output)}</Markdown>}
       </Bot>
     </div>
   );
