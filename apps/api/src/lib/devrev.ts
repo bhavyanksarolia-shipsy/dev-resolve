@@ -160,6 +160,20 @@ export async function locateArtifact(id: string) {
   return (await call<{ url: string }>("/artifacts.locate", { id })).url;
 }
 
+/**
+ * DevRev's own automation notices posted as comments ("Stage has been changed for …", owner / SLA / priority
+ * updates). They come from service accounts; customer emails also arrive through a service account (the email
+ * integration), so only short status-style messages or automation-named authors are dropped.
+ */
+function isDevrevNotice(e: TimelineEntry) {
+  if (e.created_by?.type !== "service_account") return false;
+  const who = e.created_by.display_name || "";
+  if (/email/i.test(who)) return false;
+  const body = (e.body || "").trim();
+  return /update|notification|workflow|automation|:\s*$/i.test(who) ||
+    (body.length < 500 && /\b(has been|was) (changed|updated|assigned|moved|set)\b|\bchanged (from|to)\b|\bSLA\b|\b(stage|owner|severity|priority|part|pod)\b.*\b(changed|updated)\b/i.test(body));
+}
+
 /** All comments on an object. Timeline pages also carry SLA/stage events, so follow cursors instead of trusting one page. */
 export async function listTimeline(objectId: string, maxPages = 20) {
   const comments: TimelineEntry[] = [];
@@ -170,7 +184,7 @@ export async function listTimeline(objectId: string, maxPages = 20) {
       limit: 100,
       ...(cursor && { cursor }),
     });
-    comments.push(...(r.timeline_entries || []).filter((e) => e.type === "timeline_comment"));
+    comments.push(...(r.timeline_entries || []).filter((e) => e.type === "timeline_comment" && !isDevrevNotice(e)));
     cursor = r.next_cursor;
     if (!cursor) break;
   }
