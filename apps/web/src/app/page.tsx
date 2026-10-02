@@ -127,12 +127,15 @@ function Inbox() {
       if (sel) list = list.filter((t) => sel.includes(valueOf(t, col)));
       if (txt) list = list.filter((t) => (valueOf(t, col) ? labelOf(col, valueOf(t, col)) : "not set").toLowerCase().includes(txt));
     }
-    const [col, dir] = sort.split(":") as ["stage" | "pod" | "", "asc" | "desc"];
-    if (col) {
+    const [col, dir] = sort.split(":") as ["stage" | "pod" | "created" | "", "asc" | "desc"];
+    const byCreated = (x: Ticket, y: Ticket) => +new Date(y.created_date) - +new Date(x.created_date); // newest first
+    if (!col || col === "created") {
+      list = [...list].sort((x, y) => (col === "created" && dir === "asc" ? -1 : 1) * byCreated(x, y));
+    } else {
       list = [...list].sort((x, y) => {
         const a = valueOf(x, col), b = valueOf(y, col);
         if (!a !== !b) return a ? -1 : 1; // "not set" always last
-        return (dir === "desc" ? -1 : 1) * a.localeCompare(b) || +new Date(y.created_date) - +new Date(x.created_date);
+        return (dir === "desc" ? -1 : 1) * a.localeCompare(b) || byCreated(x, y);
       });
     }
     return list;
@@ -244,7 +247,7 @@ function Inbox() {
         <div className="flex flex-wrap items-center gap-3 px-5 py-4">
           <div>
             <h2 className="font-semibold">Open Support tickets</h2>
-            <p className="text-xs text-muted">DevRev support stages · {sort ? `sorted by ${sort.split(":")[0]} ${sort.endsWith("desc") ? "Z→A" : "A→Z"}` : "newest first"}
+            <p className="text-xs text-muted">DevRev support stages · {sort === "created:asc" ? "oldest first" : sort && !sort.startsWith("created") ? `sorted by ${sort.split(":")[0]} ${sort.endsWith("desc") ? "Z→A" : "A→Z"}` : "newest first"}
               {anyFilter && <> · <button className="text-accent-strong underline" onClick={() => setView({ sort: null, fstage: null, fpod: null, qstage: null, qpod: null })}>clear sort &amp; filters</button></>}</p>
           </div>
           {marked.size > 0 && <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent-strong">{marked.size} new since last refresh</span>}
@@ -276,7 +279,13 @@ function Inbox() {
                       onChange={(e) => setPicked((p) => { const n = new Set(p); for (const t of rows) { if (e.target.checked) n.add(t.display_id); else n.delete(t.display_id); } return n; })} />
                   </th>
                   <th className="px-5 py-3">Ticket</th><th className="px-4 py-3">Title</th><th className="px-4 py-3">{colMenu("pod", "Pod")}</th><th className="px-4 py-3">Part</th>
-                  <th className="px-4 py-3">{colMenu("stage", "Stage")}</th><th className="px-4 py-3">Created</th><th className="px-5 py-3">Dev Resolve</th>
+                  <th className="px-4 py-3">{colMenu("stage", "Stage")}</th><th className="px-4 py-3">
+                    <button type="button" onClick={() => setView({ sort: sort === "created:asc" ? null : "created:asc" })}
+                      title={sort === "created:asc" ? "Oldest first — click for newest first" : "Newest first — click for oldest first"}
+                      className="inline-flex items-center gap-1 uppercase hover:text-accent-strong">
+                      Created <span aria-hidden>{sort === "created:asc" ? "↑" : sort && !sort.startsWith("created") ? "↕" : "↓"}</span>
+                    </button>
+                  </th><th className="px-5 py-3">Dev Resolve</th>
                 </tr>
               </thead>
               <tbody className={`divide-y divide-line transition-opacity ${fetching && tickets ? "opacity-60" : ""}`}>
