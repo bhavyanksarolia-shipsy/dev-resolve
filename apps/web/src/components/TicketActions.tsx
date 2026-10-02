@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Select } from "./admin/ui";
 import { confirmDialog, notify } from "./Dialog";
 
 export interface StageOption { id: string; name: string; final: boolean }
@@ -145,73 +144,84 @@ export function BulkBar({ selected, onDone, onClear }: { selected: string[]; onD
   );
 }
 
-/** Inbox row action: change Stage, Pod and Part of one ticket together. */
-export function EditTicketDialog({ ticket, onClose, onSaved }: { ticket: string; onClose: () => void; onSaved: () => void }) {
-  const opts = useTicketOptions(ticket);
-  const [stage, setStage] = useState("");
-  const [pod, setPod] = useState<string | null>(null);
-  const [part, setPart] = useState("");
+/**
+ * Inbox cell you can click to change the value (Stage, Pod or Part) — picks save straight to DevRev.
+ * The menu is fixed-positioned so the table's scroll box doesn't clip it; options load when it opens.
+ */
+export function InlineEdit({ ticket, kind, current, children, onSaved }: {
+  ticket: string; kind: "stage" | "pod" | "part"; current?: string | null; children: React.ReactNode; onSaved: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
+  const btn = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const opts = useTicketOptions(open ? ticket : null);
   useEffect(() => {
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy) onClose(); };
-    document.addEventListener("keydown", esc);
-    return () => document.removeEventListener("keydown", esc);
-  }, [busy, onClose]);
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!panel.current?.contains(e.target as Node) && !btn.current?.contains(e.target as Node)) setOpen(false); };
+    const close = () => setOpen(false);
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", away); document.addEventListener("keydown", esc);
+    window.addEventListener("scroll", close, true); window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc);
+      window.removeEventListener("scroll", close, true); window.removeEventListener("resize", close);
+    };
+  }, [open]);
 
-  const podNow = pod ?? opts?.pod ?? "";
-  const partNow = part || opts?.part?.id || "";
-  const change = opts && {
-    ...(stage && stage !== opts.stage.name && { stage }),
-    ...(podNow !== (opts.pod ?? "") && { pod: podNow === CLEAR_POD || !podNow ? null : podNow }),
-    ...(partNow && partNow !== opts.part?.id && { part: partNow }),
-  };
-  const changed = !!change && Object.keys(change).length > 0;
-
-  async function save() {
-    if (!change || !changed) return;
+  function toggle() {
+    if (open) return setOpen(false);
+    const r = btn.current!.getBoundingClientRect();
+    setPos({ left: Math.min(r.left, window.innerWidth - 272), top: r.bottom + 6 });
+    setQ(""); setOpen(true);
+  }
+  async function pick(change: { stage?: string; pod?: string | null; part?: string }) {
     setBusy(true);
     const r = await fetch("/api/tickets/update", { method: "POST", body: JSON.stringify({ tickets: [ticket], ...change }) });
     const d = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
-    setBusy(false);
+    setBusy(false); setOpen(false);
     if (d.error || d.failed?.length) return notify({ title: `${ticket} not updated`, message: d.error || d.failed[0].error, tone: "error" });
-    notify({ message: `${ticket} updated in DevRev`, tone: "ok" });
+    notify({ message: `${ticket}: ${kind} updated`, tone: "ok" });
     onSaved();
   }
 
-  const partOptions = (opts?.parts ?? []).map((p) => ({ value: p.id, label: p.name }));
-  if (opts?.part && !partOptions.some((p) => p.value === opts.part!.id)) partOptions.unshift({ value: opts.part.id, label: `${opts.part.name} (current, not under WMS)` });
+  const items: { key: string; label: string; hint?: string; on: () => void }[] = !opts ? [] :
+    kind === "stage" ? opts.stages.map((s) => ({ key: s.name, label: stageLabel(s.name), hint: s.final ? "Closes the ticket" : undefined, on: () => pick({ stage: s.name }) }))
+    : kind === "pod" ? [...opts.pods.filter((p) => p !== opts.pod).map((p) => ({ key: p, label: p, on: () => pick({ pod: p }) })),
+        ...(opts.pod ? [{ key: CLEAR_POD, label: "Clear Pod", on: () => pick({ pod: null }) }] : [])]
+    : opts.parts.filter((p) => p.id !== opts.part?.id).map((p) => ({ key: p.id, label: p.name, on: () => pick({ part: p.id }) }));
+  const needle = q.trim().toLowerCase();
+  const shown = needle ? items.filter((i) => i.label.toLowerCase().includes(needle)) : items;
+
   return (
-    <div className="fixed inset-0 z-[60] grid place-items-center bg-black/30 p-4 backdrop-blur-sm" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
-      <div role="dialog" aria-modal="true" aria-label={`Edit ${ticket}`} className="w-full max-w-md rounded-2xl bg-panel shadow-2xl">
-        <div className="flex items-center gap-3 border-b border-line px-5 py-4">
-          <h2 className="font-semibold">Edit <span className="font-mono text-accent-strong">{ticket}</span></h2>
-          <button onClick={onClose} disabled={busy} aria-label="Close" className="ml-auto rounded-md px-2 text-lg text-muted hover:text-fg">✕</button>
-        </div>
-        <div className="space-y-4 px-5 py-5 text-sm">
-          {!opts ? [0, 1, 2].map((i) => <div key={i} className="skeleton h-10 w-full rounded-lg" />) : (
-            <>
-              <label className="block"><span className="mb-1 block font-medium">Stage</span>
-                <Select value={stage || opts.stage.name || ""} onChange={setStage}
-                  options={[{ value: opts.stage.name || "", label: `${stageLabel(opts.stage.name)} (current)` },
-                    ...opts.stages.map((s) => ({ value: s.name, label: stageLabel(s.name), hint: s.final ? "Closes the ticket" : undefined }))]} />
-              </label>
-              <label className="block"><span className="mb-1 block font-medium">Pod</span>
-                <Select value={podNow} onChange={setPod} placeholder="Not set"
-                  options={[...opts.pods.map((p) => ({ value: p, label: p })), ...(opts.pod ? [{ value: CLEAR_POD, label: "Clear Pod" }] : [])]} />
-              </label>
-              <label className="block"><span className="mb-1 block font-medium">Part</span>
-                <Select value={partNow} onChange={setPart} placeholder="Choose a part" options={partOptions} />
-              </label>
-            </>
+    <>
+      <button ref={btn} type="button" onClick={toggle} disabled={busy} title={`Change ${kind}`}
+        className={`group inline-flex items-center gap-1 whitespace-nowrap rounded-md px-1 py-0.5 text-left -mx-1 hover:bg-accent-soft/70 ${open ? "bg-accent-soft/70" : ""} disabled:opacity-60`}>
+        <span>{children}</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`shrink-0 text-muted transition-opacity ${open ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`} aria-hidden><path d="m6 9 6 6 6-6" /></svg>
+      </button>
+      {open && pos && (
+        <div ref={panel} style={{ left: pos.left, top: pos.top }} className="fixed z-50 w-64 overflow-hidden rounded-xl border border-line bg-panel text-sm shadow-xl">
+          <div className="whitespace-normal break-words border-b border-line px-3 py-2 text-xs text-muted">
+            {kind === "stage" ? "Move" : kind === "pod" ? "Set Pod for" : "Move part of"} <b className="font-mono text-fg">{ticket}</b>{current ? <> · now <b className="text-fg">{kind === "stage" ? stageLabel(current) : current}</b></> : null}
+          </div>
+          {items.length > 8 && (
+            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…"
+              className="block w-full border-b border-line bg-bg px-3 py-2 text-sm outline-none" />
           )}
+          <ul className="max-h-64 overflow-auto py-1">
+            {!opts && [0, 1, 2, 3].map((i) => <li key={i} className="px-3 py-1.5"><div className="skeleton h-4 w-full" /></li>)}
+            {opts && !shown.length && <li className="px-3 py-2 text-muted">{needle ? "No match" : "Nothing to change to"}</li>}
+            {shown.map((it) => (
+              <li key={it.key} onClick={busy ? undefined : it.on} className={`cursor-pointer px-3 py-1.5 hover:bg-accent-soft ${busy ? "opacity-50" : ""}`}>
+                {it.label}{it.hint && <span className="block text-xs text-muted">{it.hint}</span>}
+              </li>
+            ))}
+          </ul>
         </div>
-        <div className="flex justify-end gap-2 border-t border-line bg-bg/50 px-5 py-3">
-          <button onClick={onClose} disabled={busy} className="rounded-lg border border-line px-4 py-2 text-sm font-medium hover:border-accent">Cancel</button>
-          <button onClick={save} disabled={!changed || busy} className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-strong disabled:opacity-50">
-            {busy ? "Saving…" : "Save"}
-          </button>
-        </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 }

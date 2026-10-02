@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { BulkBar, EditTicketDialog } from "@/components/TicketActions";
+import { BulkBar, InlineEdit } from "@/components/TicketActions";
 import { useRouter, useSearchParams } from "next/navigation";
 import { HealthBanner } from "@/components/HealthBanner";
 import { AccountPicker, type PickerAccount } from "@/components/AccountPicker";
@@ -67,8 +67,7 @@ function Inbox() {
   const seen = useRef<{ account: string; ids: Set<string> }>({ account, ids: new Set() });
   const refreshing = useRef(false);
   const [starting, setStarting] = useState<Set<string>>(new Set());
-  const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [editing, setEditing] = useState<string | null>(null); // ticket whose Stage / Pod / Part is being edited // tickets ticked for a bulk Stage / Pod / resolve
+  const [picked, setPicked] = useState<Set<string>>(new Set()); // tickets ticked for a bulk resolve
   const [manual, setManual] = useState("");
   const [loadInactive, setLoadInactive] = useState<string | null>(null); // slug the user chose to load anyway
 
@@ -310,24 +309,28 @@ function Inbox() {
                       </td>
                       <td className="min-w-56 max-w-sm px-4 py-3"><span className="line-clamp-2" title={t.title}>{t.title}</span></td>
                       <td className="whitespace-nowrap px-4 py-3">
-                        {t.pod
-                          ? <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs font-semibold text-accent-strong">{t.pod}</span>
-                          : <span className="text-xs text-muted" title="Pod isn't set on this ticket in DevRev yet">not set</span>}
+                        <InlineEdit ticket={t.display_id} kind="pod" current={t.pod} onSaved={refresh}>
+                          {t.pod
+                            ? <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs font-semibold text-accent-strong">{t.pod}</span>
+                            : <span className="text-xs text-muted">not set</span>}
+                        </InlineEdit>
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-muted">
-                        {t.default_part
-                          ? <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-warn ring-1 ring-amber-200" title="Default part — not triaged to WMS yet, so not in DevRev's WMS view">TMS (default)</span>
-                          : t.part}
+                        <InlineEdit ticket={t.display_id} kind="part" current={t.default_part ? "TMS (default)" : t.part} onSaved={refresh}>
+                          {t.default_part
+                            ? <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-warn ring-1 ring-amber-200">TMS (default)</span>
+                            : t.part}
+                        </InlineEdit>
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3"><span className="rounded-full bg-bg px-2 py-0.5 text-xs text-muted ring-1 ring-line">{stageLabel(t.stage || "")}</span></td>
+                      <td className="whitespace-nowrap px-4 py-3">
+                        <InlineEdit ticket={t.display_id} kind="stage" current={(t as { stage_name?: string }).stage_name ?? t.stage} onSaved={refresh}>
+                          <span className="rounded-full bg-bg px-2 py-0.5 text-xs text-muted ring-1 ring-line">{stageLabel(t.stage || "")}</span>
+                        </InlineEdit>
+                      </td>
                       <td className="max-w-40 truncate whitespace-nowrap px-4 py-3 text-sm" title={t.owner || "Nobody is assigned in DevRev"}>{t.owner || <span className="text-xs text-muted">unassigned</span>}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-muted" title={new Date(t.created_date).toLocaleString("en-IN", { dateStyle: "full", timeStyle: "short" })}>{shortDate(t.created_date)}</td>
                       <td className="whitespace-nowrap px-5 py-3">
                         <div className="flex items-center gap-2">
-                          <button onClick={() => setEditing(t.display_id)} title="Edit stage, Pod and part" aria-label={`Edit ${t.display_id}`}
-                            className="grid h-7 w-7 place-items-center rounded-lg text-muted ring-1 ring-line hover:text-accent-strong hover:ring-accent">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
-                          </button>
                           {inv && (
                             <Link href={`/tickets/${t.display_id}`} className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 hover:underline ${STATUS_STYLE[inv.status] ?? "text-muted ring-line"}`}>
                               {STATUS_LABEL[inv.status] ?? inv.status}{inv.confidence ? ` · ${inv.confidence}` : ""}
@@ -363,7 +366,6 @@ function Inbox() {
           <button className="font-medium text-accent-strong underline" onClick={() => setPicked(new Set(view.map((t) => t.display_id)))}>select all {view.length} matching</button>
         </p>
       )}
-      {editing && <EditTicketDialog ticket={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); refresh(); }} />}
       {picked.size > 0 && (
         <BulkBar selected={[...picked]} onClear={() => setPicked(new Set())}
           onDone={() => { setPicked(new Set()); refresh(); }} />
