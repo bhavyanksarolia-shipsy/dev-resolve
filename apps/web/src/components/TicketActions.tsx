@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Select } from "./admin/ui";
 import { confirmDialog, notify } from "./Dialog";
 
 export interface StageOption { id: string; name: string; final: boolean }
@@ -117,40 +116,27 @@ export function TicketControls({ ticket, onChanged }: { ticket: string; onChange
   );
 }
 
-/** Inbox: actions for the selected tickets (sticky at the bottom of the screen). */
+/** Inbox: resolve the ticked tickets in one click (sticky at the bottom of the screen). */
 export function BulkBar({ selected, onDone, onClear }: { selected: string[]; onDone: (resolved: string[]) => void; onClear: () => void }) {
-  const opts = useTicketOptions(selected[0] ?? null);
   const [busy, setBusy] = useState(false);
-  async function apply(change: { stage?: string; pod?: string | null }) {
+  async function resolve() {
     setBusy(true);
-    const d = await updateTickets(selected, change);
+    const d = await updateTickets(selected, { stage: "resolved" });
     setBusy(false);
     if (d?.updated) {
       const failed = new Set(d.failed.map((f) => f.ticket));
       onDone(selected.filter((t) => !failed.has(t)));
     }
   }
-  // Moves offered for the first selected ticket; DevRev checks each ticket's own allowed moves and the result says which failed.
-  const stages = (opts?.stages ?? []).filter((s) => s.name !== "resolved");
   return (
-    <div className="sticky bottom-4 z-30 mx-auto mt-4 flex w-fit max-w-full flex-wrap items-center gap-3 rounded-2xl border border-line bg-panel px-4 py-3 shadow-xl">
+    <div className="sticky bottom-4 z-30 mx-auto mt-4 flex w-fit items-center gap-4 rounded-full border border-line bg-panel py-2 pl-5 pr-2 shadow-xl">
       <span className="text-sm font-semibold"><span className="tabular-nums">{selected.length}</span> selected</span>
-      <div className="w-52">
-        <Select up value="" disabled={busy || !opts} placeholder="Change stage…"
-          options={stages.map((s) => ({ value: s.name, label: stageLabel(s.name), hint: s.final ? "Closes the tickets" : undefined }))}
-          onChange={(v) => apply({ stage: v })} />
-      </div>
-      <div className="w-44">
-        <Select up value="" disabled={busy || !opts} placeholder="Set Pod…"
-          options={[...(opts?.pods ?? []).map((p) => ({ value: p, label: p })), { value: CLEAR_POD, label: "Clear Pod" }]}
-          onChange={(v) => apply({ pod: v === CLEAR_POD ? null : v })} />
-      </div>
-      <button onClick={() => apply({ stage: "resolved" })} disabled={busy}
-        className="flex items-center gap-1.5 rounded-md bg-ok px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M20 6 9 17l-5-5" /></svg>
-        {busy ? "Updating…" : `Mark ${selected.length} resolved`}
-      </button>
       <button onClick={onClear} disabled={busy} className="text-sm text-muted hover:text-fg">Clear</button>
+      <button onClick={resolve} disabled={busy}
+        className="flex items-center gap-1.5 rounded-full bg-ok px-4 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M20 6 9 17l-5-5" /></svg>
+        {busy ? "Resolving…" : `Resolve ${selected.length}`}
+      </button>
     </div>
   );
 }
