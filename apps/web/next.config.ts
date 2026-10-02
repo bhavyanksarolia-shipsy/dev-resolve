@@ -6,7 +6,19 @@ import type { NextConfig } from "next";
  * work exactly as with a single app, and there is no CORS to configure.
  *   BACKEND_URL  e.g. https://dev-resolve-api.up.railway.app  (local: http://localhost:3002)
  */
-const BACKEND_URL = (process.env.BACKEND_URL || "http://localhost:3002").replace(/\/+$/, "");
+function backendUrl() {
+  let v = (process.env.BACKEND_URL || "").trim().replace(/\/+$/, "");
+  if (!v) {
+    if (process.env.VERCEL || process.env.NODE_ENV === "production") {
+      throw new Error("BACKEND_URL is not set — add it in Vercel → Settings → Environment Variables (your Railway URL)");
+    }
+    return "http://localhost:3002";
+  }
+  // A bare domain ("x.up.railway.app") is fine: assume HTTPS (plain http only for localhost).
+  if (!/^https?:\/\//i.test(v)) v = `${/^(localhost|127\.0\.0\.1)(:|$)/.test(v) ? "http" : "https"}://${v}`;
+  return v;
+}
+const BACKEND_URL = backendUrl();
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["192.168.*.*", "10.*.*.*", "172.*.*.*"],

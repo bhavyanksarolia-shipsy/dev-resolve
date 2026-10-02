@@ -7,7 +7,12 @@ import { cfgValue } from "./config";
  * (The frontend calls the backend on the same origin — /api/... — so there is no separate "backend URL".)
  */
 const get = (key: string, fallback: string) => (cfgValue(key) || fallback).trim();
-const url = (key: string, fallback: string) => get(key, fallback).replace(/\/+$/, "");
+/** URL setting without a trailing slash; a bare domain ("x.vercel.app") gets https:// (http only for localhost). */
+const url = (key: string, fallback: string) => {
+  const v = get(key, fallback).replace(/\/+$/, "");
+  if (!v || /^https?:\/\//i.test(v)) return v;
+  return `${/^(localhost|127\.0\.0\.1)(:|$)/.test(v) ? "http" : "https"}://${v}`;
+};
 
 export const settings = {
   /** Port the server listens on (Render sets PORT=10000; Docker image default 3000; local `npm run up` 3001). */
