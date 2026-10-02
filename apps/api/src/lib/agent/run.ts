@@ -105,7 +105,9 @@ bullet lists with **bold labels**, one fact per line, identifiers in \`code\`. P
       - Verify: audit logs · 27 Sep 10:42:13 IST · request \`abc123de\` (first), \`f00d9876\` (last) · "Appointment already in use"
    Every finding that comes from logs gets a "Verify:" sub-line so a reviewer can find the exact entry: which logs
    (app / audit / integration), the timestamp, the request id(s) — first and last of a series, at most 3 — and the
-   exact log message in quotes. DB findings: the table and record id. No raw SQL or query syntax — the exact queries
+   exact log message in quotes. Give a request id only when the log entry you found actually has one — copy it exactly
+   from the tool result, never guess, shorten or invent it; if the entry has none, leave it out and the timestamp +
+   message identify the entry. DB findings: the table and record id. No raw SQL or query syntax — the exact queries
    are in the trail.)
 ## Root cause  (the code path file:line and condition, or the upstream system, with proof)
 ## Current status  (state of the data RIGHT NOW vs. what was reported: still broken / fixed manually by whom & when /
@@ -239,7 +241,8 @@ const CHAT_REPLY_STYLE = `How to write your reply (the reviewer sees ONLY your l
   Leave out request ids, user ids and other raw identifiers unless the reviewer asked for them or one is the proof of
   the point. Never write lists of request ids inline like "fail [54ca5482, 0130fb7a, …]" — say "4 attempts, all failed".
 - When the answer rests on logs, end with a small "Logs to verify" table: | What | Logs | Time (IST) | Request id |
-  — the key entries only (first/last of a series, the success, the decisive error), at most 6 rows.
+  — the key entries only (first/last of a series, the success, the decisive error), at most 6 rows. Request id only if
+  the log entry has one, copied exactly (never guessed); otherwise "—".
 - Say plainly what's confirmed vs not, in a final "Still open" line (only if something is).
 - If the RCA changed, say in one line what changed. Otherwise don't mention the RCA.
 - Keep it short: about 150–250 words unless they asked for the full detail. No preamble, no sign-off, no repeating their question.`;
