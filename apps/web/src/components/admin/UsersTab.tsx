@@ -20,6 +20,8 @@ export function UsersTab() {
   const load = useCallback(() => fetch("/api/admin/users", { cache: "no-store" }).then((r) => r.json()).then(setData), []);
   useEffect(() => { load(); }, [load]);
   const [adding, setAdding] = useState(false);
+  const [query, setQuery] = useState("");
+  const [show, setShow] = useState<"all" | "active" | "admins" | "disabled">("all");
 
   async function act(body: Record<string, unknown>, ask?: { title: string; message: string; confirmLabel: string; danger?: boolean; requireText?: string }) {
     if (ask && !(await confirmDialog(ask))) return;
@@ -33,15 +35,30 @@ export function UsersTab() {
 
   if (!data) return <div className="skeleton h-48 w-full rounded-xl" />;
   const active = data.users.filter((u) => !u.disabled_at);
+  const q = query.trim().toLowerCase();
+  const shown = data.users.filter((u) =>
+    (show === "all" || (show === "active" && !u.disabled_at) || (show === "admins" && u.is_admin && !u.disabled_at) || (show === "disabled" && !!u.disabled_at)) &&
+    (!q || [u.name, u.display_name, u.email].some((v) => v?.toLowerCase().includes(q))));
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <button className={btnPrimary} onClick={() => { setNu(blank); setAdding(true); }}>+ Add user</button>
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative w-full max-w-sm">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" aria-hidden><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+          <input className={`${input} pl-9`} placeholder="Search name, username or email…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search users" />
+          {query && <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-fg">✕</button>}
+        </div>
+        <button className={`${btnPrimary} ml-auto`} onClick={() => { setNu(blank); setAdding(true); }}>+ Add user</button>
       </div>
-      <div className="flex flex-wrap gap-3 text-sm">
-        <span className="rounded-full bg-accent-soft px-3 py-1 text-accent-strong">{active.length} active</span>
-        <span className="rounded-full bg-bg px-3 py-1 ring-1 ring-line">{active.filter((u) => u.is_admin).length} admins</span>
-        <span className="rounded-full bg-bg px-3 py-1 text-muted ring-1 ring-line">{data.users.length - active.length} disabled</span>
+      <div className="flex flex-wrap gap-2 text-sm">
+        {([
+          ["all", `All · ${data.users.length}`],
+          ["active", `${active.length} active`],
+          ["admins", `${active.filter((u) => u.is_admin).length} admins`],
+          ["disabled", `${data.users.length - active.length} disabled`],
+        ] as const).map(([k, l]) => (
+          <button key={k} type="button" aria-pressed={show === k} onClick={() => setShow(k)}
+            className={`rounded-full px-3 py-1 ring-1 transition-colors ${show === k ? "bg-accent text-white ring-accent" : "bg-panel text-muted ring-line hover:text-fg"}`}>{l}</button>
+        ))}
       </div>
       {msg && !adding && <Note ok={msg.ok}>{msg.text}</Note>}
 
@@ -52,7 +69,11 @@ export function UsersTab() {
               <th className="px-4 py-3">Last login</th><th className="px-4 py-3">Extension</th><th className="px-4 py-3 text-right">Investigations</th><th className="px-4 py-3">Actions</th></tr>
           </thead>
           <tbody className="divide-y divide-line">
-            {data.users.map((u) => {
+            {shown.length === 0 && (
+              <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-muted">No users match{query ? ` “${query}”` : ""}.
+                {(query || show !== "all") && <button className="ml-2 text-accent-strong underline" onClick={() => { setQuery(""); setShow("all"); }}>Show everyone</button>}</td></tr>
+            )}
+            {shown.map((u) => {
               const me = u.name === data.me;
               const locked = u.locked_until && new Date(u.locked_until) > new Date();
               return (
