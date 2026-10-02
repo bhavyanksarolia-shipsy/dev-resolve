@@ -27,7 +27,7 @@ const CURRENT_STATUS: Record<string, [string, string]> = {
 };
 interface TicketData {
   ticket: { id: string; display_id: string; title: string; body?: string; created_date: string; stage?: { display_name?: string; name?: string }; account?: { display_name?: string }; custom_fields?: Record<string, unknown> };
-  timeline: { id: string; body?: string; visibility?: string; created_date: string; created_by?: { display_name?: string; email?: string } }[];
+  timeline: { id: string; body?: string; visibility?: string; created_date: string; created_by?: { display_name?: string; email?: string }; via_email?: { from: string; to: string; cc: string } }[];
   investigations: { id: number; status: string }[];
   attachments: Attachment[];
   routing: { kind: string; account?: string; name?: string; candidates?: string[] };
@@ -474,9 +474,11 @@ function CommentCard({ c, attachments, defaultOpen }: {
   const [open, setOpen] = useState(defaultOpen);
   const who = c.created_by?.display_name || c.created_by?.email || "unknown";
   const internal = c.visibility === "internal";
-  const long = (c.body || "").length > 600;
+  // DevRev appends "<sub>don:identity:…:revu/… sent via Email</sub>" to imported emails — noise once the sender is shown.
+  const body = (c.body || "").replace(/<sub>[\s\S]*?sent via Email\s*<\/sub>/gi, "").trim();
+  const long = body.length > 600;
   // One-line gist for the closed card: plain text, no markdown marks, no email sign-off noise.
-  const preview = hidePaths(c.body || "").replace(/<[^>]+>/g, " ").replace(/[#*_`>|\[\]()-]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
+  const preview = hidePaths(body).replace(/<[^>]+>/g, " ").replace(/[#*_`>|\[\]()-]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
   return (
     <li className="card overflow-hidden">
       <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-bg/60">
@@ -488,15 +490,23 @@ function CommentCard({ c, attachments, defaultOpen }: {
             <span className="truncate text-sm font-medium">{who}</span>
             <span className="shrink-0 text-xs text-muted">{new Date(c.created_date).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</span>
           </span>
+          {c.via_email && <span className="block truncate text-[11px] text-muted" title={c.via_email.from}>via email{c.created_by?.email && c.created_by.email !== who ? ` · ${c.created_by.email}` : ""}</span>}
           {!open && preview && <span className="block truncate text-xs text-muted">{preview}</span>}
         </span>
         {shown > 0 && <span className="text-xs text-muted" title="Attachments on this message">📎 {shown}</span>}
         <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${internal ? "bg-amber-50 text-warn" : "bg-accent-soft text-accent-strong"}`}>{internal ? "internal" : "external"}</span>
         <span className={`text-muted transition-transform ${open ? "rotate-90" : ""}`}>›</span>
       </button>
+      {open && c.via_email && (c.via_email.to || c.via_email.cc) && (
+        <dl className="grid grid-cols-[3rem_1fr] gap-x-2 gap-y-0.5 border-t border-line bg-bg/50 px-4 py-2 text-[11px] text-muted">
+          <dt>From</dt><dd className="break-words text-fg">{c.via_email.from}</dd>
+          {c.via_email.to && <><dt>To</dt><dd className="break-words">{c.via_email.to}</dd></>}
+          {c.via_email.cc && <><dt>Cc</dt><dd className="break-words">{c.via_email.cc}</dd></>}
+        </dl>
+      )}
       {open && (
         <div className={`border-t border-line px-4 py-3 ${long ? "max-h-[32rem] overflow-y-auto" : ""}`}>
-          {c.body?.trim() ? <Markdown compact>{hidePaths(c.body)}</Markdown> : <span className="text-sm text-muted">(no text)</span>}
+          {body ? <Markdown compact>{hidePaths(body)}</Markdown> : <span className="text-sm text-muted">(no text)</span>}
         </div>
       )}
       {open && attachments.length > 0 && (

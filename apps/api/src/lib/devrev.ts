@@ -152,6 +152,7 @@ export interface TimelineEntry {
   visibility?: string;
   created_date: string;
   created_by?: { display_name?: string; full_name?: string; email?: string; type?: string };
+  via_email?: { from: string; to: string; cc: string }; // set by withEmailSenders: the real sender of a bot-imported email
   artifacts?: { id: string; display_id: string; file?: { name: string; size: number; type: string } }[];
 }
 
@@ -269,4 +270,14 @@ export async function updateTicket(id: string, change: { stageId?: string; pod?:
     ...(change.pod !== undefined && { custom_fields: { tnt__pod: change.pod } }),
   });
   return r.work;
+}
+
+const revUsers = new Map<string, { name?: string; email?: string }>();
+/** A customer contact (rev user) by DON — used to name the sender of an email the integration bot imported. */
+export async function revUser(id: string) {
+  if (revUsers.has(id)) return revUsers.get(id)!;
+  const r = await call<{ rev_user: { display_name?: string; full_name?: string; email?: string } }>(`/rev-users.get?id=${encodeURIComponent(id)}`).catch(() => null);
+  const u = { name: r?.rev_user.full_name || r?.rev_user.display_name, email: r?.rev_user.email };
+  revUsers.set(id, u);
+  return u;
 }

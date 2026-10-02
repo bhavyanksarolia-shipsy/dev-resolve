@@ -1,7 +1,7 @@
 import { getTicket, listTimeline, devrevUrl } from "@/lib/devrev";
 import { apiError } from "@/lib/apiError";
 import { resolveDevrevAccount } from "@/lib/config";
-import { listAttachments } from "@/lib/attachments";
+import { listAttachments, withEmailSenders } from "@/lib/attachments";
 import { q } from "@/lib/db";
 
 export async function GET(_req: Request, ctx: RouteContext<"/api/tickets/[id]">) {
@@ -9,7 +9,7 @@ export async function GET(_req: Request, ctx: RouteContext<"/api/tickets/[id]">)
   try {
     const ticket = await getTicket(id);
     const [timeline, investigations] = await Promise.all([
-      listTimeline(ticket.id).catch(() => []),
+      listTimeline(ticket.id).then(withEmailSenders).catch(() => []),
       q(`SELECT id, status, confidence, category, created_at, finished_at, posted_at FROM investigations WHERE ticket_display=$1 ORDER BY id DESC`, [ticket.display_id]),
     ]);
     const attachments = await listAttachments(timeline).catch(() => []);

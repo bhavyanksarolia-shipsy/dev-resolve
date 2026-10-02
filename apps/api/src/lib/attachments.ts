@@ -2,7 +2,7 @@ import "server-only";
 import { simpleParser, type ParsedMail } from "mailparser";
 import * as XLSX from "xlsx";
 import mammoth from "mammoth";
-import { locateArtifact, type TimelineEntry } from "./devrev";
+import { locateArtifact, revUser, type TimelineEntry } from "./devrev";
 
 export interface Attachment {
   artifact_id: string;          // DevRev artifact DON
@@ -231,4 +231,36 @@ export async function uploadedFileBlocks(files: { name: string; type: string; bo
     }
   }
   return blocks;
+}
+
+const addr = (x: unknown) => [x].flat().filter(Boolean).map((v) => (v as { text: string }).text).join(", ");
+/**
+ * Emails arrive as comments by the "Email Integration Bot". Put the real sender on them, from the attached
+ * email.eml (From / To / Cc) or, failing that, the customer id in DevRev's "sent via Email" footer.
+ */
+export async function withEmailSenders(comments: TimelineEntry[]) {
+  await Promise.all(comments.map(async (c) => {
+    if (c.created_by?.type !== "service_account" || !/email/i.test(c.created_by.display_name || "")) return;
+    const eml = c.artifacts?.find((a) => kindOf(a.file?.type || "", a.file?.name || "") === "email");
+    try {
+      if (eml) {
+        const m = await parseEmail(eml.id);
+        const f = m.from?.value?.[0];
+        if (f?.address || f?.name) {
+          c.created_by = { ...c.created_by, display_name: f.name && f.name !== f.address ? f.name : f.address, email: f.address };
+          c.via_email = { from: m.from?.text ?? "", to: addr(m.to), cc: addr(m.cc) };
+          return;
+        }
+      }
+      const revu = c.body?.match(/(don:identity:[^\s)<>\]]+:revu\/[A-Za-z0-9]+)/)?.[1];
+      if (revu) {
+        const u = await revUser(revu);
+        if (u.name || u.email) {
+          c.created_by = { ...c.created_by, display_name: u.name || u.email, email: u.email };
+          c.via_email = { from: u.email ? `${u.name ?? u.email} <${u.email}>` : u.name!, to: "", cc: "" };
+        }
+      }
+    } catch { /* keep the bot name */ }
+  }));
+  return comments;
 }

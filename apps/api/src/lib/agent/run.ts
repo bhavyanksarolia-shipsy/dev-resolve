@@ -7,7 +7,7 @@ import { userToolEnv } from "../connector";
 import { q } from "../db";
 import { getTicket, listTimeline } from "../devrev";
 import { accountKnowledge } from "../knowledge";
-import { agentAttachmentBlocks, listAttachments, uploadedFileBlocks } from "../attachments";
+import { agentAttachmentBlocks, listAttachments, uploadedFileBlocks, withEmailSenders } from "../attachments";
 import { buildToolServer } from "./tools";
 import { appLogConfigDir, appLogProjects, ensureAppLogAuth, indexAllowed } from "../applog";
 
@@ -192,7 +192,7 @@ const userMessage = (content: SDKUserMessage["message"]["content"]): SDKUserMess
   ({ type: "user", parent_tool_use_id: null, message: { role: "user", content } }) as SDKUserMessage;
 
 async function runAgent(id: number, ticket: Awaited<ReturnType<typeof getTicket>>, account: Account, candidates: Account[], startedBy?: string) {
-  const comments = await listTimeline(ticket.id).catch(() => []);
+  const comments = await listTimeline(ticket.id).then(withEmailSenders).catch(() => []);
   // Screenshots / files the customer attached (incl. images inside email.eml) go to the agent as real images.
   const attachments = await listAttachments(comments).catch(() => []);
   const attachmentBlocks = await agentAttachmentBlocks(attachments);
@@ -268,7 +268,7 @@ export async function sendChatMessage(id: number, text: string, by = "unknown", 
     `SELECT COALESCE((SELECT max(created_at) FROM investigation_steps WHERE investigation_id=$1 AND kind='user_message' AND seq < $2),
                      (SELECT started_at FROM agent_runs WHERE investigation_id=$1 ORDER BY id LIMIT 1),
                      (SELECT created_at FROM investigations WHERE id=$1)) AS since`, [id, next]);
-  const fresh = (await listTimeline(inv.ticket_id).catch(() => [])).filter((c) => new Date(c.created_date) > new Date(since));
+  const fresh = (await listTimeline(inv.ticket_id).then(withEmailSenders).catch(() => [])).filter((c) => new Date(c.created_date) > new Date(since));
   const freshAtts = fresh.length ? await listAttachments(fresh).catch(() => []) : [];
   const freshBlocks = freshAtts.length ? await agentAttachmentBlocks(freshAtts) : [];
   const freshText = fresh.length
@@ -290,7 +290,7 @@ export async function sendChatMessage(id: number, text: string, by = "unknown", 
   } else {
     // Investigations created before chat existed have no saved session: re-seed with the ticket + current RCA.
     const ticket = await getTicket(inv.ticket_id);
-    const comments = await listTimeline(inv.ticket_id).catch(() => []);
+    const comments = await listTimeline(inv.ticket_id).then(withEmailSenders).catch(() => []);
     message = userMessage([{
       type: "text",
       text: `${ticketPrompt(ticket, comments)}\n\n## Current RCA draft (from an earlier investigation)\n${inv.draft_rca ?? "(none)"}\n\n---\n${followUp}`,
