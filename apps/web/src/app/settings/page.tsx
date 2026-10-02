@@ -35,14 +35,15 @@ export default function SettingsPage() {
   const status = (k: string) => {
     const i = info?.[k === "knowledge.tgz" ? "knowledge" : k];
     if (!i) return "…";
-    return i.present ? `on the server · ${i.size != null && k !== "knowledge.tgz" ? `${Math.round(i.size / 1024)} KB · ` : ""}updated ${new Date(i.updated!).toLocaleString("en-IN")}` : "not uploaded yet";
+    return i.present ? `saved · ${i.size != null && k !== "knowledge.tgz" ? `${Math.round(i.size / 1024)} KB · ` : ""}updated ${new Date(i.updated!).toLocaleString("en-IN")}` : "not uploaded yet";
   };
 
   return (
     <div className="max-w-3xl space-y-4">
       <div>
         <h1 className="text-xl font-semibold">Settings · private files</h1>
-        <p className="mt-1 text-sm text-muted">These stay on the backend only (never in the repo or the frontend). Uploading replaces the server&apos;s copy; knowledge is merged.</p>
+        <p className="mt-1 text-sm text-muted">Kept in the backend&apos;s database (never in the repo or the frontend) — upload once; they survive every deploy and restart.
+          Uploading replaces the stored copy; knowledge is merged. Changes the app makes (client on/off, accepted knowledge) are saved automatically.</p>
       </div>
       {msg._ && <p className="text-sm text-bad">{msg._.text}</p>}
       <div className="card divide-y divide-line">

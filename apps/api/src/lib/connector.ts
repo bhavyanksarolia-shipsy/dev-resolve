@@ -136,6 +136,7 @@ export const userAuthDir = (user: string) => {
 function writePrivate(file: string, data: string) {
   mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   writeFileSync(file, data, { mode: 0o600 });
+  void import("./privateStore").then((m) => m.savePrivate(file));
 }
 
 /** Google-login Metabase projects (projects.json metabase.sso = "google"). */

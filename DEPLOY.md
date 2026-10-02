@@ -6,12 +6,12 @@ browser ──► Vercel  (apps/web: pages only)
                ▼                                                                ▼
            (same domain for the browser: cookies, Google sign-in just work)  Railway (apps/api: API, agent,
                                                                               connector relay, Python tools)
-laptop connector ──────────────────────────────────────────────────────────► Railway directly
+Chrome extension ──────────────────────────────────────────────────────────► Railway directly
                                                                               + Railway Postgres + volume /data
 ```
 
 The browser only ever talks to the Vercel domain; Vercel forwards `/api` to Railway. So there is no CORS and no
-cross-domain cookie setup. Laptop connectors talk to Railway directly (long-polls).
+cross-domain cookie setup. Each user's Chrome extension talks to Railway directly (long-polls).
 
 ## 1. Railway — backend (`apps/api`)
 
@@ -19,7 +19,8 @@ cross-domain cookie setup. Laptop connectors talk to Railway directly (long-poll
    - **Root Directory:** `apps/api` (it builds `apps/api/Dockerfile`; `railway.json` sets health check + 1 replica)
    - **Networking → Generate Domain** → note it, e.g. `https://dev-resolve-api.up.railway.app`
 2. **+ New → Database → PostgreSQL** in the same project.
-3. Service → **Volumes → New Volume**, mount path **`/data`** (config, knowledge, sign-ins, synced code live here).
+3. *(Optional)* Service → **Volumes → New Volume** at **`/data`** — only caches the synced code. Config, knowledge and
+   each person's sign-ins are kept **in Postgres**, so nothing is lost on redeploys even without a volume.
 4. Service → **Variables** (see `apps/api/.env.example`):
 
 | Variable | Value |
@@ -49,13 +50,20 @@ Railway sets `PORT` itself. Logs on start print `[settings] {…}` — check the
 
 In the OAuth client add the redirect URI **`<APP_URL>/api/auth/google/callback`** (the Vercel domain).
 
-## 4. Private files (first time)
+## 4. Private files (once, by an admin)
 
-Open the Vercel URL → **Sign in with Google** (you're admin) → **Settings** → upload:
-- `apps/api/config/projects.json`, `apps/api/config/config.env`
-- knowledge: `npm --prefix apps/api run pack-knowledge` → upload `knowledge-upload.tgz` → delete it.
+They're stored in the backend's Postgres from then on. Either:
+- **Settings** page (Vercel URL → Sign in with Google → Settings): upload `apps/api/config/projects.json`, `config.env`,
+  and the knowledge archive (`npm --prefix apps/api run pack-knowledge` → `knowledge-upload.tgz`), or
+- one command from your laptop: `npm --prefix apps/api run private -- push "<Railway Postgres DATABASE_PUBLIC_URL>"`,
+  then redeploy the backend.
 
-Then **Connector** page → download, run it on your laptop with the client VPN connected, and do the Google sign-ins.
+## 5. Each user — once per laptop
+
+**Connector** page → **Download the extension** → unzip → `chrome://extensions` → *Developer mode* → **Load unpacked**.
+It links itself to the signed-in person and runs whenever Chrome is open. After that a user only connects the client VPN
+and signs in with Google; Metabase / app-logs Google sign-ins are picked up from their Chrome. (A terminal connector
+exists as a fallback for people without Chrome.)
 
 ## Local
 

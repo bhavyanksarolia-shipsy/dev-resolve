@@ -109,6 +109,8 @@ export function setClientActive(slug: string, active: boolean, by: string) {
   const tmp = `${PROJECTS_FILE}.tmp-${process.pid}`;
   writeFileSync(tmp, JSON.stringify(file, null, 2) + "\n");
   renameSync(tmp, PROJECTS_FILE);
+  // Keep the database copy current (the source of truth across deploys). Lazy import: privateStore imports this file.
+  void import("./privateStore").then((m) => m.savePrivate(PROJECTS_FILE, by));
   return acc;
 }
 

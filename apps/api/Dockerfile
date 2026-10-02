@@ -1,5 +1,5 @@
-# Dev Resolve — production image. Private data (config, knowledge, logins, synced code) lives on the /data volume;
-# secrets arrive as environment variables. Nothing private is baked into the image.
+# Dev Resolve backend — production image. Private files (config, knowledge, each person's sign-ins) are kept in
+# Postgres and written back on every start; secrets arrive as environment variables. Nothing private is in the image.
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -11,7 +11,7 @@ RUN mkdir -p config && cp -n config/projects.example.json config/projects.json &
 
 FROM node:22-bookworm-slim
 ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0 NEXT_TELEMETRY_DISABLED=1 \
-    CODE_ROOT=/data/code DEV_RESOLVE_CONFIG_DIR=/data/config UV_CACHE_DIR=/home/node/.cache/uv
+    CODE_ROOT=/data/code UV_CACHE_DIR=/home/node/.cache/uv
 RUN apt-get update && apt-get install -y --no-install-recommends python3 git ca-certificates curl tini postgresql-client \
  && rm -rf /var/lib/apt/lists/* \
  && curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh \

@@ -93,6 +93,7 @@ export async function ensureAppLogAuth(p: AppLogProject, user?: string | null): 
     const n = await refresh(p, t);
     if (n && (await tokenWorks(p, n.access_token))) {
       writeFileSync(f, JSON.stringify(n, null, 2), { mode: 0o600 });
+      void import("./privateStore").then((m) => m.savePrivate(f));
       lastGood.set(dir, Date.now());
       return { ok: true, message: "Signed in (session renewed)" };
     }

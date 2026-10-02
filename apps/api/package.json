@@ -15,7 +15,8 @@
     "app-log-login": "node scripts/app-log-login.cjs",
     "metabase-login": "node scripts/metabase-login.cjs",
     "metabase-password": "python3 .claude/skills/metabase-sql/query.py set-credentials --project",
-    "pack-knowledge": "tar -czf ../../knowledge-upload.tgz --exclude=_template --exclude=_shared --exclude=README.md -C knowledge . && echo 'Created knowledge-upload.tgz in the repo root (gitignored) \u2014 upload it on the Settings page, then delete it.'"
+    "pack-knowledge": "tar -czf ../../knowledge-upload.tgz --exclude=_template --exclude=_shared --exclude=README.md -C knowledge . && echo 'Created knowledge-upload.tgz in the repo root (gitignored) \u2014 upload it on the Settings page, then delete it.'",
+    "private": "tsx --env-file-if-exists=.env.local scripts/private-files.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.282",

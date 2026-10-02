@@ -1,5 +1,5 @@
 import "server-only";
-import { existsSync, readdirSync, readFileSync, mkdirSync, cpSync, appendFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, mkdirSync, cpSync, appendFileSync, writeFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { Account, ROOT } from "./config";
 import { q } from "./db";
@@ -75,7 +75,8 @@ export async function proposeKnowledge(p: { investigationId: number; accountSlug
 export function applyToFiles(account: Account | { slug: string; knowledge_dir: string }, file: string, content: string, meta: string) {
   if (!ALLOWED_FILES.test(file)) throw new Error(`Refusing to write ${file}`);
   const dir = path.join(ROOT, account.knowledge_dir);
-  if (!existsSync(dir)) {
+  const created = !existsSync(dir);
+  if (created) {
     mkdirSync(path.dirname(dir), { recursive: true });
     cpSync(path.join(KB, "_template"), dir, { recursive: true });
   }
@@ -87,4 +88,7 @@ export function applyToFiles(account: Account | { slug: string; knowledge_dir: s
   } else {
     appendFileSync(target, `\n\n<!-- ${meta} -->\n${content.trim()}\n`);
   }
+  // Save to the database too — the folder's template files on first use, and the file just changed.
+  const changed = created ? readdirSync(dir, { recursive: true }).map((f) => path.join(dir, String(f))).filter((f) => statSync(f).isFile()) : [target];
+  void import("./privateStore").then(async (m) => { for (const f of changed) await m.savePrivate(f); });
 }

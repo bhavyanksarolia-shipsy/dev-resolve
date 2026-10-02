@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { sessionUser } from "@/lib/auth";
 import { CONFIG_DIR, ROOT } from "@/lib/config";
+import { savePrivate } from "@/lib/privateStore";
+import { getPool } from "@/lib/db";
 
 /**
  * Admin-only: upload the private files the backend needs (hosts like Railway have no "secret files"):
@@ -23,10 +25,16 @@ const info = (p: string) => (existsSync(p) ? { present: true, size: statSync(p).
 
 export async function GET(req: Request) {
   if (!(await admin(req))) return Response.json({ error: "Admins only" }, { status: 403 });
+  // What's saved in the database (kept across deploys) — sizes and dates only, never contents.
+  const { rows } = await getPool().query(
+    `SELECT CASE WHEN path LIKE 'knowledge/%' THEN 'knowledge' ELSE split_part(path, '/', 2) END AS k,
+            sum(length(content))::int AS size, max(updated_at) AS updated, count(*)::int AS files
+       FROM private_files WHERE path LIKE 'config/%' OR path LIKE 'knowledge/%' GROUP BY 1`);
+  const db = Object.fromEntries(rows.map((r) => [r.k, { present: true, size: r.size, updated: new Date(r.updated).toISOString(), files: r.files }]));
   return Response.json({
-    "projects.json": info(path.join(CONFIG_DIR, "projects.json")),
-    "config.env": info(path.join(CONFIG_DIR, "config.env")),
-    knowledge: info(path.join(ROOT, "knowledge")),
+    "projects.json": db["projects.json"] ?? info(path.join(CONFIG_DIR, "projects.json")),
+    "config.env": db["config.env"] ?? info(path.join(CONFIG_DIR, "config.env")),
+    knowledge: db.knowledge ?? info(path.join(ROOT, "knowledge")),
   });
 }
 
@@ -51,12 +59,14 @@ export async function POST(req: Request) {
       const j = JSON.parse(data.toString("utf8"));
       if (!Array.isArray(j.accounts)) throw new Error("projects.json must have an \"accounts\" list");
       writeAtomic(path.join(CONFIG_DIR, "projects.json"), data);
+      await savePrivate(path.join(CONFIG_DIR, "projects.json"), u.name);
       return Response.json({ ok: true, message: `projects.json saved — ${j.accounts.length} accounts` });
     }
     if (kind === "config.env") {
       const keys = data.toString("utf8").split("\n").filter((l) => /^[A-Z0-9_]+=/.test(l.trim())).length;
       if (!keys) throw new Error("config.env has no KEY=value lines");
       writeAtomic(path.join(CONFIG_DIR, "config.env"), data);
+      await savePrivate(path.join(CONFIG_DIR, "config.env"), u.name);
       return Response.json({ ok: true, message: `config.env saved — ${keys} settings` });
     }
     if (kind === "knowledge.tgz") {
@@ -69,6 +79,7 @@ export async function POST(req: Request) {
         const dest = path.join(ROOT, "knowledge");
         mkdirSync(dest, { recursive: true });
         execFileSync("tar", ["-xzf", path.join(tmp, "k.tgz"), "-C", dest, "--keep-newer-files", "--no-same-owner"]);
+        for (const n of names.filter((x) => !x.endsWith("/"))) await savePrivate(path.join(dest, n.replace(/^\.\//, "")), u.name);
         return Response.json({ ok: true, message: `knowledge merged — ${names.filter((n) => !n.endsWith("/")).length} files` });
       } finally {
         rmSync(tmp, { recursive: true, force: true });
