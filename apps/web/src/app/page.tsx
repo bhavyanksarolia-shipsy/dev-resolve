@@ -279,13 +279,8 @@ function Inbox() {
                       onChange={(e) => setPicked((p) => { const n = new Set(p); for (const t of rows) { if (e.target.checked) n.add(t.display_id); else n.delete(t.display_id); } return n; })} />
                   </th>
                   <th className="px-5 py-3">Ticket</th><th className="px-4 py-3">Title</th><th className="px-4 py-3">{colMenu("pod", "Pod")}</th><th className="px-4 py-3">Part</th>
-                  <th className="px-4 py-3">{colMenu("stage", "Stage")}</th><th className="px-4 py-3">
-                    <button type="button" onClick={() => setView({ sort: sort === "created:asc" ? null : "created:asc" })}
-                      title={sort === "created:asc" ? "Oldest first — click for newest first" : "Newest first — click for oldest first"}
-                      className="inline-flex items-center gap-1 uppercase hover:text-accent-strong">
-                      Created <span aria-hidden>{sort === "created:asc" ? "↑" : sort && !sort.startsWith("created") ? "↕" : "↓"}</span>
-                    </button>
-                  </th><th className="px-5 py-3">Dev Resolve</th>
+                  <th className="px-4 py-3">{colMenu("stage", "Stage")}</th><th className="px-4 py-3"><CreatedSort value={sort === "created:asc" ? "asc" : sort && !sort.startsWith("created") ? null : "desc"}
+                    onChange={(d) => setView({ sort: d === "asc" ? "created:asc" : "created:desc" })} /></th><th className="px-5 py-3">Dev Resolve</th>
                 </tr>
               </thead>
               <tbody className={`divide-y divide-line transition-opacity ${fetching && tickets ? "opacity-60" : ""}`}>
@@ -385,6 +380,37 @@ function Stat({ label, value, sub, hint, loading }: { label: string; value: stri
           <div className="mt-1 text-3xl font-semibold tabular-nums text-fg">{value}</div>
           {sub && <div className="mt-0.5 text-xs text-muted">{sub}</div>}
         </>
+      )}
+    </div>
+  );
+}
+
+/** "Created" column header: choose newest first (descending) or oldest first (ascending). */
+function CreatedSort({ value, onChange }: { value: "asc" | "desc" | null; onChange: (d: "asc" | "desc") => void }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+  }, [open]);
+  return (
+    <div ref={box} className="relative inline-block">
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-haspopup="menu" aria-expanded={open}
+        className={`inline-flex items-center gap-1 uppercase hover:text-accent-strong ${value ? "text-accent-strong" : ""}`}>
+        Created <span aria-hidden>{value === "asc" ? "↑" : value === "desc" ? "↓" : "↕"}</span>
+      </button>
+      {open && (
+        <ul role="menu" className="absolute left-0 z-40 mt-2 w-48 rounded-xl border border-line bg-panel py-1 text-sm font-normal normal-case tracking-normal text-fg shadow-lg">
+          {([["desc", "Newest first", "Descending ↓"], ["asc", "Oldest first", "Ascending ↑"]] as const).map(([d, l, h]) => (
+            <li key={d} role="menuitemradio" aria-checked={value === d} onClick={() => { onChange(d); setOpen(false); }}
+              className={`flex cursor-pointer items-center gap-2 px-3 py-1.5 hover:bg-accent-soft ${value === d ? "font-medium text-accent-strong" : ""}`}>
+              <span className={`w-4 ${value === d ? "" : "invisible"}`}>✓</span>
+              <span>{l}<span className="block text-xs text-muted">{h}</span></span>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
