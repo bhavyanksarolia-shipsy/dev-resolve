@@ -333,11 +333,16 @@ function Inbox() {
                               {STATUS_LABEL[inv.status] ?? inv.status}{inv.confidence ? ` · ${inv.confidence}` : ""}
                             </Link>
                           )}
-                          <button onClick={() => investigate(t)} disabled={busy}
-                            className="inline-flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-accent-strong disabled:opacity-60">
-                            {busy && <span className="spin inline-block">↻</span>}
-                            {busy ? "Investigating…" : inv ? "Re-investigate" : "Investigate"}
-                          </button>
+                          {inv && inv.status !== "failed" && !busy ? (
+                            <Link href={`/tickets/${t.display_id}`}
+                              className="inline-flex items-center rounded-lg px-3 py-1.5 text-xs font-medium text-accent-strong ring-1 ring-accent hover:bg-accent-soft">Open</Link>
+                          ) : (
+                            <button onClick={() => investigate(t)} disabled={busy}
+                              className="inline-flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-accent-strong disabled:opacity-60">
+                              {busy && <span className="spin inline-block">↻</span>}
+                              {busy ? "Investigating…" : inv ? "Try again" : "Investigate"}
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

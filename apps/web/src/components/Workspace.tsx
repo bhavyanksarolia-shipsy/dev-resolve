@@ -204,10 +204,13 @@ export function Workspace({ ticketId }: { ticketId: string }) {
       ) : (
       <section className="flex min-w-0 flex-col lg:min-h-0">
         <div className="mb-3 flex flex-wrap items-center gap-3">
-          <button onClick={start} disabled={busy || running || data.routing.kind === "unmapped" || data.routing.kind === "ignored"}
-            className="rounded-md bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50">
-            {inv ? "Re-investigate" : "Start investigation"}
-          </button>
+          {/* Follow-ups go through Chat (same investigation, keeps its findings); a fresh run is only for a first or failed one. */}
+          {(!inv || inv.status === "failed") && (
+            <button onClick={start} disabled={busy || running || data.routing.kind === "unmapped" || data.routing.kind === "ignored"}
+              className="rounded-md bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50">
+              {inv ? "Try again" : "Start investigation"}
+            </button>
+          )}
           {inv && (
             <span className="text-sm text-muted">
               #{inv.id} · <b className={running ? "text-warn" : inv.status === "failed" ? "text-bad" : "text-ok"}>{inv.status.replace("_", " ")}</b>
