@@ -45,6 +45,7 @@ export async function GET(req: Request) {
         part: (w as { applies_to_part?: { name?: string } }).applies_to_part?.name,
         default_part: (w as { applies_to_part?: { id?: string } }).applies_to_part?.id === getDevrevView().default_part_id,
         pod: typeof w.custom_fields?.tnt__pod === "string" ? w.custom_fields.tnt__pod : null,
+        owner: (w.owned_by || []).map((o) => o.full_name || o.display_name).filter(Boolean).join(", ") || null,
         devrev_url: devrevUrl(w.display_id),
         investigation: byTicket[w.display_id] ?? null,
       })),

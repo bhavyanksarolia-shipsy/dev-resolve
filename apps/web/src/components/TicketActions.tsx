@@ -1,9 +1,13 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { Select } from "./admin/ui";
 import { confirmDialog, notify } from "./Dialog";
 
 export interface StageOption { id: string; name: string; final: boolean }
-interface Options { stage: { id: string | null; name: string | null }; pod: string | null; stages: StageOption[]; pods: string[] }
+interface Options {
+  stage: { id: string | null; name: string | null }; pod: string | null; stages: StageOption[]; pods: string[];
+  part: { id: string; name: string } | null; parts: { id: string; name: string }[];
+}
 interface UpdateResult { ok: boolean; updated: number; failed: { ticket: string; error?: string }[]; error?: string }
 
 export const stageLabel = (s: string | null | undefined) => {
@@ -137,6 +141,77 @@ export function BulkBar({ selected, onDone, onClear }: { selected: string[]; onD
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M20 6 9 17l-5-5" /></svg>
         {busy ? "Resolving…" : `Resolve ${selected.length}`}
       </button>
+    </div>
+  );
+}
+
+/** Inbox row action: change Stage, Pod and Part of one ticket together. */
+export function EditTicketDialog({ ticket, onClose, onSaved }: { ticket: string; onClose: () => void; onSaved: () => void }) {
+  const opts = useTicketOptions(ticket);
+  const [stage, setStage] = useState("");
+  const [pod, setPod] = useState<string | null>(null);
+  const [part, setPart] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy) onClose(); };
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [busy, onClose]);
+
+  const podNow = pod ?? opts?.pod ?? "";
+  const partNow = part || opts?.part?.id || "";
+  const change = opts && {
+    ...(stage && stage !== opts.stage.name && { stage }),
+    ...(podNow !== (opts.pod ?? "") && { pod: podNow === CLEAR_POD || !podNow ? null : podNow }),
+    ...(partNow && partNow !== opts.part?.id && { part: partNow }),
+  };
+  const changed = !!change && Object.keys(change).length > 0;
+
+  async function save() {
+    if (!change || !changed) return;
+    setBusy(true);
+    const r = await fetch("/api/tickets/update", { method: "POST", body: JSON.stringify({ tickets: [ticket], ...change }) });
+    const d = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+    setBusy(false);
+    if (d.error || d.failed?.length) return notify({ title: `${ticket} not updated`, message: d.error || d.failed[0].error, tone: "error" });
+    notify({ message: `${ticket} updated in DevRev`, tone: "ok" });
+    onSaved();
+  }
+
+  const partOptions = (opts?.parts ?? []).map((p) => ({ value: p.id, label: p.name }));
+  if (opts?.part && !partOptions.some((p) => p.value === opts.part!.id)) partOptions.unshift({ value: opts.part.id, label: `${opts.part.name} (current, not under WMS)` });
+  return (
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-black/30 p-4 backdrop-blur-sm" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
+      <div role="dialog" aria-modal="true" aria-label={`Edit ${ticket}`} className="w-full max-w-md rounded-2xl bg-panel shadow-2xl">
+        <div className="flex items-center gap-3 border-b border-line px-5 py-4">
+          <h2 className="font-semibold">Edit <span className="font-mono text-accent-strong">{ticket}</span></h2>
+          <button onClick={onClose} disabled={busy} aria-label="Close" className="ml-auto rounded-md px-2 text-lg text-muted hover:text-fg">✕</button>
+        </div>
+        <div className="space-y-4 px-5 py-5 text-sm">
+          {!opts ? [0, 1, 2].map((i) => <div key={i} className="skeleton h-10 w-full rounded-lg" />) : (
+            <>
+              <label className="block"><span className="mb-1 block font-medium">Stage</span>
+                <Select value={stage || opts.stage.name || ""} onChange={setStage}
+                  options={[{ value: opts.stage.name || "", label: `${stageLabel(opts.stage.name)} (current)` },
+                    ...opts.stages.map((s) => ({ value: s.name, label: stageLabel(s.name), hint: s.final ? "Closes the ticket" : undefined }))]} />
+              </label>
+              <label className="block"><span className="mb-1 block font-medium">Pod</span>
+                <Select value={podNow} onChange={setPod} placeholder="Not set"
+                  options={[...opts.pods.map((p) => ({ value: p, label: p })), ...(opts.pod ? [{ value: CLEAR_POD, label: "Clear Pod" }] : [])]} />
+              </label>
+              <label className="block"><span className="mb-1 block font-medium">Part</span>
+                <Select value={partNow} onChange={setPart} placeholder="Choose a part" options={partOptions} />
+              </label>
+            </>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 border-t border-line bg-bg/50 px-5 py-3">
+          <button onClick={onClose} disabled={busy} className="rounded-lg border border-line px-4 py-2 text-sm font-medium hover:border-accent">Cancel</button>
+          <button onClick={save} disabled={!changed || busy} className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-strong disabled:opacity-50">
+            {busy ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

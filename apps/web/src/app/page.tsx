@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { BulkBar } from "@/components/TicketActions";
+import { BulkBar, EditTicketDialog } from "@/components/TicketActions";
 import { useRouter, useSearchParams } from "next/navigation";
 import { HealthBanner } from "@/components/HealthBanner";
 import { AccountPicker, type PickerAccount } from "@/components/AccountPicker";
@@ -11,7 +11,7 @@ import { ColumnMenu, Pager } from "@/components/TableTools";
 type Account = PickerAccount;
 interface Ticket {
   id: string; display_id: string; title: string; stage?: string; severity?: string; created_date: string;
-  part?: string; default_part?: boolean; pod?: string | null; devrev_url: string;
+  part?: string; default_part?: boolean; pod?: string | null; owner?: string | null; devrev_url: string;
   investigation: { id: number; status: string; confidence: string | null } | null;
 }
 interface Counts { account: { total: number; wms: number; default_part: number }; org: { total: number; wms: number } }
@@ -26,6 +26,8 @@ const STATUS_LABEL: Record<string, string> = {
 };
 /** DevRev stage names → readable ("awaiting_development" → "awaiting development"). */
 const stageLabel = (s: string) => s.replace(/_/g, " ");
+type Col = "stage" | "pod" | "owner";
+const COLS: Col[] = ["stage", "pod", "owner"];
 const box = "h-4 w-4 cursor-pointer rounded accent-[var(--accent)]";
 const pct = (n: number, d: number) => (d ? `${((n / d) * 100).toFixed(1)}%` : "—");
 
@@ -45,8 +47,8 @@ function Inbox() {
   const page = Math.max(1, Number(params.get("page")) || 1);
   const sort = params.get("sort") || ""; // "stage:asc" | "pod:desc" | "" (newest first)
   const listParam = (k: string) => (params.get(k) ? params.get(k)!.split("|") : null);
-  const filters = { stage: listParam("fstage"), pod: listParam("fpod") };
-  const texts = { stage: params.get("qstage") || "", pod: params.get("qpod") || "" };
+  const filters = { stage: listParam("fstage"), pod: listParam("fpod"), owner: listParam("fowner") };
+  const texts = { stage: params.get("qstage") || "", pod: params.get("qpod") || "", owner: params.get("qowner") || "" };
   const setView = (patch: Record<string, string | null>, keepPage = false) => {
     const sp = new URLSearchParams(params.toString());
     sp.set("account", account);
@@ -60,7 +62,8 @@ function Inbox() {
   const seen = useRef<{ account: string; ids: Set<string> }>({ account, ids: new Set() });
   const refreshing = useRef(false);
   const [starting, setStarting] = useState<Set<string>>(new Set());
-  const [picked, setPicked] = useState<Set<string>>(new Set()); // tickets ticked for a bulk Stage / Pod / resolve
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [editing, setEditing] = useState<string | null>(null); // ticket whose Stage / Pod / Part is being edited // tickets ticked for a bulk Stage / Pod / resolve
   const [manual, setManual] = useState("");
   const [loadInactive, setLoadInactive] = useState<string | null>(null); // slug the user chose to load anyway
 
@@ -118,16 +121,16 @@ function Inbox() {
   const refresh = () => { refreshing.current = true; setTick((n) => n + 1); };
 
   // Sort / filter / page on the client (all tickets are loaded).
-  const valueOf = (t: Ticket, col: "stage" | "pod") => (col === "pod" ? t.pod || "" : t.stage || "");
-  const labelOf = (col: "stage" | "pod", v: string) => (col === "stage" ? stageLabel(v) : v);
+  const valueOf = (t: Ticket, col: Col) => (col === "pod" ? t.pod || "" : col === "owner" ? t.owner || "" : t.stage || "");
+  const labelOf = (col: Col, v: string) => (col === "stage" ? stageLabel(v) : v);
   const view = useMemo(() => {
     let list = tickets ?? [];
-    for (const col of ["stage", "pod"] as const) {
+    for (const col of COLS) {
       const sel = filters[col], txt = texts[col].trim().toLowerCase();
       if (sel) list = list.filter((t) => sel.includes(valueOf(t, col)));
       if (txt) list = list.filter((t) => (valueOf(t, col) ? labelOf(col, valueOf(t, col)) : "not set").toLowerCase().includes(txt));
     }
-    const [col, dir] = sort.split(":") as ["stage" | "pod" | "created" | "", "asc" | "desc"];
+    const [col, dir] = sort.split(":") as [Col | "created" | "", "asc" | "desc"];
     const byCreated = (x: Ticket, y: Ticket) => +new Date(y.created_date) - +new Date(x.created_date); // newest first
     if (!col || col === "created") {
       list = [...list].sort((x, y) => (col === "created" && dir === "asc" ? -1 : 1) * byCreated(x, y));
@@ -147,19 +150,20 @@ function Inbox() {
   const rows = view.slice((pageNow - 1) * PAGE, pageNow * PAGE);
   const goto = (n: number) => { setView({ page: n > 1 ? String(n) : null }, true); };
   // Counts in a column's menu reflect the OTHER column's filter, so they always add up to what you'd see.
-  const passes = (t: Ticket, col: "stage" | "pod") => {
+  const passes = (t: Ticket, col: Col) => {
     const sel = filters[col], txt = texts[col].trim().toLowerCase(), v = valueOf(t, col);
     return (!sel || sel.includes(v)) && (!txt || (v ? labelOf(col, v) : "not set").toLowerCase().includes(txt));
   };
-  const distinct = (col: "stage" | "pod") => {
-    const other = col === "stage" ? "pod" : "stage";
+  const distinct = (col: Col) => {
+    const others = COLS.filter((c) => c !== col);
     const m = new Map<string, number>();
     for (const t of tickets ?? []) m.set(valueOf(t, col), m.get(valueOf(t, col)) ?? 0);
-    for (const t of tickets ?? []) if (passes(t, other)) m.set(valueOf(t, col), (m.get(valueOf(t, col)) ?? 0) + 1);
+    for (const t of tickets ?? []) if (others.every((o) => passes(t, o))) m.set(valueOf(t, col), (m.get(valueOf(t, col)) ?? 0) + 1);
     return [...m.entries()].sort((a, b) => (!a[0] ? 1 : !b[0] ? -1 : a[0].localeCompare(b[0]))).map(([value, count]) => ({ value, count }));
   };
-  const anyFilter = !!(filters.stage || filters.pod || texts.stage || texts.pod || sort);
-  const colMenu = (col: "stage" | "pod", label: string) => (
+  const anyFilter = !!(COLS.some((c) => filters[c] || texts[c]) || sort);
+  const clearAll = { sort: null, fstage: null, fpod: null, fowner: null, qstage: null, qpod: null, qowner: null };
+  const colMenu = (col: Col, label: string) => (
     <ColumnMenu label={label} values={distinct(col)} selected={filters[col]} text={texts[col]}
       sort={sort.startsWith(`${col}:`) ? (sort.split(":")[1] as "asc" | "desc") : null}
       onSort={(d) => setView({ sort: d ? `${col}:${d}` : null })}
@@ -248,7 +252,7 @@ function Inbox() {
           <div>
             <h2 className="font-semibold">Open Support tickets</h2>
             <p className="text-xs text-muted">DevRev support stages · {sort === "created:asc" ? "oldest first" : sort && !sort.startsWith("created") ? `sorted by ${sort.split(":")[0]} ${sort.endsWith("desc") ? "Z→A" : "A→Z"}` : "newest first"}
-              {anyFilter && <> · <button className="text-accent-strong underline" onClick={() => setView({ sort: null, fstage: null, fpod: null, qstage: null, qpod: null })}>clear sort &amp; filters</button></>}</p>
+              {anyFilter && <> · <button className="text-accent-strong underline" onClick={() => setView(clearAll)}>clear sort &amp; filters</button></>}</p>
           </div>
           {marked.size > 0 && <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent-strong">{marked.size} new since last refresh</span>}
           <div className="ml-auto flex gap-2 text-sm">
@@ -279,7 +283,7 @@ function Inbox() {
                       onChange={(e) => setPicked((p) => { const n = new Set(p); for (const t of rows) { if (e.target.checked) n.add(t.display_id); else n.delete(t.display_id); } return n; })} />
                   </th>
                   <th className="px-5 py-3">Ticket</th><th className="px-4 py-3">Title</th><th className="px-4 py-3">{colMenu("pod", "Pod")}</th><th className="px-4 py-3">Part</th>
-                  <th className="px-4 py-3">{colMenu("stage", "Stage")}</th><th className="px-4 py-3"><CreatedSort value={sort === "created:asc" ? "asc" : sort && !sort.startsWith("created") ? null : "desc"}
+                  <th className="px-4 py-3">{colMenu("stage", "Stage")}</th><th className="px-4 py-3">{colMenu("owner", "Assigned to")}</th><th className="px-4 py-3"><CreatedSort value={sort === "created:asc" ? "asc" : sort && !sort.startsWith("created") ? null : "desc"}
                     onChange={(d) => setView({ sort: d === "asc" ? "created:asc" : "created:desc" })} /></th><th className="px-5 py-3">Dev Resolve</th>
                 </tr>
               </thead>
@@ -311,9 +315,14 @@ function Inbox() {
                           : t.part}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3.5"><span className="rounded-full bg-bg px-2 py-0.5 text-xs text-muted ring-1 ring-line">{stageLabel(t.stage || "")}</span></td>
+                      <td className="max-w-44 truncate px-4 py-3.5 text-sm" title={t.owner || "Nobody is assigned in DevRev"}>{t.owner || <span className="text-xs text-muted">unassigned</span>}</td>
                       <td className="whitespace-nowrap px-4 py-3.5 text-muted">{new Date(t.created_date).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</td>
                       <td className="whitespace-nowrap px-5 py-3.5">
                         <div className="flex items-center gap-2">
+                          <button onClick={() => setEditing(t.display_id)} title="Edit stage, Pod and part" aria-label={`Edit ${t.display_id}`}
+                            className="grid h-7 w-7 place-items-center rounded-lg text-muted ring-1 ring-line hover:text-accent-strong hover:ring-accent">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+                          </button>
                           {inv && (
                             <Link href={`/tickets/${t.display_id}`} className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 hover:underline ${STATUS_STYLE[inv.status] ?? "text-muted ring-line"}`}>
                               {STATUS_LABEL[inv.status] ?? inv.status}{inv.confidence ? ` · ${inv.confidence}` : ""}
@@ -329,10 +338,10 @@ function Inbox() {
                     </tr>
                   );
                 })}
-                {tickets && !tickets.length && <tr><td colSpan={8} className="px-5 py-10 text-center text-muted">No open Support tickets for this account.</td></tr>}
+                {tickets && !tickets.length && <tr><td colSpan={9} className="px-5 py-10 text-center text-muted">No open Support tickets for this account.</td></tr>}
                 {tickets && tickets.length > 0 && !view.length && (
-                  <tr><td colSpan={8} className="px-5 py-10 text-center text-muted">No tickets match these filters.{" "}
-                    <button className="text-accent-strong underline" onClick={() => setView({ sort: null, fstage: null, fpod: null, qstage: null, qpod: null })}>Clear filters</button></td></tr>
+                  <tr><td colSpan={9} className="px-5 py-10 text-center text-muted">No tickets match these filters.{" "}
+                    <button className="text-accent-strong underline" onClick={() => setView(clearAll)}>Clear filters</button></td></tr>
                 )}
               </tbody>
             </table>
@@ -346,6 +355,7 @@ function Inbox() {
           <button className="font-medium text-accent-strong underline" onClick={() => setPicked(new Set(view.map((t) => t.display_id)))}>select all {view.length} matching</button>
         </p>
       )}
+      {editing && <EditTicketDialog ticket={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); refresh(); }} />}
       {picked.size > 0 && (
         <BulkBar selected={[...picked]} onClear={() => setPicked(new Set())}
           onDone={() => { setPicked(new Set()); refresh(); }} />
@@ -357,11 +367,13 @@ function Inbox() {
 function SkeletonRow() {
   return (
     <tr>
+      <td className="py-4 pl-5 pr-0"><div className="skeleton h-4 w-4" /></td>
       <td className="px-5 py-4"><div className="skeleton h-4 w-24" /></td>
       <td className="px-4 py-4"><div className="skeleton h-4 w-72 max-w-full" /></td>
       <td className="px-4 py-4"><div className="skeleton h-5 w-12 rounded-full" /></td>
       <td className="px-4 py-4"><div className="skeleton h-4 w-16" /></td>
       <td className="px-4 py-4"><div className="skeleton h-5 w-20 rounded-full" /></td>
+      <td className="px-4 py-4"><div className="skeleton h-4 w-24" /></td>
       <td className="px-4 py-4"><div className="skeleton h-4 w-32" /></td>
       <td className="px-5 py-4"><div className="skeleton h-7 w-24 rounded-lg" /></td>
     </tr>

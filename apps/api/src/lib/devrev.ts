@@ -62,21 +62,23 @@ function viewBase(accountIds?: string[]) {
   };
 }
 
-let wmsParts: { at: number; ids: string[] } | null = null;
-/** The WMS product + every part under it (DevRev's applies_to_part filter doesn't include children). Cached 1 h. */
-export async function wmsPartIds(): Promise<string[]> {
-  if (wmsParts && Date.now() - wmsParts.at < 60 * 60 * 1000) return wmsParts.ids;
+let wmsParts: { at: number; parts: { id: string; name: string }[] } | null = null;
+/** The WMS product + every part under it, with names (DevRev's applies_to_part filter doesn't include children). Cached 1 h. */
+export async function wmsPartList(): Promise<{ id: string; name: string }[]> {
+  if (wmsParts && Date.now() - wmsParts.at < 60 * 60 * 1000) return wmsParts.parts;
   const root = getDevrevView().wms_product_id;
-  const ids = [root];
+  const rootPart = await call<{ part: { id: string; name: string } }>(`/parts.get?id=${encodeURIComponent(root)}`).then((r) => r.part).catch(() => ({ id: root, name: "WMS" }));
+  const parts = [rootPart];
   let cursor: string | undefined;
   do {
-    const r = await call<{ parts: { id: string }[]; next_cursor?: string }>("/parts.list", { parent_part: { parts: [root] }, limit: 100, ...(cursor && { cursor }) });
-    ids.push(...r.parts.map((p) => p.id));
+    const r = await call<{ parts: { id: string; name: string }[]; next_cursor?: string }>("/parts.list", { parent_part: { parts: [root] }, limit: 100, ...(cursor && { cursor }) });
+    parts.push(...r.parts.map((p) => ({ id: p.id, name: p.name })));
     cursor = r.next_cursor;
   } while (cursor);
-  wmsParts = { at: Date.now(), ids };
-  return ids;
+  wmsParts = { at: Date.now(), parts };
+  return parts;
 }
+export const wmsPartIds = async () => (await wmsPartList()).map((p) => p.id);
 
 export async function listTickets(accountIds: string[], opts: { limit?: number; cursor?: string } = {}) {
   return call<{ works: TicketSummary[]; next_cursor?: string; prev_cursor?: string }>("/works.list", {
@@ -263,11 +265,12 @@ export async function podValues(sample: TicketSummary): Promise<string[]> {
 }
 
 /** Moves a ticket to another stage, sets its Pod (null clears it) and/or other custom fields (keys with their tnt__/ctype__ prefix). */
-export async function updateTicket(id: string, change: { stageId?: string; pod?: string | null; fields?: Record<string, unknown> }, subtype?: string) {
+export async function updateTicket(id: string, change: { stageId?: string; pod?: string | null; partId?: string; fields?: Record<string, unknown> }, subtype?: string) {
   const custom = { ...(change.fields ?? {}), ...(change.pod !== undefined && { tnt__pod: change.pod }) };
   const r = await call<{ work: TicketSummary }>("/works.update", {
     id, type: "ticket",
     ...(change.stageId && { stage: { stage: change.stageId } }),
+    ...(change.partId && { applies_to_part: change.partId }),
     // Custom fields must name the schemas they belong to: tnt__ = the org's tenant fields, ctype__ = the ticket's subtype.
     ...(Object.keys(custom).length && { custom_fields: custom, custom_schema_spec: { tenant_fragment: true, ...(subtype && { subtype }) } }),
   });
