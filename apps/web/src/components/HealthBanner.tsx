@@ -13,7 +13,7 @@ const TITLE: Record<string, string> = {
 };
 
 /** One row per failing connection, naming exactly which one failed and how to fix it. */
-export function HealthBanner({ account }: { account?: string }) {
+export function HealthBanner({ account, compact }: { account?: string; compact?: boolean }) {
   const [checks, setChecks] = useState<Check[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -46,6 +46,15 @@ export function HealthBanner({ account }: { account?: string }) {
   if (!checks) return <div className="mb-4 text-sm text-muted">Checking connections…</div>;
   if (paused) return <div className="mb-4 text-xs text-muted">Connection checks paused — this client is marked inactive.</div>;
   const bad = checks.filter((c) => c.status !== "ok");
+  // Compact (ticket page): one quiet line while everything works; the full list only when something needs attention.
+  if (compact && !bad.length) {
+    return (
+      <div className="mb-4 flex items-center gap-2 text-xs text-muted" title={checks.map((c) => `${c.label}: ${c.message}`).join("\n")}>
+        <span className="h-2 w-2 rounded-full bg-ok" aria-hidden />All connections OK
+        <button onClick={load} disabled={loading} className="text-accent-strong hover:underline disabled:opacity-50">{loading ? "checking…" : "re-check"}</button>
+      </div>
+    );
+  }
   return (
     <div className="mb-5">
       <div className="flex flex-wrap items-center gap-2 text-xs">

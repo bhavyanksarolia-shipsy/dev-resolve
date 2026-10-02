@@ -162,32 +162,32 @@ export function Workspace({ ticketId }: { ticketId: string }) {
     <div className="grid gap-6 lg:h-[calc(100dvh-7.5rem)] lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
       {/* Left: ticket */}
       <section className="min-w-0 lg:overflow-y-auto lg:pr-2">
-        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+        <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
           <span className="rounded-md bg-accent-soft px-2 py-0.5 font-mono font-semibold text-accent-strong">{t.display_id}</span>
-          <span className="text-muted">{t.account?.display_name}</span>
-        </div>
-        <h1 className="mb-2 text-2xl font-semibold leading-tight tracking-tight">{t.title}</h1>
-        <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+          <span>{data.routing.kind === "account" ? data.routing.name : t.account?.display_name}</span>
+          <span aria-hidden>·</span>
           <a href={data.devrev_url} target="_blank" rel="noreferrer" className="font-medium text-accent-strong hover:underline">Open in DevRev ↗</a>
-          <span className="text-muted">
-            Routed to{" "}
-            {data.routing.kind === "account" ? <b className="text-fg">{data.routing.name}</b>
-              : data.routing.kind === "ambiguous" ? <b className="text-warn">ambiguous — agent will pick from {data.routing.candidates?.join(", ")}</b>
-              : <b className="text-bad">{data.routing.kind} — add this DevRev account to config/projects.json</b>}
-          </span>
         </div>
-        <div className="mb-4"><TicketControls ticket={t.display_id} onChanged={() => setTicketReload((n) => n + 1)} /></div>
-        <HealthBanner account={data.routing.account} />
+        <h1 className="mb-3 text-xl font-semibold leading-snug tracking-tight">{t.title}</h1>
+        {data.routing.kind !== "account" && (
+          <div className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-warn ring-1 ring-amber-200">
+            {data.routing.kind === "ambiguous" ? <>Client not certain — the agent will pick from {data.routing.candidates?.join(", ")}</>
+              : <>{data.routing.kind}: this DevRev account isn&apos;t linked to a client yet (Admin → Clients)</>}
+          </div>
+        )}
+        <div className="mb-3"><TicketControls ticket={t.display_id} onChanged={() => setTicketReload((n) => n + 1)} /></div>
+        <HealthBanner account={data.routing.account} compact />
         {t.body && (
           <div className="card mb-5 p-4">
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Summary</div>
             <Markdown>{t.body}</Markdown>
           </div>
         )}
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">Timeline · {data.timeline.length}</h2>
-        <ol className="space-y-3">
+        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Conversation · {data.timeline.length}</h2>
+        <ol className="space-y-2">
           {data.timeline.slice().reverse().map((c, i) => (
-            <CommentCard key={c.id} c={c} attachments={data.attachments.filter((a) => a.comment_id === c.id)} defaultOpen={i === 0} />
+            <CommentCard key={c.id} c={c} attachments={data.attachments.filter((a) => a.comment_id === c.id)}
+              defaultOpen={i === 0 && c.visibility !== "internal" && (c.body || "").length < 1500} />
           ))}
         </ol>
       </section>
@@ -475,18 +475,23 @@ function CommentCard({ c, attachments, defaultOpen }: {
   const who = c.created_by?.display_name || c.created_by?.email || "unknown";
   const internal = c.visibility === "internal";
   const long = (c.body || "").length > 600;
+  // One-line gist for the closed card: plain text, no markdown marks, no email sign-off noise.
+  const preview = hidePaths(c.body || "").replace(/<[^>]+>/g, " ").replace(/[#*_`>|\[\]()-]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
   return (
     <li className="card overflow-hidden">
-      <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-3 px-4 py-3 text-left">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-bg/60">
         <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-semibold ${internal ? "bg-amber-50 text-warn" : "bg-accent-soft text-accent-strong"}`}>
           {who.replace(/[^a-zA-Z]/g, "").slice(0, 2).toUpperCase() || "?"}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium">{who}</span>
-          <span className="block text-xs text-muted">{new Date(c.created_date).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</span>
+          <span className="flex items-baseline gap-2">
+            <span className="truncate text-sm font-medium">{who}</span>
+            <span className="shrink-0 text-xs text-muted">{new Date(c.created_date).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</span>
+          </span>
+          {!open && preview && <span className="block truncate text-xs text-muted">{preview}</span>}
         </span>
         {shown > 0 && <span className="text-xs text-muted" title="Attachments on this message">📎 {shown}</span>}
-        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${internal ? "bg-amber-50 text-warn ring-amber-200" : "bg-accent-soft text-accent-strong ring-emerald-200"}`}>{c.visibility}</span>
+        <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${internal ? "bg-amber-50 text-warn" : "bg-accent-soft text-accent-strong"}`}>{internal ? "internal" : "external"}</span>
         <span className={`text-muted transition-transform ${open ? "rotate-90" : ""}`}>›</span>
       </button>
       {open && (
