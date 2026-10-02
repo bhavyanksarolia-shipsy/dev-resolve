@@ -30,6 +30,7 @@ export default function Home() {
 function Inbox() {
   const router = useRouter();
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [accountsLoaded, setAccountsLoaded] = useState(false);
   const firstActive = accounts.find((a) => a.status === "active" && a.client_active !== false)?.slug ?? "";
   const params = useSearchParams();
   const account = params.get("account") || firstActive;
@@ -59,7 +60,7 @@ function Inbox() {
   const [loadInactive, setLoadInactive] = useState<string | null>(null); // slug the user chose to load anyway
 
   useEffect(() => {
-    fetch("/api/accounts").then((r) => r.json()).then((d) => setAccounts(d.accounts));
+    fetch("/api/accounts").then((r) => r.json()).then((d) => { setAccounts(d.accounts ?? []); setAccountsLoaded(true); });
   }, []);
 
   const key = `${account}|${cursor ?? ""}`;
@@ -82,7 +83,18 @@ function Inbox() {
       tickets.forEach((t) => seen.current.ids.add(t.display_id));
       setResult({ key, tick, tickets, next_cursor: d.next_cursor, counts: d.counts ?? undefined, inactive: !!d.inactive });
     });
-    return () => { live = false; };
+    // Fresh server: no projects.json yet → say what to do instead of showing loading rows forever.
+  if (accountsLoaded && !accounts.length) {
+    return (
+      <div className="card mx-auto mt-10 max-w-xl p-6 text-sm">
+        <h1 className="mb-2 text-lg font-semibold">No accounts on this server yet</h1>
+        <p className="text-muted">The backend doesn&apos;t have its private config. An admin uploads <b>projects.json</b> and <b>config.env</b> (and the knowledge archive) on the{" "}
+          <Link href="/settings" className="text-accent-strong underline">Settings</Link> page — then tickets appear here.</p>
+      </div>
+    );
+  }
+
+  return () => { live = false; };
   }, [account, cursor, key, tick, loadInactive]);
 
   const fresh = result?.key === key ? result : null;
