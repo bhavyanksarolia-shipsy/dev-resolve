@@ -26,7 +26,7 @@ function render(s) {
   const row = (dot, k, val, sub) => `<li><span class="dot ${dot}"></span><span class="k">${esc(k)}${sub ? `<span class="sub">${esc(sub)}</span>` : ""}</span><span class="v">${esc(val)}</span></li>`;
   $("rows").innerHTML = [
     row(s.linked ? "ok" : "wait", "Account", s.linked ? s.user || "linked" : "not linked"),
-    row(s.connected ? "ok" : s.connecting ? "wait" : "bad", "Dev Resolve", s.connected ? "connected" : s.connecting ? "connecting…" : "offline", new URL(s.app).host),
+    row(s.connected ? "ok" : s.connecting ? "wait" : "bad", "Dev Resolve", s.connected ? "connected" : s.connecting ? "connecting…" : "offline"),
     row(!hosts.length ? "wait" : vpnUp ? "ok" : "bad", "Company VPN", hosts.length ? `${hosts.filter(([, ok]) => ok).length} of ${hosts.length} reachable` : "checking…"),
     row(!total ? "wait" : signed === total ? "ok" : "bad", "Google sign-ins", total ? `${signed} of ${total}` : "—", (s.signins || []).filter((x) => !x.ok).map((x) => x.label).join(", ")),
   ].join("");
