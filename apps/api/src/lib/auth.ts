@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import { q } from "./db";
 import { hashPassword, verifyPassword } from "./passwords";
-import { googleAdminEmails, googleAutoCreate } from "./google";
+import { googleAdminEmails } from "./google";
+
 import { settings } from "./settings";
 
 /**
@@ -22,22 +23,26 @@ export interface SessionUser { name: string; isAdmin: boolean }
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
 /**
- * First start after upgrading: the old DEV_RESOLVE_USERS (name:password pairs) are imported once, hashed,
- * so nobody gets locked out. Remove DEV_RESOLVE_USERS from the env afterwards.
+ * First start only (empty user list): bring in the first admins so someone can sign in and add everyone else —
+ * DEV_RESOLVE_USERS (name:password pairs, hashed) and GOOGLE_ADMIN_EMAILS (Google sign-in). After that the user list
+ * (Admin → User access control) is the only way in.
  */
 let seeded: Promise<void> | null = null;
 function seedFromEnvOnce() {
   seeded ??= (async () => {
     const [{ n }] = await q<{ n: string }>(`SELECT count(*) AS n FROM app_users`);
-    if (Number(n) > 0 || !process.env.DEV_RESOLVE_USERS) return;
-    for (const pair of process.env.DEV_RESOLVE_USERS.split(",")) {
+    if (Number(n) > 0) return;
+    for (const pair of (process.env.DEV_RESOLVE_USERS || "").split(",")) {
       const i = pair.indexOf(":");
       if (i <= 0) continue;
       const name = pair.slice(0, i).trim().toLowerCase();
       await q(`INSERT INTO app_users (name, password_hash, is_admin) VALUES ($1, $2, $3) ON CONFLICT (name) DO NOTHING`,
         [name, await hashPassword(pair.slice(i + 1).trim()), name === "admin"]);
     }
-    console.warn("[auth] imported DEV_RESOLVE_USERS into the database — manage users with `npm run user` and remove it from the env");
+    for (const email of googleAdminEmails()) {
+      await q(`INSERT INTO app_users (name, email, is_admin) VALUES ($1, $2, true) ON CONFLICT DO NOTHING`,
+        [email.split("@")[0].replace(/[^a-z0-9._-]/g, "-").slice(0, 60), email]);
+    }
   })().catch((e) => { seeded = null; throw e; });
   return seeded;
 }
@@ -77,29 +82,17 @@ async function openSession(userId: number, meta: { ip?: string; userAgent?: stri
 }
 
 /**
- * Google sign-in (identity already verified in google.ts). Matched by email. Only people an admin added can sign in
- * (GOOGLE_AUTO_CREATE=on would instead give anyone from the allowed domain a member login).
+ * Google sign-in (identity already verified in google.ts). Only people in the user list can sign in: the verified
+ * Google email must belong to a user an admin added (Admin → User access control). Nobody gets an account by signing in.
  */
 export async function loginWithGoogle(email: string, displayName: string, meta: { ip?: string; userAgent?: string }):
   Promise<{ ok: true; token: string; maxAge: number; user: SessionUser } | { ok: false; error: string }> {
   await seedFromEnvOnce();
-  let [u] = await q<{ id: number; name: string; is_admin: boolean; disabled_at: string | null }>(
+  const [u] = await q<{ id: number; name: string; is_admin: boolean; disabled_at: string | null }>(
     `SELECT id, name, is_admin, disabled_at FROM app_users WHERE lower(email) = $1`, [email]);
-  if (!u) {
-    if (!googleAutoCreate()) {
-      return { ok: false, error: `${email} doesn't have access to Dev Resolve — ask an admin to add you (Admin → User access control)` };
-    }
-    const admins = googleAdminEmails();
-    const base = email.split("@")[0].toLowerCase().replace(/[^a-z0-9._-]/g, "-").slice(0, 60) || "user";
-    for (let i = 0; !u && i < 20; i++) {
-      [u] = await q(`INSERT INTO app_users (name, email, display_name, is_admin) VALUES ($1, $2, $3, $4)
-                      ON CONFLICT (name) DO NOTHING RETURNING id, name, is_admin, disabled_at`,
-        [i ? `${base}-${i + 1}` : base, email, displayName.slice(0, 120), admins.includes(email)]);
-    }
-    if (!u) return { ok: false, error: "Couldn't create your login — ask an admin" };
-  }
+  if (!u) return { ok: false, error: `${email} doesn't have access to Dev Resolve — ask an admin to add you` };
   if (u.disabled_at) return { ok: false, error: "Your Dev Resolve login is disabled — ask an admin" };
-  await q(`UPDATE app_users SET display_name = $2 WHERE id = $1`, [u.id, displayName.slice(0, 120)]);
+  await q(`UPDATE app_users SET display_name = COALESCE(display_name, $2) WHERE id = $1`, [u.id, displayName.slice(0, 120)]);
   return { ok: true, ...(await openSession(u.id, meta)), user: { name: u.name, isAdmin: u.is_admin } };
 }
 

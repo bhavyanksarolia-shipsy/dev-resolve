@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { BellIcon, BellOffIcon } from "@/components/icons";
 
 interface Finished { id: number; ticket_display: string; ticket_title: string; status: string; confidence: string | null; error: string | null; finished_at: string }
 
@@ -51,16 +52,20 @@ export function InvestigationNotifier() {
     return () => { live = false; clearTimeout(t0); clearInterval(t); };
   }, [router]);
 
+  const iconBtn = "relative grid h-8 w-8 place-items-center rounded-full transition-colors";
   return (
-    <div className="flex items-center gap-3 text-xs">
-      {running > 0 && <span className="text-warn">● {running} investigating</span>}
+    <div className="flex items-center gap-2 text-xs">
+      {running > 0 && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-warn ring-1 ring-amber-200" title="Investigations running now">{running} investigating</span>}
       {perm === "default" && (
-        <button onClick={() => Notification.requestPermission().then(setPerm)} className="rounded-md border border-line px-2 py-1 text-muted hover:text-fg">
-          🔔 Enable notifications
+        <button onClick={() => Notification.requestPermission().then(setPerm)} title="Turn on notifications — get a Chrome notification when an RCA is ready"
+          aria-label="Turn on notifications" className={`${iconBtn} text-muted hover:bg-accent-soft hover:text-accent-strong`}>
+          <BellIcon /><span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-warn ring-2 ring-panel" />
         </button>
       )}
-      {perm === "granted" && <span className="text-muted">🔔 notifications on</span>}
-      {perm === "denied" && <span className="text-bad" title="Chrome: click the lock icon in the address bar → Notifications → Allow">🔕 notifications blocked</span>}
+      {perm === "granted" && <span title="Notifications on — you'll get a Chrome notification when an RCA is ready" aria-label="Notifications on" className={`${iconBtn} text-accent-strong`}><BellIcon filled /></span>}
+      {perm === "denied" && (
+        <span title="Notifications blocked — Chrome: click the lock icon in the address bar → Notifications → Allow" aria-label="Notifications blocked" className={`${iconBtn} text-bad`}><BellOffIcon /></span>
+      )}
     </div>
   );
 }

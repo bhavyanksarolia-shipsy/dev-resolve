@@ -19,19 +19,7 @@ export function UsersTab() {
   const [busy, setBusy] = useState(false);
   const load = useCallback(() => fetch("/api/admin/users", { cache: "no-store" }).then((r) => r.json()).then(setData), []);
   useEffect(() => { load(); }, [load]);
-  const [open, setOpen] = useState<{ on: boolean; domains: string } | null>(null);
-  useEffect(() => {
-    fetch("/api/admin/settings").then((r) => r.json()).then((d) => setOpen({ on: d.GOOGLE_AUTO_CREATE?.value === "on", domains: d.allowedDomains?.value || "" }));
-  }, []);
-  async function setInviteOnly(on: boolean) {
-    const ok = await confirmDialog(on
-      ? { title: "Let anyone from the domain sign in?", message: `Anyone with a ${open?.domains || "allowed"} Google account will get a member login the first time they sign in.`, confirmLabel: "Allow" }
-      : { title: "Only people added here can sign in?", message: "Google accounts that aren't on this list will be refused.", confirmLabel: "Turn on invite-only" });
-    if (!ok) return;
-    const r = await post("/api/admin/settings", { GOOGLE_AUTO_CREATE: on ? "on" : "off" });
-    if (!r.error) setOpen((o) => (o ? { ...o, on } : o));
-    setMsg({ ok: !r.error, text: r.error || (on ? "Anyone from the allowed domain can now sign in" : "Invite-only: only people on this list can sign in") });
-  }
+  const [adding, setAdding] = useState(false);
 
   async function act(body: Record<string, unknown>, ask?: { title: string; message: string; confirmLabel: string; danger?: boolean; requireText?: string }) {
     if (ask && !(await confirmDialog(ask))) return;
@@ -52,14 +40,12 @@ export function UsersTab() {
         <span className="rounded-full bg-bg px-3 py-1 ring-1 ring-line">{active.filter((u) => u.is_admin).length} admins</span>
         <span className="rounded-full bg-bg px-3 py-1 text-muted ring-1 ring-line">{data.users.length - active.length} disabled</span>
       </div>
-      {open && (
-        <div className="card flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
-          <span className="font-medium">Who can sign in</span>
-          <span className="text-muted">{open.on ? `anyone with a ${open.domains} Google account (as member)` : "only the people listed below (invite-only)"}</span>
-          <span className="ml-auto"><Switch on={!open.on} onChange={(v) => setInviteOnly(!v)} label={<span className="text-xs">Invite-only</span>} /></span>
-        </div>
-      )}
-      {msg && <Note ok={msg.ok}>{msg.text}</Note>}
+      <div className="card flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
+        <span className="font-medium">Who can sign in</span>
+        <span className="text-muted">only the people in this list — with their password or their Google account</span>
+        <button className={`${btnPrimary} ml-auto`} onClick={() => { setNu(blank); setAdding(true); }}>+ Add user</button>
+      </div>
+      {msg && !adding && <Note ok={msg.ok}>{msg.text}</Note>}
 
       <div className="card overflow-x-auto">
         <table className="w-full text-sm">
@@ -112,27 +98,36 @@ export function UsersTab() {
         </table>
       </div>
 
-      <div className="card space-y-4 p-5">
-        <div>
-          <div className="font-medium">Add a person</div>
-          <p className="mt-1 text-xs text-muted">Only people added here can sign in. Give them a password, a Google email, or both.</p>
+      {adding && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4 backdrop-blur-[2px]" onMouseDown={(e) => e.target === e.currentTarget && setAdding(false)}>
+          <form role="dialog" aria-modal="true" aria-labelledby="add-user-title" className="w-full max-w-lg space-y-4 rounded-2xl bg-panel p-6 shadow-xl ring-1 ring-line"
+            onSubmit={async (e) => { e.preventDefault(); const ok = await act({ action: "add", ...nu }); if (ok) { setNu(blank); setAdding(false); } }}>
+            <div>
+              <h2 id="add-user-title" className="font-semibold">Add user</h2>
+              <p className="mt-1 text-xs text-muted">They can sign in with a password, their Google account, or both.</p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Name"><input autoFocus className={input} value={nu.display_name} placeholder="Asha Rao" onChange={(e) => setNu({ ...nu, display_name: e.target.value })} /></Field>
+              <Field label="Username" hint="a-z 0-9 . _ -"><input className={input} value={nu.name} placeholder="asha.rao" autoComplete="off"
+                onChange={(e) => setNu({ ...nu, name: e.target.value.toLowerCase().replace(/\s+/g, ".") })} /></Field>
+              <Field label="Password" hint="12+ characters · optional if they use Google"><input className={input} type="password" autoComplete="new-password" value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })} /></Field>
+              <Field label="Google email" hint="optional · enables Sign in with Google"><input className={input} type="email" value={nu.email} placeholder="asha@company.com" onChange={(e) => setNu({ ...nu, email: e.target.value })} /></Field>
+            </div>
+            <Field label="Role">
+              <select className={input} value={nu.admin ? "admin" : "member"} onChange={(e) => setNu({ ...nu, admin: e.target.value === "admin" })}>
+                <option value="member">Member — investigates tickets</option>
+                <option value="admin">Admin — also manages users, clients and connections</option>
+              </select>
+            </Field>
+            {msg && !msg.ok && <Note ok={false}>{msg.text}</Note>}
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" className="rounded-lg border border-line px-4 py-2 text-sm font-medium hover:border-accent" onClick={() => setAdding(false)}>Cancel</button>
+              <button type="submit" className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-strong disabled:opacity-40"
+                disabled={busy || !nu.name || (!nu.password && !nu.email.includes("@"))}>{busy ? "Adding…" : "Add user"}</button>
+            </div>
+          </form>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <Field label="Name"><input className={input} value={nu.display_name} placeholder="Asha Rao" onChange={(e) => setNu({ ...nu, display_name: e.target.value })} /></Field>
-          <Field label="Username" hint="a-z 0-9 . _ -"><input className={input} value={nu.name} placeholder="asha.rao" autoComplete="off"
-            onChange={(e) => setNu({ ...nu, name: e.target.value.toLowerCase().replace(/\s+/g, ".") })} /></Field>
-          <Field label="Password" hint="12+ characters (optional with Google)"><input className={input} type="password" autoComplete="new-password" value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })} /></Field>
-          <Field label="Google email" hint="optional — lets them use Sign in with Google"><input className={input} type="email" value={nu.email} placeholder="asha@company.com" onChange={(e) => setNu({ ...nu, email: e.target.value })} /></Field>
-          <Field label="Role">
-            <select className={input} value={nu.admin ? "admin" : "member"} onChange={(e) => setNu({ ...nu, admin: e.target.value === "admin" })}>
-              <option value="member">Member — investigates tickets</option>
-              <option value="admin">Admin — also manages people, clients, connections</option>
-            </select>
-          </Field>
-        </div>
-        <button className={btnPrimary} disabled={busy || !nu.name || (!nu.password && !nu.email.includes("@"))}
-          onClick={async () => { const ok = await act({ action: "add", ...nu }); if (ok) setNu(blank); }}>Add person</button>
-      </div>
+      )}
     </div>
   );
 }

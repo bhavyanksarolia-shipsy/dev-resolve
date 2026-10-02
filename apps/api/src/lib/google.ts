@@ -10,7 +10,7 @@ const setting = (k: string) => cfgValue(k)?.trim() || "";
  * "Sign in with Google" (OpenID Connect, authorization code + PKCE) for the Dev Resolve login itself.
  * Env: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET (a "Web application" OAuth client whose authorized redirect URI is
  * <APP_URL>/api/auth/google/callback), GOOGLE_ALLOWED_DOMAINS (comma list, e.g. your company domain — required),
- * GOOGLE_ADMIN_EMAILS (made admin on first sign-in), GOOGLE_AUTO_CREATE (default on: new people get a member login).
+ * Only people in the user list (Admin → User access control) can sign in; a Google account is matched by email.
  * Each can be in the environment or in config/config.env. GOOGLE_ALLOWED_DOMAINS falls back to SSO_ACCOUNT_DOMAIN.
  */
 export const googleClientId = () => setting("GOOGLE_CLIENT_ID");
@@ -20,8 +20,6 @@ export const allowedDomains = () =>
 export const googleEnabled = () => !!(googleClientId() && googleClientSecret() && allowedDomains().length);
 export const passwordLoginEnabled = () => !["off", "0", "false"].includes((setting("DEV_RESOLVE_PASSWORD_LOGIN") || "on").toLowerCase());
 export const googleAdminEmails = () => setting("GOOGLE_ADMIN_EMAILS").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
-/** Off by default: only people an admin added (Admin → User access control) can sign in. */
-export const googleAutoCreate = () => ["on", "1", "true"].includes((setting("GOOGLE_AUTO_CREATE") || "off").toLowerCase());
 
 /** Why Google sign-in is off (for the server log / setup), or null when it's ready. */
 export function googleProblem() {
