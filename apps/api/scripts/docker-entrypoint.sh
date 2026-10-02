@@ -34,7 +34,8 @@ for f in projects.json config.env; do
   [ -f "/data/config/$f" ] || echo "[start] /data/config/$f not there yet — an admin uploads it on the Settings page" >&2
 done
 : "${DATABASE_URL:?DATABASE_URL is not set}"
-: "${DEVREV_TOKEN:?DEVREV_TOKEN is not set}"
+# Missing DevRev token: start anyway (sign-in + Settings uploads work); the DevRev health check shows what to set.
+[ -n "${DEVREV_TOKEN:-}" ] || echo "[start] DEVREV_TOKEN is not set — add it in the service's variables" >&2
 
 echo "[start] migrating database…"
 npm run --silent db:migrate
