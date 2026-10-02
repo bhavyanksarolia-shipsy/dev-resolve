@@ -1,89 +1,68 @@
-# Deploying Dev Resolve
+# Deploying Dev Resolve — frontend on Vercel, backend on Railway
 
-One container (Node 22 + Python 3 + git), one Postgres, HTTPS in front. The image holds **code only** — private
-config, knowledge and sign-ins live on the `/data` volume; secrets come from the environment.
-
-## 1. What goes where
-
-| What | Where | Notes |
-|---|---|---|
-| Secrets (DevRev, Claude, DB, GitHub) | secrets manager → container env (`.env.example` lists them) | never in the repo or image |
-| `config/projects.json`, `config/config.env` | `/data/config/` on the volume | copy from your laptop once (`docker cp`) |
-| Knowledge base | `/data/knowledge/` | templates are seeded on first start; copy your `knowledge/<account>/` folders |
-| Each person's Google sign-ins | `/data/auth/users/<name>/` | written by their local connector, readable by the app only |
-| Code the agent reads | `/data/code/` | cloned/updated from GitHub every 30 min |
-
-## 2. Database
-
-Managed Postgres 16 (RDS / Cloud SQL) with automated backups is recommended. Then:
-
-```bash
-psql "$ADMIN_URL" -v owner_pw="'…'" -v app_pw="'…'" -f db/roles.sql    # two roles: owner (migrations) + app (data only)
+```
+browser ──► Vercel  (apps/web: pages only)
+               │  /api/* and /dev-resolve-connector.mjs are forwarded ─────────┐
+               ▼                                                                ▼
+           (same domain for the browser: cookies, Google sign-in just work)  Railway (apps/api: API, agent,
+                                                                              connector relay, Python tools)
+laptop connector ──────────────────────────────────────────────────────────► Railway directly
+                                                                              + Railway Postgres + volume /data
 ```
 
-`DATABASE_URL` = the app role, `MIGRATION_DATABASE_URL` = the owner role, `DATABASE_SSL=verify-full` +
-`DATABASE_CA_CERT` for managed Postgres. Migrations run automatically on every start. Self-hosted Postgres: schedule
-`scripts/db-backup.sh` nightly.
+The browser only ever talks to the Vercel domain; Vercel forwards `/api` to Railway. So there is no CORS and no
+cross-domain cookie setup. Laptop connectors talk to Railway directly (long-polls).
 
-## 3. Logins
+## 1. Railway — backend (`apps/api`)
 
-**Sign in with Google** (recommended). In Google Cloud Console → APIs & Services → Credentials → *Create OAuth
-client ID* → **Web application**:
-- Authorized redirect URI: `https://<your-domain>/api/auth/google/callback`
-- OAuth consent screen: **Internal** (only your Google Workspace users)
+1. **New Project → Deploy from GitHub repo** → this repo. In the service → **Settings**:
+   - **Root Directory:** `apps/api` (it builds `apps/api/Dockerfile`; `railway.json` sets health check + 1 replica)
+   - **Networking → Generate Domain** → note it, e.g. `https://dev-resolve-api.up.railway.app`
+2. **+ New → Database → PostgreSQL** in the same project.
+3. Service → **Volumes → New Volume**, mount path **`/data`** (config, knowledge, sign-ins, synced code live here).
+4. Service → **Variables** (see `apps/api/.env.example`):
 
-Then set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_ALLOWED_DOMAINS=<your company domain>` (falls back to
-`SSO_ACCOUNT_DOMAIN`) and `GOOGLE_ADMIN_EMAILS=<you>` — in the environment or in `config/config.env`.
-For local testing also add `http://localhost:3001/api/auth/google/callback` as a redirect URI. People of that domain get a member login on first sign-in
-(`GOOGLE_AUTO_CREATE=off` to allow only people you add with `npm run user -- add-google <email>`).
-Password logins stay as a break-glass; `DEV_RESOLVE_PASSWORD_LOGIN=off` hides them.
+| Variable | Value |
+|---|---|
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (Railway reference) |
+| `DATABASE_SSL` | `off` (private network) |
+| `NODE_ENV` | `production` |
+| `DEV_RESOLVE_CONNECTOR` | `on` |
+| `APP_URL` | the **Vercel** URL (step 2), e.g. `https://dev-resolve.vercel.app` |
+| `BACKEND_PUBLIC_URL` | the Railway domain from step 1 |
+| `DEVREV_TOKEN`, `DEVREV_BASE_URL`, `DEVREV_APP_URL` | from your `.env.local` |
+| `CLAUDE_CODE_OAUTH_TOKEN` | `claude setup-token` (or `ANTHROPIC_API_KEY`) |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | your OAuth client |
+| `GOOGLE_ALLOWED_DOMAINS`, `GOOGLE_ADMIN_EMAILS` | your company domain, your email |
+| `CODE_GIT_BASE`, `GITHUB_TOKEN` | `https://github.com/<org>`, fine-grained read-only token |
 
-```bash
-docker compose exec app npm run user -- add <name> --admin     # asks for the password (hidden, 12+ chars)
-docker compose exec app npm run user -- list | reset | disable | enable | signout
-```
+Railway sets `PORT` itself. Logs on start print `[settings] {…}` — check the URLs there.
 
-Passwords are stored hashed (scrypt); sessions are server-side, so sign-out / disable / reset is immediate.
-5 wrong passwords lock an account for 15 minutes. Only admins can switch clients on/off.
+## 2. Vercel — frontend (`apps/web`)
 
-## 4. Client VPN and Google sign-in — the local connector
+1. **Add New → Project** → this repo → **Root Directory:** `apps/web` (framework: Next.js, detected).
+2. **Environment Variables:** `BACKEND_URL` = the Railway domain (e.g. `https://dev-resolve-api.up.railway.app`).
+3. Deploy. Its URL (or your custom domain) is the `APP_URL` you set on Railway — update it there if it changed,
+   and redeploy the backend.
 
-The server can't join the client VPN and can't do Google sign-in. With `DEV_RESOLVE_CONNECTOR=on`, each person runs the
-connector on their own laptop (Dev Resolve → **Connector** page shows the one-line command):
+## 3. Google sign-in
 
-- requests to VPN-only hosts (`VPN_HOST_SUFFIXES`) from *their* investigations go through *their* laptop (on the VPN);
-- Google-login Metabase and app logs are signed in in *their* Chrome; only the session is sent, stored for them only.
+In the OAuth client add the redirect URI **`<APP_URL>/api/auth/google/callback`** (the Vercel domain).
 
-Needs Node 22+ and Chrome on the laptop. The connector pins the allowed host suffix on first run and only does GET/POST.
+## 4. Private files (first time)
 
-## 5. Code access
+Open the Vercel URL → **Sign in with Google** (you're admin) → **Settings** → upload:
+- `apps/api/config/projects.json`, `apps/api/config/config.env`
+- knowledge: `npm --prefix apps/api run pack-knowledge` → upload `knowledge-upload.tgz` → delete it.
 
-`CODE_GIT_BASE=https://github.com/<org>`, `GITHUB_TOKEN` = fine-grained token, **read-only Contents** on only the
-repos in `code_repos`. Shallow clones; the token is sent per request, never stored in git config.
+Then **Connector** page → download, run it on your laptop with the client VPN connected, and do the Google sign-ins.
 
-## 6. Render
-
-One **Web Service** (Docker) + one **Postgres** — `render.yaml` describes both (Dashboard → New → Blueprint).
-1. Fill the `sync: false` env vars when asked (DevRev, Claude token, Google client, GitHub token, `APP_URL`).
-2. Secret files: run `bash scripts/render-secret-files.sh` on your laptop, then in the service → Environment →
-   **Secret Files** add `projects.json`, `config.env`, `knowledge.tgz.b64` with those contents. They're copied onto the
-   disk on start (and again whenever you change them there). Delete the local folder afterwards.
-3. Custom domain: service → Settings → Custom Domains (Render issues the HTTPS certificate). Set `APP_URL` to it and
-   use the same URL in the Google OAuth client's redirect URI.
-4. First admin: sign in with Google as one of `GOOGLE_ADMIN_EMAILS`.
-
-Render specifics already handled: `PORT` (10000), health check `/api/healthz`, root-owned disk, one instance.
-Render Postgres has a single user — skip `db/roles.sql` there.
-
-## 7. Run elsewhere (any Docker host)
+## Local
 
 ```bash
-docker compose -f docker-compose.prod.yml --env-file /secure/dev-resolve.env up -d --build
-# first start only — the app waits until these are on the volume:
-docker cp config/projects.json <container>:/data/config/ && docker cp config/config.env <container>:/data/config/
-docker cp knowledge/. <container>:/data/knowledge/        # your accounts' playbooks / saved queries
-curl -fsS https://<host>/api/healthz        # {"ok":true} — for the load balancer
+npm run install:all     # once
+npm run up              # Postgres + backend :3002 + frontend :3001 → http://localhost:3001
+npm run user -- list    # logins
 ```
 
-Run **one** instance (the connector relay and Metabase rate limit are in memory). Put TLS in front; set `APP_URL`
-to the public URL.
+Other details (database roles, backups, logins, connector, code sync): `apps/api/DEPLOY.md`.

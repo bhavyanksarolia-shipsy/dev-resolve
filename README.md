@@ -5,36 +5,39 @@ Evidence-based RCAs for DevRev tickets. For a ticket it searches the right accou
 a human reviews it, posts it to the ticket's **internal** discussion. Each approved RCA feeds the account's
 knowledge base, so the next similar ticket is faster.
 
-Self-contained: the OpenSearch MCP server, Metabase skill, ffo-miss-analysis skill, ticket digest service,
-config and knowledge base all live in this folder.
+Two apps in one repo, deployed separately (see `DEPLOY.md`):
 
-## Run
+| App | Deploys to | What |
+|---|---|---|
+| **`apps/web`** | Vercel | The UI — pages and components only. Forwards every `/api` request to the backend (`BACKEND_URL`), so the browser sees one domain. |
+| **`apps/api`** | Railway (Docker) | Everything else: API routes, the investigation agent, connector relay, OpenSearch MCP server, Metabase tool, migrations, private config and knowledge. |
+
+## Run locally
 
 ```bash
-# once
-npm install
-npm run setup            # starts Postgres (Docker, port 5434) + applies db/migrations
-# every time
-npm run dev              # http://localhost:3000 (or the next free port)
+npm run install:all      # once (installs both apps)
+npm run up               # Postgres (Docker) + migrations + backend :3002 + frontend :3001 → http://localhost:3001
 ```
 
-Requirements: Node 20+, Docker, Python 3 + `uv`, the client VPN for VPN-only hosts (`VPN_HINT` in config.env), and either a local Claude Code
-login or `ANTHROPIC_API_KEY` in `.env.local` (set this before go-live).
+Requirements: Node 22+, Docker, Python 3 + `uv`, the client VPN for VPN-only hosts (`VPN_HINT` in config.env), and a
+local Claude Code login (or `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN` in `apps/api/.env.local`).
 
-## Layout
+## Layout (backend paths are under `apps/api/`)
 
 | Path | What |
 |---|---|
 | `config/projects.json` (private — start from `projects.example.json`) | **Single source of truth**: `accounts[]` (what tickets route to), connection projects (OpenSearch clusters / Metabase instances / log MCP), `devrev_routing` (ambiguous / ignored DevRev accounts) |
 | `config/config.env` | Secrets for logs/DB (URLs, users, passwords, Metabase session tokens). gitignored, chmod 600 |
-| `.env.local` | `DEVREV_TOKEN`, `DATABASE_URL`, optional `ANTHROPIC_API_KEY`, `CODE_ROOT`, `DEV_RESOLVE_MODEL` |
-| `mcp/opensearch-logs/server.py` | Read-only OpenSearch MCP server (also registered in `.mcp.json` for Claude Code in this folder) |
+| `.env.local` | `DEVREV_TOKEN`, `DATABASE_URL`, Claude / Google / GitHub settings — see `.env.example` |
+| `src/lib/settings.ts` | Every port and URL in one place (env → config.env → default) |
+| `mcp/opensearch-logs/server.py` | Read-only OpenSearch MCP server (also registered in `.mcp.json`) |
 | `.claude/skills/metabase-sql/` | Read-only Metabase CLI (`query.py`) — refuses anything but SELECT/WITH |
 | `.claude/skills/ffo-miss-analysis/` | QC FFO miss RCA method + scripts |
 | `services/wms_ticket_digest/` | The DevRev → Slack/Sheets ticket digest (Python, cron) |
 | `knowledge/` (private except README + `_template/` + `_shared/`) | Layer-1 knowledge base (per-account playbooks) — see `knowledge/README.md` |
-| `db/migrations/` | Postgres schema (investigations, steps, cases, knowledge_proposals) |
+| `db/migrations/` | Postgres schema |
 | `src/lib/agent/` | The investigation agent (Claude Agent SDK) and its tools |
+| `public/dev-resolve-connector.mjs` | The local connector people run on their laptops (client VPN + Google sign-ins) |
 
 ## How an investigation works
 

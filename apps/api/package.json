@@ -1,0 +1,44 @@
+{
+  "name": "dev-resolve-api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p ${PORT:-3002}",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "db:up": "docker compose up -d postgres",
+    "db:migrate": "tsx --env-file-if-exists=.env.local scripts/migrate.ts",
+    "user": "tsx --env-file-if-exists=.env.local scripts/user.ts",
+    "set-password": "tsx --env-file-if-exists=.env.local scripts/user.ts reset",
+    "os-login": "node scripts/os-login.cjs",
+    "app-log-login": "node scripts/app-log-login.cjs",
+    "metabase-login": "node scripts/metabase-login.cjs",
+    "metabase-password": "python3 .claude/skills/metabase-sql/query.py set-credentials --project",
+    "pack-knowledge": "tar -czf ../../knowledge-upload.tgz --exclude=_template --exclude=_shared --exclude=README.md -C knowledge . && echo 'Created knowledge-upload.tgz in the repo root (gitignored) \u2014 upload it on the Settings page, then delete it.'"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.282",
+    "mailparser": "^3.9.28",
+    "mammoth": "^1.13.0",
+    "next": "16.3.6",
+    "pg": "^8.23.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "server-only": "^0.0.1",
+    "tsx": "^4.23.15",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/mailparser": "^3.4.6",
+    "@types/node": "^20",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.6",
+    "playwright-core": "^1.63.0",
+    "typescript": "^5"
+  }
+}
