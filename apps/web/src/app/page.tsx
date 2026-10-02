@@ -372,13 +372,20 @@ function RangeCalendar({ initial, onApply, onCancel }: { initial: Range; onApply
   const start = to ? from : from && hover && hover < from ? hover : from;
   const tooLong = !!(from && to && daysBetween(from, to) > 365);
 
-  const month = (first: string) => {
+  const navBtn = "grid h-8 w-8 place-items-center rounded-full text-lg text-muted hover:bg-accent-soft hover:text-accent-strong disabled:opacity-30 disabled:hover:bg-transparent";
+  const prev = <button type="button" onClick={() => setRight(addMonths(right, -1))} aria-label="Previous month" className={navBtn}>‹</button>;
+  const next = <button type="button" onClick={() => canNext && setRight(addMonths(right, 1))} disabled={!canNext} aria-label="Next month" className={navBtn}>›</button>;
+  const month = (first: string, nav: { left?: React.ReactNode; right?: React.ReactNode }) => {
     const lead = (new Date(`${first}T00:00:00Z`).getUTCDay() + 6) % 7; // Monday first
     const len = daysBetween(first, addMonths(first, 1));
     const cells: (string | null)[] = [...Array(lead).fill(null), ...Array.from({ length: len }, (_, i) => shift(first, i))];
     return (
       <div className="w-60">
-        <div className="mb-2 text-center font-semibold">{new Date(`${first}T00:00:00Z`).toLocaleDateString("en-IN", { month: "long", year: "numeric", timeZone: "UTC" })}</div>
+        <div className="mb-2 flex items-center justify-between">
+          <span className="w-8">{nav.left}</span>
+          <span className="font-semibold">{new Date(`${first}T00:00:00Z`).toLocaleDateString("en-IN", { month: "long", year: "numeric", timeZone: "UTC" })}</span>
+          <span className="w-8">{nav.right}</span>
+        </div>
         <div className="grid grid-cols-7 text-center text-[11px] font-medium text-muted">{WEEKDAYS.map((w) => <span key={w} className="py-1">{w}</span>)}</div>
         <div className="grid grid-cols-7" onMouseLeave={() => setHover(null)}>
           {cells.map((day, i) => {
@@ -404,15 +411,10 @@ function RangeCalendar({ initial, onApply, onCancel }: { initial: Range; onApply
 
   return (
     <div className="p-4">
-      <div className="mb-1 flex items-center justify-between">
-        <button type="button" onClick={() => setRight(addMonths(right, -1))} aria-label="Previous month"
-          className="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-accent-soft hover:text-accent-strong">‹</button>
-        <button type="button" onClick={() => canNext && setRight(addMonths(right, 1))} disabled={!canNext} aria-label="Next month"
-          className="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-accent-soft hover:text-accent-strong disabled:opacity-30">›</button>
-      </div>
-      <div className="-mt-9 flex gap-6">
-        <div className="hidden sm:block">{month(left)}</div>
-        {month(right)}
+      <div className="flex gap-6">
+        <div className="hidden sm:block">{month(left, { left: prev })}</div>
+        <div className="sm:hidden">{month(right, { left: prev, right: next })}</div>
+        <div className="hidden sm:block">{month(right, { right: next })}</div>
       </div>
       <div className="mt-4 flex items-center gap-3 border-t border-line pt-3">
         <span className={`min-w-0 flex-1 text-xs ${tooLong ? "text-bad" : "text-muted"}`}>
