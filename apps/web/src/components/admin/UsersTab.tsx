@@ -23,6 +23,19 @@ export function UsersTab() {
     if (r.ok && Array.isArray(d.users)) { setData(d); setLoadError(null); } else setLoadError(d.error || `HTTP ${r.status}`);
   }).catch(() => setLoadError("Couldn't reach the backend")), []);
   useEffect(() => { load(); }, [load]);
+  const [prefs, setPrefs] = useState<{ trail: boolean; autoAccept: boolean } | null>(null);
+  useEffect(() => {
+    fetch("/api/admin/settings", { cache: "no-store" }).then(async (r) => {
+      if (!r.ok) return;
+      const d = await r.json();
+      setPrefs({ trail: d.TRAIL_FOR_MEMBERS?.value === "on", autoAccept: d.KNOWLEDGE_AUTO_ACCEPT?.value !== "off" });
+    }).catch(() => {});
+  }, []);
+  async function savePref(key: "TRAIL_FOR_MEMBERS" | "KNOWLEDGE_AUTO_ACCEPT", on: boolean) {
+    const r = await post("/api/admin/settings", { [key]: on ? "on" : "off" });
+    if (r.error) return setMsg({ ok: false, text: r.error });
+    setPrefs((p) => p && (key === "TRAIL_FOR_MEMBERS" ? { ...p, trail: on } : { ...p, autoAccept: on }));
+  }
   const [adding, setAdding] = useState(false);
   const [query, setQuery] = useState("");
   const [show, setShow] = useState<"all" | "active" | "admins" | "disabled">("all");
@@ -65,6 +78,15 @@ export function UsersTab() {
         ))}
       </div>
       {msg && !adding && <Note ok={msg.ok}>{msg.text}</Note>}
+
+      {prefs && (
+        <div className="card flex flex-wrap gap-x-8 gap-y-3 px-4 py-3">
+          <Switch on={prefs.trail} onChange={(v) => savePref("TRAIL_FOR_MEMBERS", v)}
+            label={<span>Members can see the full investigation trail <span className="text-muted">— off: they see a progress card only</span></span>} />
+          <Switch on={prefs.autoAccept} onChange={(v) => savePref("KNOWLEDGE_AUTO_ACCEPT", v)}
+            label={<span>Auto-accept the agent&apos;s knowledge proposals <span className="text-muted">— only admins see proposals</span></span>} />
+        </div>
+      )}
 
       <div className="card overflow-x-auto">
         <table className="w-full text-sm">

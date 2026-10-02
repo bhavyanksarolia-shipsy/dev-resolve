@@ -2,6 +2,7 @@
 import { useState } from "react";
 import type { AdminConfig, Conn } from "./types";
 import { btn, btnPrimary, Field, input, Note, post, Rows, Switch } from "./ui";
+import { SourceCodeCard } from "./SourceCodeCard";
 
 type Kind = "opensearch" | "metabase";
 interface Form {
@@ -65,6 +66,7 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
       {msg && <Note ok={msg.ok}>{msg.text}</Note>}
       {!form && (
         <>
+          <SourceCodeCard />
           <div className="flex gap-2">
             <button className={btnPrimary} onClick={() => { setForm(toForm(null, "metabase")); setTest(null); }}>+ Metabase</button>
             <button className={btnPrimary} onClick={() => { setForm(toForm(null, "opensearch")); setTest(null); }}>+ OpenSearch logs</button>

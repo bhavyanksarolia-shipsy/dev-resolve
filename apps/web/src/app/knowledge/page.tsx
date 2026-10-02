@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { fileLabel, hidePaths, scopeLabel } from "@/components/labels";
 
 interface Data {
+  isAdmin?: boolean;
   pending: { id: number; account_slug: string; file: string; rationale: string; ticket_display: string; source: string }[];
   accounts: { slug: string; name: string; status: string; last_ticket: string | null; client_active_changed: { by: string; at: string } | null;
     learnings: number; queries: number; cases: number; clientActive: boolean }[];
@@ -27,7 +28,7 @@ export default function KnowledgePage() {
 
   return (
     <div className="space-y-8">
-      <section>
+      {data.isAdmin && <section>
         <h1 className="mb-2 text-xl font-semibold">Pending proposals ({pending.length})</h1>
         {!pending.length && <p className="text-sm text-muted">Nothing to review.</p>}
         <ul className="space-y-1 text-sm">
@@ -39,7 +40,7 @@ export default function KnowledgePage() {
             </li>
           ))}
         </ul>
-      </section>
+      </section>}
       <section>
         <h2 className="mb-1 font-semibold">Knowledge per account</h2>
         <p className="mb-3 text-xs text-muted">

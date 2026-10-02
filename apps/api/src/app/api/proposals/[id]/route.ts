@@ -1,12 +1,14 @@
 import { q } from "@/lib/db";
 import { getAccount } from "@/lib/config";
 import { applyToFiles } from "@/lib/knowledge";
-import { currentUser } from "@/lib/auth";
+import { requireAdmin } from "@/lib/adminGuard";
 
 export async function POST(req: Request, ctx: RouteContext<"/api/proposals/[id]">) {
   const { id } = await ctx.params;
+  const g = await requireAdmin(req);
+  if (g.error) return g.error;
   const { action, content, file } = (await req.json()) as { action: "accept" | "reject"; content?: string; file?: string };
-  const by = await currentUser(req);
+  const by = g.user.name;
   const [p] = await q<{ id: number; account_slug: string; file: string; content: string; status: string; investigation_id: number }>(
     `SELECT * FROM knowledge_proposals WHERE id=$1`, [id]);
   if (!p) return Response.json({ error: "not found" }, { status: 404 });

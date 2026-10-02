@@ -1,7 +1,7 @@
 import "server-only";
 import { existsSync, readdirSync, readFileSync, mkdirSync, cpSync, appendFileSync, writeFileSync, statSync } from "node:fs";
 import path from "node:path";
-import { Account, ROOT } from "./config";
+import { Account, ROOT, cfgValue, getAccount } from "./config";
 import { q } from "./db";
 
 const KB = path.join(ROOT, "knowledge");
@@ -68,7 +68,20 @@ export async function proposeKnowledge(p: { investigationId: number; accountSlug
      VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
     [p.investigationId, p.accountSlug, p.file, p.content, p.rationale, p.source ?? "agent"],
   );
+  if ((p.source ?? "agent") === "agent" && autoAcceptKnowledge()) await autoAccept(row.id, p);
   return row.id;
+}
+
+/** Agent learnings go straight into the knowledge base unless an admin turned this off (Admin → User access control). */
+export const autoAcceptKnowledge = () => (cfgValue("KNOWLEDGE_AUTO_ACCEPT") || "on").toLowerCase() !== "off";
+
+async function autoAccept(id: number, p: { investigationId: number; accountSlug: string; file: string; content: string }) {
+  const target = p.accountSlug === "_shared" ? { slug: "_shared", knowledge_dir: "knowledge/_shared" } : getAccount(p.accountSlug);
+  if (!target) return; // account not configured — leave it pending for an admin
+  try {
+    applyToFiles(target, p.file, p.content, `proposal #${id} · investigation #${p.investigationId} · auto-accepted ${new Date().toISOString().slice(0, 10)}`);
+  } catch { return; }
+  await q(`UPDATE knowledge_proposals SET status='accepted', decided_at=now(), decided_by='auto' WHERE id=$1`, [id]);
 }
 
 /** Applies an accepted proposal to the markdown files (creating the account folder from _template on first use). */

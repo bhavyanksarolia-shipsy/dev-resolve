@@ -5,6 +5,7 @@ import path from "node:path";
 import { z } from "zod";
 import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { Account, CODE_ROOT, ROOT } from "../config";
+import { ensureRepos } from "../codeSync";
 import { userToolEnv } from "../connector";
 import { q } from "../db";
 import { proposeKnowledge, similarCases } from "../knowledge";
@@ -78,8 +79,10 @@ export function buildToolServer(opts: { investigationId: number; account: Accoun
       include: z.string().optional().describe("File glob, e.g. '*.py' (default: *.py, *.ts, *.js, *.sql)"),
     },
     async ({ pattern, repo, include }) => {
-      const targets = (repo ? [repo] : repos).filter((r) => repos.includes(r)).map((r) => path.join(CODE_ROOT, r)).filter(existsSync);
-      if (!targets.length) return text(`No repo found under CODE_ROOT=${CODE_ROOT} for ${repo ?? repos.join(", ")}`);
+      const wanted = (repo ? [repo] : repos).filter((r) => repos.includes(r));
+      await ensureRepos(wanted);
+      const targets = wanted.map((r) => path.join(CODE_ROOT, r)).filter(existsSync);
+      if (!targets.length) return text(`The source code for ${repo ?? repos.join(", ")} isn't on this server yet (an admin can fix it in Admin → Connections → Source code). Say in the RCA that the code wasn't checked.`);
       const includes = (include ? [include] : ["*.py", "*.ts", "*.js", "*.sql"]).flatMap((g) => ["--include", g]);
       const out = await run("/usr/bin/grep", ["-rnEI", "--exclude-dir=node_modules", "--exclude-dir=.git", "--exclude-dir=migrations", ...includes, "-m", "5", pattern, ...targets], 60000);
       const lines = out.split("\n").map((l) => l.replace(CODE_ROOT + "/", ""));
@@ -115,7 +118,7 @@ export function buildToolServer(opts: { investigationId: number; account: Accoun
 
   const propose = tool(
     "propose_knowledge",
-    "Propose a durable learning for this account's knowledge base (a human reviews it before it is saved). " +
+    "Add a durable learning to this account's knowledge base (saved straight away; admins can review it later). " +
       "Only propose things you VERIFIED in this investigation: a proven query, what a log line means, a table/status fact, an identifier format, " +
       "or a playbook step. Do not propose ticket-specific facts.",
     {
@@ -126,7 +129,7 @@ export function buildToolServer(opts: { investigationId: number; account: Accoun
     },
     async ({ file, content, rationale, scope: s }) => {
       const id = await proposeKnowledge({ investigationId, accountSlug: s === "shared" ? "_shared" : account.slug, file, content, rationale });
-      return text(`Proposal #${id} filed for human review.`);
+      return text(`Proposal #${id} saved to the knowledge base.`);
     },
   );
 

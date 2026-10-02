@@ -7,6 +7,8 @@ import { allowedDomains } from "@/lib/google";
 const EDITABLE: Record<string, { label: string; check?: (v: string) => string | null }> = {
   EXTENSION_STORE_URL: { label: "Chrome Web Store link", check: (v) => (!v || /^https:\/\/chrome(webstore)?\.google\.com\//.test(v) ? null : "Paste the extension's Chrome Web Store link (https://chromewebstore.google.com/…)") },
   VPN_HINT: { label: "How people connect the company VPN (shown in 'Connect VPN' messages)" },
+  KNOWLEDGE_AUTO_ACCEPT: { label: "Auto-accept the agent's knowledge proposals", check: (v) => (["on", "off", ""].includes(v) ? null : "on or off") },
+  TRAIL_FOR_MEMBERS: { label: "Members can see the full investigation trail", check: (v) => (["on", "off", ""].includes(v) ? null : "on or off") },
 };
 
 export async function GET(req: Request) {

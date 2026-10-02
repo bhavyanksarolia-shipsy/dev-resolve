@@ -117,3 +117,14 @@ button:disabled { cursor: not-allowed; }
   .nf .nf-lens, .nf .nf-num, .nf .nf-line, .nf .nf-glow, .nf > div { animation: none; }
   .nf .nf-lens { transform: translate(-30%, -40%); }
 }
+
+/* ── investigation progress ── */
+@keyframes ip-ring { 0% { transform: scale(.7); opacity: .9; } 100% { transform: scale(1.6); opacity: 0; } }
+@keyframes ip-fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes ip-dot { 0%, 100% { transform: scale(.7); opacity: .7; } 50% { transform: scale(1.15); opacity: 1; } }
+@keyframes ip-shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+.ip-ring { animation: ip-ring 2s ease-out infinite; }
+.ip-fade { animation: ip-fade .4s ease-out; }
+.ip-dot { animation: ip-dot 1.2s ease-in-out infinite; }
+.ip-shimmer { background: linear-gradient(90deg, transparent, rgba(255,255,255,.10), transparent); animation: ip-shimmer 3.5s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .ip-ring, .ip-fade, .ip-dot, .ip-shimmer { animation: none; } }

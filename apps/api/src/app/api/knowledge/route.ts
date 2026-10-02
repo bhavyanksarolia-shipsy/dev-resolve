@@ -3,9 +3,10 @@ import path from "node:path";
 import { ROOT, getAccounts } from "@/lib/config";
 import { q } from "@/lib/db";
 import { apiError } from "@/lib/apiError";
+import { sessionUser } from "@/lib/auth";
 
 /** Knowledge page data: pending proposals + per-account learnings / saved queries / resolved cases. */
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const [pending, stats] = await Promise.all([
       q<{ id: number; account_slug: string; file: string; rationale: string; ticket_display: string; source: string }>(
@@ -30,7 +31,8 @@ export async function GET() {
         learnings, queries, cases: Number(byAcc[a.slug]?.cases ?? 0), clientActive: a.client_active !== false,
       };
     });
-    return Response.json({ pending, accounts });
+    const isAdmin = !!(await sessionUser(req))?.isAdmin; // members never see proposals
+    return Response.json({ pending: isAdmin ? pending : [], isAdmin, accounts });
   } catch (e) {
     return apiError(e);
   }

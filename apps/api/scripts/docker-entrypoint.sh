@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Container start: migrate the DB → restore private files from it → sync code from GitHub (then every 30 min) → run the app.
+# Container start: migrate the DB → restore private files from it → run the app (which syncs code from GitHub).
 set -euo pipefail
 cd /app
 if [ "$(id -u)" = 0 ]; then
@@ -40,13 +40,7 @@ npm run --silent db:migrate
 echo "[start] loading private files from the database…"
 npm run --silent private -- restore
 
-if [ -n "${CODE_GIT_BASE:-}" ]; then
-  echo "[start] syncing code from GitHub…"
-  bash scripts/sync-code.sh || echo "[start] code sync failed — investigations still run, code reads use the last copy" >&2
-  ( while sleep "${CODE_SYNC_SECONDS:-1800}"; do bash scripts/sync-code.sh >/dev/null || true; done ) &
-else
-  echo "[start] CODE_GIT_BASE not set — the agent can't read code (set it + GITHUB_TOKEN)" >&2
-fi
+# Code from GitHub is synced by the app itself (src/lib/codeSync.ts) — settings can come from the variables or Admin.
 
 echo "[start] Dev Resolve on :${PORT:-3000}"
 exec npx next start -H "${HOSTNAME:-0.0.0.0}" -p "${PORT:-3000}"

@@ -3,4 +3,5 @@ export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   const { settingsSummary } = await import("./lib/settings");
   console.log("[settings]", JSON.stringify(settingsSummary()));
+  (await import("./lib/codeSync")).startCodeSync();
 }

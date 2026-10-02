@@ -4,6 +4,7 @@ import { HealthBanner } from "./HealthBanner";
 import { Markdown } from "./Markdown";
 import { describeCall, fileLabel, hidePaths, resultSummary, scopeLabel, STEP_ICON, toolName } from "./labels";
 import { confirmDialog, notify } from "@/components/Dialog";
+import { InvestigationProgress } from "./InvestigationProgress";
 
 interface Step { seq: number; kind: string; tool: string | null; input: Record<string, unknown> | null; output: string | null; created_at: string }
 interface Proposal { id: number; account_slug: string; file: string; content: string; rationale: string; source: string; status: string }
@@ -45,6 +46,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
   const [inv, setInv] = useState<Investigation | null>(null);
   const [trail, setTrail] = useState<{ id: number | null; steps: Step[] }>({ id: null, steps: [] });
   const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [fullTrail, setFullTrail] = useState(false);
   const [rca, setRca] = useState("");
   const [rating, setRating] = useState(0);
   const [rcaMode, setRcaMode] = useState<"preview" | "edit">("preview");
@@ -80,6 +82,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
     if (d.steps.length) cursor.current.seq = d.steps[d.steps.length - 1].seq;
     setTrail((t) => (t.id === invId && after >= 0 ? { id: invId, steps: [...t.steps, ...d.steps] } : { id: invId, steps: d.steps }));
     setProposals(d.proposals);
+    setFullTrail(d.trail === "full");
   }, [invId]);
 
   useEffect(() => {
@@ -143,9 +146,10 @@ export function Workspace({ ticketId }: { ticketId: string }) {
   const currentPosted = !!inv?.posted_at && inv.posted_version >= inv.rca_version;
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+    // Desktop: both columns fit the window and scroll on their own, so the page itself never scrolls.
+    <div className="grid gap-6 lg:h-[calc(100dvh-7.5rem)] lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
       {/* Left: ticket */}
-      <section className="min-w-0">
+      <section className="min-w-0 lg:overflow-y-auto lg:pr-2">
         <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
           <span className="rounded-md bg-accent-soft px-2 py-0.5 font-mono font-semibold text-accent-strong">{t.display_id}</span>
           <span className="rounded-full bg-panel px-2 py-0.5 text-muted ring-1 ring-line">{t.stage?.display_name ?? t.stage?.name}</span>
@@ -186,7 +190,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
           <div className="card space-y-2 p-4">{Array.from({ length: 10 }).map((_, i) => <div key={i} className="skeleton h-4" style={{ width: `${96 - (i % 4) * 9}%` }} />)}</div>
         </section>
       ) : (
-      <section className="min-w-0">
+      <section className="flex min-w-0 flex-col lg:min-h-0">
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <button onClick={start} disabled={busy || running || data.routing.kind === "unmapped" || data.routing.kind === "ignored"}
             className="rounded-md bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50">
@@ -201,6 +205,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
           )}
           {running && <button onClick={() => fetch(`/api/investigations/${inv!.id}`, { method: "DELETE" }).then(poll)} className="text-sm text-bad">cancel</button>}
         </div>
+        <div className="min-h-0 flex-1 lg:overflow-y-auto lg:pr-2">
         {inv?.error && <div className="mb-3 rounded-md border border-bad/40 bg-bad/5 px-3 py-2 text-sm text-bad">{inv.error}</div>}
         {connErrors.map((s) => (
           <div key={s.seq} className="mb-2 rounded-md border border-bad/40 bg-bad/5 px-3 py-2 text-sm">
@@ -260,26 +265,29 @@ export function Workspace({ ticketId }: { ticketId: string }) {
           </div>
         )}
 
-        {inv && !running && <Chat steps={steps} busy={!!inv.chat_running} onSend={sendChat} resumed={!!inv.session_id} />}
+        {running && <div className="mb-5"><InvestigationProgress steps={steps} startedAt={steps[0]?.created_at} /></div>}
 
         {proposals.length > 0 && (
-          <div className="mb-5">
-            <h2 className="mb-2 font-semibold">Knowledge proposals <span className="text-sm font-normal text-muted">— accepted ones are added to this account&apos;s knowledge base</span></h2>
+          <Collapsible className="mb-5" title="Knowledge proposals"
+            hint={(() => { const n = proposals.filter((p) => p.status === "pending").length, a = proposals.filter((p) => p.status === "accepted").length;
+              return [n && `${n} waiting for review`, a && `${a} added to the knowledge base`].filter(Boolean).join(" · "); })()}>
             <div className="space-y-2">
               {proposals.map((p) => <ProposalCard key={p.id} p={p} onDecide={decide} />)}
             </div>
-          </div>
+          </Collapsible>
         )}
 
-        {steps.length > 0 && (
-          <div>
-            <h2 className="mb-2 font-semibold">Investigation trail</h2>
+        {fullTrail && steps.length > 0 && (
+          <Collapsible title="Investigation trail" hint={`${steps.filter((x) => x.kind === "tool_call").length} checks`}>
             <ol className="space-y-1.5 text-sm">
               {pairSteps(steps).map(({ s, result }) => <StepRow key={s.seq} s={s} result={result} />)}
               {running && <li className="animate-pulse text-muted">working…</li>}
             </ol>
-          </div>
+          </Collapsible>
         )}
+        </div>
+
+        {inv && !running && <Chat steps={steps} busy={!!inv.chat_running} onSend={sendChat} resumed={!!inv.session_id} />}
       </section>
       )}
     </div>
@@ -431,15 +439,15 @@ function Chat({ steps, busy, onSend, resumed }: { steps: Step[]; busy: boolean; 
   }
 
   return (
-    <div className="card mb-5 p-4">
-      <h2 className="mb-1 font-semibold">Discuss this RCA</h2>
-      <p className="mb-2 text-xs text-muted">
+    <div className="card mt-3 shrink-0 p-3 shadow-sm">
+      <h2 className="mb-0.5 font-semibold">Discuss this RCA</h2>
+      <p className="mb-2 text-xs text-muted max-lg:block lg:line-clamp-1" title="Ask questions or add context; the agent can run new checks and post a revised draft.">
         Ask questions or add context (&ldquo;also check trip SD39000220&rdquo;, &ldquo;SAP fixed this on 23-Sep, re-verify&rdquo;). The agent keeps
         {resumed ? " everything it checked in this investigation" : " the ticket + current RCA"}, can run new log / DB / code checks,
         and will post a revised draft (new version) above if the findings change.
       </p>
       {thread.length > 0 && (
-        <div className="mb-2 max-h-[50vh] space-y-2 overflow-y-auto pr-1 text-sm">
+        <div className="mb-2 max-h-[30vh] space-y-2 overflow-y-auto pr-1 text-sm">
           {thread.map((s) =>
             s.kind === "user_message" ? (
               <div key={s.seq} className="ml-10 whitespace-pre-wrap rounded-md bg-accent/10 px-3 py-2"><b className="text-xs text-accent">{String(s.input?.by ?? "You")}</b><br />{s.output}</div>
@@ -460,7 +468,7 @@ function Chat({ steps, busy, onSend, resumed }: { steps: Step[]; busy: boolean; 
         <textarea value={text} onChange={(e) => setText(e.target.value)} disabled={busy}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
           placeholder={busy ? "Waiting for the agent…" : "Message Dev Resolve about this RCA… (Enter to send, Shift+Enter for a new line)"}
-          className="h-16 flex-1 resize-y rounded-md border border-line bg-bg p-2 text-sm disabled:opacity-60" />
+          className="h-14 flex-1 resize-y rounded-md border border-line bg-bg p-2 text-sm disabled:opacity-60" />
         <button onClick={submit} disabled={busy || sending || !text.trim()} className="self-end rounded-md bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50">Send</button>
       </div>
     </div>
@@ -516,5 +524,21 @@ function CommentCard({ c, attachments, defaultOpen }: {
         </div>
       )}
     </li>
+  );
+}
+
+/** A section that starts closed and opens on click. */
+function Collapsible({ title, hint, children, className = "" }: { title: string; hint?: string; children: React.ReactNode; className?: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={`card overflow-hidden ${className}`}>
+      <button onClick={() => setOpen((o) => !o)} aria-expanded={open}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-bg">
+        <span className={`text-muted transition-transform ${open ? "rotate-90" : ""}`}>›</span>
+        <span className="font-semibold">{title}</span>
+        {hint && <span className="text-sm text-muted">{hint}</span>}
+      </button>
+      {open && <div className="border-t border-line p-4">{children}</div>}
+    </div>
   );
 }
