@@ -161,7 +161,8 @@ export function InlineEdit({ ticket, kind, current, children, onSaved }: {
   useEffect(() => {
     if (!open) return;
     const away = (e: MouseEvent) => { if (!panel.current?.contains(e.target as Node) && !btn.current?.contains(e.target as Node)) setOpen(false); };
-    const close = () => setOpen(false);
+    // Page scroll moves the cell away from the fixed menu, so close — but scrolling the menu's own list is fine.
+    const close = (e: Event) => { if (!(e.target instanceof Node && panel.current?.contains(e.target))) setOpen(false); };
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
     document.addEventListener("mousedown", away); document.addEventListener("keydown", esc);
     window.addEventListener("scroll", close, true); window.addEventListener("resize", close);
