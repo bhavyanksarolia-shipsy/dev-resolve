@@ -152,7 +152,8 @@ export function InlineEdit({ ticket, kind, current, children, onSaved }: {
   ticket: string; kind: "stage" | "pod" | "part"; current?: string | null; children: React.ReactNode; onSaved: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  // Where the fixed menu goes: below the cell, or above it when there isn't room — and never past the screen edge.
+  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number; listMax: number } | null>(null);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const btn = useRef<HTMLButtonElement>(null);
@@ -175,7 +176,15 @@ export function InlineEdit({ ticket, kind, current, children, onSaved }: {
   function toggle() {
     if (open) return setOpen(false);
     const r = btn.current!.getBoundingClientRect();
-    setPos({ left: Math.min(r.left, window.innerWidth - 272), top: r.bottom + 6 });
+    const gap = 8, chrome = 90; // menu header + search box above the list
+    const below = window.innerHeight - r.bottom - gap * 2, above = r.top - 64 - gap * 2; // 64 ≈ the sticky app header
+    const up = below < 320 && above > below;
+    const room = up ? above : below;
+    setPos({
+      left: Math.max(gap, Math.min(r.left, window.innerWidth - 256 - gap)),
+      ...(up ? { bottom: window.innerHeight - r.top + 6 } : { top: r.bottom + 6 }),
+      listMax: Math.max(120, Math.min(256, room - chrome)),
+    });
     setQ(""); setOpen(true);
   }
   async function pick(change: { stage?: string; pod?: string | null; part?: string }) {
@@ -204,7 +213,7 @@ export function InlineEdit({ ticket, kind, current, children, onSaved }: {
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`shrink-0 text-muted transition-opacity ${open ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`} aria-hidden><path d="m6 9 6 6 6-6" /></svg>
       </button>
       {open && pos && (
-        <div ref={panel} style={{ left: pos.left, top: pos.top }} className="fixed z-50 w-64 overflow-hidden rounded-xl border border-line bg-panel text-sm shadow-xl">
+        <div ref={panel} style={{ left: pos.left, top: pos.top, bottom: pos.bottom }} className="fixed z-50 w-64 overflow-hidden rounded-xl border border-line bg-panel text-sm shadow-xl">
           <div className="whitespace-normal break-words border-b border-line px-3 py-2 text-xs text-muted">
             {kind === "stage" ? "Move" : kind === "pod" ? "Set Pod for" : "Move part of"} <b className="font-mono text-fg">{ticket}</b>{current ? <> · now <b className="text-fg">{kind === "stage" ? stageLabel(current) : current}</b></> : null}
           </div>
@@ -212,7 +221,7 @@ export function InlineEdit({ ticket, kind, current, children, onSaved }: {
             <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…"
               className="block w-full border-b border-line bg-bg px-3 py-2 text-sm outline-none" />
           )}
-          <ul className="max-h-64 overflow-auto py-1">
+          <ul className="overflow-auto py-1" style={{ maxHeight: pos.listMax }}>
             {!opts && [0, 1, 2, 3].map((i) => <li key={i} className="px-3 py-1.5"><div className="skeleton h-4 w-full" /></li>)}
             {opts && !shown.length && <li className="px-3 py-2 text-muted">{needle ? "No match" : "Nothing to change to"}</li>}
             {shown.map((it) => (
