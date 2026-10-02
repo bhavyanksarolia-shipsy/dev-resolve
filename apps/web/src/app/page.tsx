@@ -23,6 +23,8 @@ const STATUS_STYLE: Record<string, string> = {
 const STATUS_LABEL: Record<string, string> = {
   running: "investigating…", draft_ready: "draft ready", posted: "posted", failed: "failed",
 };
+/** DevRev stage names → readable ("awaiting_development" → "awaiting development"). */
+const stageLabel = (s: string) => s.replace(/_/g, " ");
 const pct = (n: number, d: number) => (d ? `${((n / d) * 100).toFixed(1)}%` : "—");
 
 export default function Home() {
@@ -114,12 +116,13 @@ function Inbox() {
 
   // Sort / filter / page on the client (all tickets are loaded).
   const valueOf = (t: Ticket, col: "stage" | "pod") => (col === "pod" ? t.pod || "" : t.stage || "");
+  const labelOf = (col: "stage" | "pod", v: string) => (col === "stage" ? stageLabel(v) : v);
   const view = useMemo(() => {
     let list = tickets ?? [];
     for (const col of ["stage", "pod"] as const) {
       const sel = filters[col], txt = texts[col].trim().toLowerCase();
       if (sel) list = list.filter((t) => sel.includes(valueOf(t, col)));
-      if (txt) list = list.filter((t) => (valueOf(t, col) || "not set").toLowerCase().includes(txt));
+      if (txt) list = list.filter((t) => (valueOf(t, col) ? labelOf(col, valueOf(t, col)) : "not set").toLowerCase().includes(txt));
     }
     const [col, dir] = sort.split(":") as ["stage" | "pod" | "", "asc" | "desc"];
     if (col) {
@@ -137,9 +140,16 @@ function Inbox() {
   const pageNow = Math.min(page, pages);
   const rows = view.slice((pageNow - 1) * PAGE, pageNow * PAGE);
   const goto = (n: number) => { setView({ page: n > 1 ? String(n) : null }, true); };
+  // Counts in a column's menu reflect the OTHER column's filter, so they always add up to what you'd see.
+  const passes = (t: Ticket, col: "stage" | "pod") => {
+    const sel = filters[col], txt = texts[col].trim().toLowerCase(), v = valueOf(t, col);
+    return (!sel || sel.includes(v)) && (!txt || (v ? labelOf(col, v) : "not set").toLowerCase().includes(txt));
+  };
   const distinct = (col: "stage" | "pod") => {
+    const other = col === "stage" ? "pod" : "stage";
     const m = new Map<string, number>();
-    for (const t of tickets ?? []) m.set(valueOf(t, col), (m.get(valueOf(t, col)) ?? 0) + 1);
+    for (const t of tickets ?? []) m.set(valueOf(t, col), m.get(valueOf(t, col)) ?? 0);
+    for (const t of tickets ?? []) if (passes(t, other)) m.set(valueOf(t, col), (m.get(valueOf(t, col)) ?? 0) + 1);
     return [...m.entries()].sort((a, b) => (!a[0] ? 1 : !b[0] ? -1 : a[0].localeCompare(b[0]))).map(([value, count]) => ({ value, count }));
   };
   const anyFilter = !!(filters.stage || filters.pod || texts.stage || texts.pod || sort);
@@ -148,7 +158,9 @@ function Inbox() {
       sort={sort.startsWith(`${col}:`) ? (sort.split(":")[1] as "asc" | "desc") : null}
       onSort={(d) => setView({ sort: d ? `${col}:${d}` : null })}
       onSelected={(v) => setView({ [`f${col}`]: v ? v.join("|") : null })}
-      onText={(v) => setView({ [`q${col}`]: v || null })} />
+      onText={(v) => setView({ [`q${col}`]: v || null })}
+      onClear={() => setView({ [`f${col}`]: null, [`q${col}`]: null, ...(sort.startsWith(`${col}:`) ? { sort: null } : {}) })}
+      format={(v) => labelOf(col, v)} />
   );
   const pager = (where: "top" | "bottom") => (
     <Pager where={where} from={view.length ? (pageNow - 1) * PAGE + 1 : 0} to={Math.min(pageNow * PAGE, view.length)} total={view.length}
@@ -239,7 +251,6 @@ function Inbox() {
               <span className={`inline-block ${fetching ? "spin" : ""}`}>↻</span>{fetching ? "Refreshing…" : "Refresh"}
             </button>
           </div>
-          <div className="w-full sm:w-auto">{pager("top")}</div>
         </div>
         <div className={fetching ? "progress" : "h-0.5"} />
 
@@ -283,7 +294,7 @@ function Inbox() {
                           ? <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-warn ring-1 ring-amber-200" title="Default part — not triaged to WMS yet, so not in DevRev's WMS view">TMS (default)</span>
                           : t.part}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3.5"><span className="rounded-full bg-bg px-2 py-0.5 text-xs text-muted ring-1 ring-line">{t.stage}</span></td>
+                      <td className="whitespace-nowrap px-4 py-3.5"><span className="rounded-full bg-bg px-2 py-0.5 text-xs text-muted ring-1 ring-line">{stageLabel(t.stage || "")}</span></td>
                       <td className="whitespace-nowrap px-4 py-3.5 text-muted">{new Date(t.created_date).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</td>
                       <td className="whitespace-nowrap px-5 py-3.5">
                         <div className="flex items-center gap-2">
@@ -311,7 +322,7 @@ function Inbox() {
             </table>
           </div>
         )}
-        {!error && tickets && view.length > PAGE && <div className="border-t border-line px-5 py-3">{pager("bottom")}</div>}
+        {!error && tickets && tickets.length > 0 && <div className="border-t border-line px-5 py-3">{pager("bottom")}</div>}
       </section>
     </div>
   );

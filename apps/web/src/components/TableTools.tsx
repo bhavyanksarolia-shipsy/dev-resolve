@@ -5,9 +5,13 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
  * Column header menu: sort A→Z / Z→A, filter by typing, and pick values (with counts). Rendered as a fixed-position
  * panel so the table's horizontal scroll container doesn't clip it.
  */
-export function ColumnMenu({ label, values, selected, text, sort, onSort, onSelected, onText }: {
+export function ColumnMenu({ label, values, selected, text, sort, onSort, onSelected, onText, onClear, format = (v) => v }: {
   label: string; values: { value: string; count: number }[]; selected: string[] | null; text: string; sort: "asc" | "desc" | null;
   onSort: (d: "asc" | "desc" | null) => void; onSelected: (v: string[] | null) => void; onText: (v: string) => void;
+  /** Clears this column's sort, typed filter and ticked values in one go. */
+  onClear: () => void;
+  /** How a raw value is shown (e.g. "awaiting_development" → "awaiting development"). */
+  format?: (v: string) => string;
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
@@ -32,7 +36,7 @@ export function ColumnMenu({ label, values, selected, text, sort, onSort, onSele
   // Typing filters as you go (short pause), without a URL update per keystroke.
   useEffect(() => { if (!open) return; const t = setTimeout(() => draft !== text && onText(draft), 250); return () => clearTimeout(t); }, [draft, open, text, onText]);
 
-  const shown = values.filter((v) => !draft || (v.value || "not set").toLowerCase().includes(draft.toLowerCase()));
+  const shown = values.filter((v) => !draft || (v.value ? format(v.value) : "not set").toLowerCase().includes(draft.toLowerCase()));
   const isOn = (v: string) => !selected || selected.includes(v);
   const toggle = (v: string) => {
     const base = selected ?? values.map((x) => x.value);
@@ -64,15 +68,15 @@ export function ColumnMenu({ label, values, selected, text, sort, onSort, onSele
             className="w-full rounded-md border border-line bg-bg px-2 py-1.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft" />
           <div className="mt-2 flex justify-between px-1 text-xs">
             <button type="button" className="text-accent-strong hover:underline" onClick={() => onSelected(null)}>Select all</button>
-            <button type="button" className="text-muted hover:text-fg" onClick={() => { onSelected(null); setDraft(""); onText(""); onSort(null); }}>Clear</button>
+            <button type="button" className="text-muted hover:text-fg" onClick={() => { setDraft(""); onClear(); }}>Clear</button>
           </div>
           <ul className="mt-1 max-h-56 overflow-auto">
             {shown.map((v) => (
               <li key={v.value || "_none"}>
                 <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-bg">
                   <input type="checkbox" checked={isOn(v.value)} onChange={() => toggle(v.value)} className="accent-[var(--accent)]" />
-                  <span className={`flex-1 truncate ${v.value ? "" : "italic text-muted"}`}>{v.value || "not set"}</span>
-                  <span className="text-xs text-muted tabular-nums">{v.count}</span>
+                  <span className={`flex-1 truncate ${v.value ? "" : "italic text-muted"}`}>{v.value ? format(v.value) : "not set"}</span>
+                  <span className={`text-xs tabular-nums ${v.count ? "text-muted" : "text-line"}`}>{v.count}</span>
                 </label>
               </li>
             ))}
