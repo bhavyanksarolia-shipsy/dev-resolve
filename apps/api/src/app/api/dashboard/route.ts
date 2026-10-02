@@ -1,4 +1,4 @@
-import { getDevrevView, ticketScope } from "@/lib/config";
+import { getAccount, getDevrevView, ticketScope } from "@/lib/config";
 import { countClosed, countCreated, openTickets, ticketCounts, ticketsClosedSince, ticketsCreatedSince, devrevUrl, type WorkRow } from "@/lib/devrev";
 import { apiError } from "@/lib/apiError";
 import { q } from "@/lib/db";
@@ -89,6 +89,16 @@ export async function GET(req: Request) {
         },
       },
       // Totals are exact (DevRev counts); the chart covers what was fetched — `partial` if a list hit its cap.
+      // Per client (in this scope): open now, opened / closed in the period, unassigned, oldest open — Pod filter applied.
+      by_client: account.slugs.map((slug) => {
+        const a = getAccount(slug)!;
+        const mine = new Set(a.devrev.account_ids);
+        const of = (xs: WorkRow[]) => xs.filter((w) => w.account?.id && mine.has(w.account.id));
+        const o = of(open);
+        const oldest = o.reduce((m, w) => Math.max(m, age(w)), 0);
+        return { slug, name: a.name, open: o.length, opened: of(created).length, closed: of(closed).length,
+          unassigned: o.filter((w) => !owner(w)).length, oldest_days: o.length ? Math.floor(oldest) : null };
+      }).filter((c) => c.open || c.opened || c.closed).sort((x, y) => y.open - x.open || y.opened - x.opened || x.name.localeCompare(y.name)),
       pod: podWanted ? [...podWanted] : null, pod_status: { stages, rows: podRows },
       // Totals: exact DevRev counts for all Pods; with a Pod filter they're counted from the fetched tickets.
       flow: podWanted == null

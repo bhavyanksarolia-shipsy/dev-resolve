@@ -15,6 +15,7 @@ interface Dash {
     gaps: { default_part: number; no_pod: number; unassigned: number; not_investigated: number } };
   flow: { opened: number; closed: number; partial?: boolean; per_day: { day: string; opened: number; closed: number }[] };
   recently_closed: Brief[];
+  by_client: { slug: string; name: string; open: number; opened: number; closed: number; unassigned: number; oldest_days: number | null }[];
   pod: string[] | null;
   pod_status: { stages: string[]; rows: { pod: string; open: number; by_stage: Record<string, number>; closed: number }[] };
   dev_resolve: { investigations: number; posted: number; draft_ready: number; failed: number; running: number; confidence: Count[]; avg_minutes: number | null; tickets: number };
@@ -95,18 +96,11 @@ function Dashboard() {
             <Kpi label={`RCAs posted · ${range.label}`} value={d.dev_resolve.posted} sub={`${d.dev_resolve.investigations} investigations on ${d.dev_resolve.tickets} tickets`} />
           </div>
 
+          <ClientTable rows={d.by_client} rangeLabel={range.label} link={(slug, q = "") => `/tickets?account=${slug}${podParam ? `&fpod=${encodeURIComponent(podParam)}` : ""}${q}`} />
+
           <div className="grid gap-4 lg:grid-cols-3">
-            {/* Needs attention */}
-            <Panel title="Needs triage" hint="Click to see those tickets">
-              <ul className="divide-y divide-line">
-                <Gap label="Still on the default TMS part" sub="Not in DevRev's WMS view yet" n={d.open.gaps.default_part} href={t("&part=default")} />
-                <Gap label="No Pod" n={d.open.gaps.no_pod} href={t("&fpod=-")} />
-                <Gap label="Unassigned" n={d.open.gaps.unassigned} href={t("&fowner=-")} />
-                <Gap label="Not investigated yet" sub="No Dev Resolve RCA" n={d.open.gaps.not_investigated} href={t("")} />
-              </ul>
-            </Panel>
             {/* Flow */}
-            <Panel title="Opened vs closed" hint={`${d.step > 1 ? "Per week" : "Per day"} · ${range.label}`} className="lg:col-span-2">
+            <Panel title="Opened vs closed" hint={`${d.step > 1 ? "Per week" : "Per day"} · ${range.label}`} className="lg:col-span-3">
               <FlowChart rows={d.flow.per_day} />
               {d.flow.partial && <p className="mt-2 text-xs text-warn">Very busy period — the chart shows the most recent 5,000 tickets; the totals above are exact.</p>}
             </Panel>
@@ -187,18 +181,6 @@ function Panel({ title, hint, className = "", children }: { title: string; hint?
       <div className="mb-3 flex items-baseline gap-2"><h2 className="font-semibold">{title}</h2>{hint && <span className="text-xs text-muted">{hint}</span>}</div>
       {children}
     </section>
-  );
-}
-
-function Gap({ label, sub, n, href }: { label: string; sub?: string; n: number; href: string }) {
-  return (
-    <li>
-      <Link href={href} className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-2.5 hover:bg-accent-soft/60">
-        <span className="min-w-0 flex-1"><span className="block text-sm">{label}</span>{sub && <span className="block text-xs text-muted">{sub}</span>}</span>
-        <span className={`rounded-full px-2.5 py-0.5 text-sm font-semibold tabular-nums ${n ? "bg-amber-50 text-warn" : "bg-accent-soft text-accent-strong"}`}>{n}</span>
-        <span className="text-muted" aria-hidden>›</span>
-      </Link>
-    </li>
   );
 }
 
@@ -493,5 +475,58 @@ function PodPicker({ value, choices, onChange }: { value: string[] | null; choic
         </div>
       )}
     </div>
+  );
+}
+
+/** One row per client: the morning view — what's open, what came in and went out in the period, and what's unowned. */
+function ClientTable({ rows, rangeLabel, link }: { rows: Dash["by_client"]; rangeLabel: string; link: (slug: string, q?: string) => string }) {
+  const tot = (k: "open" | "opened" | "closed" | "unassigned") => rows.reduce((n, r) => n + r[k], 0);
+  const num = "px-4 py-2.5 text-right tabular-nums";
+  return (
+    <section className="card overflow-hidden">
+      <div className="flex items-baseline gap-2 px-5 pt-4">
+        <h2 className="font-semibold">By client</h2>
+        <span className="text-xs text-muted">Open now · new and closed in {rangeLabel.toLowerCase()} · click a client to see its tickets</span>
+      </div>
+      <div className="mt-3 max-h-[26rem] overflow-auto">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 bg-head text-xs font-semibold uppercase tracking-wide text-head-fg">
+            <tr className="[&>th]:whitespace-nowrap">
+              <th className="px-5 py-2.5 text-left">Client</th>
+              <th className="px-4 py-2.5 text-right">Open now</th>
+              <th className="px-4 py-2.5 text-right">New</th>
+              <th className="px-4 py-2.5 text-right">Closed</th>
+              <th className="px-4 py-2.5 text-right">Unassigned</th>
+              <th className="px-5 py-2.5 text-right">Oldest open</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {rows.map((r) => (
+              <tr key={r.slug} className="hover:bg-accent-soft/40">
+                <td className="px-5 py-2.5"><Link href={link(r.slug)} className="font-medium hover:text-accent-strong hover:underline">{r.name}</Link></td>
+                <td className={`${num} font-semibold`}>{r.open ? <Link href={link(r.slug)} className="hover:underline">{r.open}</Link> : <span className="text-line">–</span>}</td>
+                <td className={num}>{r.opened ? <span className="text-accent-strong">+{r.opened}</span> : <span className="text-line">–</span>}</td>
+                <td className={num}>{r.closed ? <span className="text-ok">{r.closed}</span> : <span className="text-line">–</span>}</td>
+                <td className={num}>{r.unassigned ? <Link href={link(r.slug, "&fowner=-")} className="rounded-full bg-amber-50 px-2 py-0.5 text-warn hover:underline">{r.unassigned}</Link> : <span className="text-line">–</span>}</td>
+                <td className={`${num} pr-5 ${r.oldest_days != null && r.oldest_days >= 7 ? "text-warn" : "text-muted"}`}>{r.oldest_days == null ? "–" : r.oldest_days < 1 ? "today" : `${r.oldest_days} d`}</td>
+              </tr>
+            ))}
+            {!rows.length && <tr><td colSpan={6} className="px-5 py-6 text-center text-muted">No tickets for this selection.</td></tr>}
+          </tbody>
+          {rows.length > 1 && (
+            <tfoot className="sticky bottom-0 bg-panel">
+              <tr className="border-t border-line font-semibold">
+                <td className="px-5 py-2.5">Total · {rows.length} clients</td>
+                <td className={num}>{tot("open")}</td>
+                <td className={`${num} text-accent-strong`}>+{tot("opened")}</td>
+                <td className={`${num} text-ok`}>{tot("closed")}</td>
+                <td className={`${num} text-warn`}>{tot("unassigned")}</td>
+                <td className="px-5" />
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+    </section>
   );
 }
