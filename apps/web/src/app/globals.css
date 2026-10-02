@@ -133,3 +133,11 @@ button:disabled { cursor: not-allowed; }
 @keyframes chat-pop { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .chat-pop { animation: chat-pop .35s ease-out both; }
 @media (prefers-reduced-motion: reduce) { .chat-pop { animation: none; } }
+
+/* ── scrollbars: hidden until you scroll (ScrollbarAutoHide adds .is-scrolling to the scrolling element) ── */
+* { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+.is-scrolling, html.is-scrolling { scrollbar-color: color-mix(in srgb, var(--muted) 55%, transparent) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; background: transparent; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: transparent; border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+.is-scrolling::-webkit-scrollbar-thumb { background-color: color-mix(in srgb, var(--muted) 55%, transparent); }
