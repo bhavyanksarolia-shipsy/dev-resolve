@@ -4,6 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 export interface PickerAccount { name: string; slug: string; status: string; devrev_names?: string[]; open_tickets?: number | null; wms_tickets?: number | null; client_active?: boolean }
 
 /** Searchable account dropdown: type to filter (matches name, slug or any mapped DevRev account name), ↑/↓ + Enter, Esc to close. */
+/** The picker's "All clients" entry: every active client together, with summed counts. */
+export function withAllClients(accounts: PickerAccount[]): PickerAccount[] {
+  if (!accounts.length) return accounts;
+  const live = accounts.filter((a) => a.client_active !== false);
+  const sum = (k: "open_tickets" | "wms_tickets") => (live.some((a) => a[k] != null) ? live.reduce((n, a) => n + (a[k] ?? 0), 0) : null);
+  return [{ name: "All clients", slug: "all", status: "active", client_active: true, devrev_names: [], open_tickets: sum("open_tickets"), wms_tickets: sum("wms_tickets") }, ...accounts];
+}
+
 export function AccountPicker({ accounts, value, onChange }: { accounts: PickerAccount[]; value: string; onChange: (slug: string) => void }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");

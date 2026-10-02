@@ -184,3 +184,17 @@ export function toolEnv(): Record<string, string> {
 }
 
 export const CODE_ROOT = process.env.CODE_ROOT || path.join(process.env.HOME || "", "Documents", "Stockone");
+
+export const ALL_CLIENTS = "all";
+/**
+ * The tickets a page is about: one client, or ALL_CLIENTS = every active client's DevRev accounts together
+ * (inactive clients are left out, as everywhere else).
+ */
+export function ticketScope(slug: string | null | undefined): { slug: string; name: string; ids: string[]; slugs: string[]; inactive: boolean } | null {
+  if (slug === ALL_CLIENTS) {
+    const live = getAccounts().filter((a) => a.client_active !== false && a.devrev?.account_ids?.length);
+    return { slug: ALL_CLIENTS, name: "All clients", ids: [...new Set(live.flatMap((a) => a.devrev.account_ids))], slugs: live.map((a) => a.slug), inactive: false };
+  }
+  const a = slug ? getAccount(slug) : undefined;
+  return a ? { slug: a.slug, name: a.name, ids: a.devrev.account_ids, slugs: [a.slug], inactive: a.client_active === false } : null;
+}

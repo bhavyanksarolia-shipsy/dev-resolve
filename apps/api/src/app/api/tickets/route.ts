@@ -1,14 +1,14 @@
-import { getAccount, getDevrevView } from "@/lib/config";
+import { getDevrevView, ticketScope } from "@/lib/config";
 import { listTickets, ticketCounts, devrevUrl } from "@/lib/devrev";
 import { apiError } from "@/lib/apiError";
 import { q } from "@/lib/db";
 
 export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
-  const account = getAccount(sp.get("account") || "");
+  const account = ticketScope(sp.get("account"));
   if (!account) return Response.json({ error: "unknown account" }, { status: 400 });
   // Inactive client: don't call DevRev unless the user explicitly asks to load anyway.
-  if (account.client_active === false && sp.get("force") !== "1") {
+  if (account.inactive && sp.get("force") !== "1") {
     return Response.json({ inactive: true, tickets: [], next_cursor: null, counts: null });
   }
   try {
@@ -18,7 +18,7 @@ export async function GET(req: Request) {
       const works: Awaited<ReturnType<typeof listTickets>>["works"] = [];
       let cursor: string | undefined;
       for (let i = 0; i < 10; i++) {
-        const r = await listTickets(account.devrev.account_ids, { limit: 100, cursor });
+        const r = await listTickets(account.ids, { limit: 100, cursor });
         works.push(...r.works);
         cursor = r.next_cursor;
         if (!cursor) break;
@@ -26,8 +26,8 @@ export async function GET(req: Request) {
       return { works, next_cursor: undefined as string | undefined };
     };
     const [{ works, next_cursor }, counts] = await Promise.all([
-      all ? loadAll() : listTickets(account.devrev.account_ids, { limit: 25, cursor: sp.get("cursor") || undefined }),
-      ticketCounts(account.devrev.account_ids),
+      all ? loadAll() : listTickets(account.ids, { limit: 25, cursor: sp.get("cursor") || undefined }),
+      ticketCounts(account.ids),
     ]);
     const ids = works.map((w) => w.display_id);
     const invs = ids.length

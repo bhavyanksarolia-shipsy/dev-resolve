@@ -1,4 +1,4 @@
-import { getAccount, getDevrevView } from "@/lib/config";
+import { getDevrevView, ticketScope } from "@/lib/config";
 import { openTickets, ticketCounts, ticketsClosedSince, ticketsCreatedSince, devrevUrl, type WorkRow } from "@/lib/devrev";
 import { apiError } from "@/lib/apiError";
 import { q } from "@/lib/db";
@@ -17,17 +17,17 @@ const brief = (w: WorkRow) => ({ display_id: w.display_id, title: w.title, creat
 /** One account's dashboard: queue health, triage gaps, workload, flow over the last N days and Dev Resolve's work. */
 export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
-  const account = getAccount(sp.get("account") || "");
+  const account = ticketScope(sp.get("account") || "all");
   if (!account) return Response.json({ error: "unknown account" }, { status: 400 });
   const days = [7, 30, 90].includes(Number(sp.get("days"))) ? Number(sp.get("days")) : 30;
-  if (account.client_active === false && sp.get("force") !== "1") return Response.json({ inactive: true });
-  const ids = account.devrev.account_ids;
+  if (account.inactive && sp.get("force") !== "1") return Response.json({ inactive: true });
+  const ids = account.ids;
   const since = new Date(Date.now() - days * DAY);
   try {
     const [open, created, closed, counts, invs] = await Promise.all([
       openTickets(ids), ticketsCreatedSince(ids, since.toISOString()), ticketsClosedSince(ids, since.toISOString()), ticketCounts(ids),
       q<{ status: string; confidence: string | null; created_at: string; finished_at: string | null; posted_at: string | null; ticket_display: string }>(
-        `SELECT status, confidence, created_at, finished_at, posted_at, ticket_display FROM investigations WHERE account_slug=$1 AND created_at >= $2`, [account.slug, since]),
+        `SELECT status, confidence, created_at, finished_at, posted_at, ticket_display FROM investigations WHERE account_slug = ANY($1) AND created_at >= $2`, [account.slugs, since]),
     ]);
     const now = Date.now(), defPart = getDevrevView().default_part_id;
     const age = (w: WorkRow) => (now - +new Date(w.created_date)) / DAY;

@@ -4,14 +4,14 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { BulkBar, InlineEdit } from "@/components/TicketActions";
 import { useRouter, useSearchParams } from "next/navigation";
 import { HealthBanner } from "@/components/HealthBanner";
-import { AccountPicker, type PickerAccount } from "@/components/AccountPicker";
+import { AccountPicker, withAllClients, type PickerAccount } from "@/components/AccountPicker";
 import { notify } from "@/components/Dialog";
 import { ColumnMenu, Pager } from "@/components/TableTools";
 
 type Account = PickerAccount;
 interface Ticket {
   id: string; display_id: string; title: string; stage?: string; severity?: string; created_date: string;
-  part?: string; default_part?: boolean; pod?: string | null; owner?: string | null; devrev_url: string;
+  part?: string; default_part?: boolean; pod?: string | null; owner?: string | null; account?: string; devrev_url: string;
   investigation: { id: number; status: string; confidence: string | null } | null;
 }
 interface Counts { account: { total: number; wms: number; default_part: number }; org: { total: number; wms: number } }
@@ -192,7 +192,7 @@ function Inbox() {
     setTick((n) => n + 1);
   }
 
-  const current = accounts.find((a) => a.slug === account);
+  const current = withAllClients(accounts).find((a) => a.slug === account);
   const marked = newIds.account === account ? newIds.ids : new Set<string>();
 
   // Fresh server: no projects.json yet → say what to do instead of showing loading rows forever.
@@ -209,7 +209,7 @@ function Inbox() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end gap-3">
-        <AccountPicker accounts={accounts} value={account} onChange={setAccount} />
+        <AccountPicker accounts={withAllClients(accounts)} value={account} onChange={setAccount} />
         <form className="ml-auto flex gap-2" onSubmit={(e) => { e.preventDefault(); if (manual.trim()) router.push(`/tickets/${manual.trim().toUpperCase()}`); }}>
           <input value={manual} onChange={(e) => setManual(e.target.value)} placeholder="Open TKT-…"
             className="w-44 rounded-lg border border-line bg-panel px-3 py-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft" />
@@ -221,14 +221,13 @@ function Inbox() {
       <div className="-mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
         {counts ? <>
           <span><b className="text-fg tabular-nums">{counts.account.total}</b> open</span>
-          <span aria-hidden>·</span><span><b className="text-fg tabular-nums">{counts.account.wms}</b> in DevRev&apos;s WMS view</span>
           {counts.account.default_part > 0 && <><span aria-hidden>·</span>
             <button onClick={() => setView({ part: onlyDefaultPart ? null : "default" })} title="Still on the default TMS part — not in DevRev's WMS view until triaged"
               className={`font-medium hover:underline ${onlyDefaultPart ? "text-accent-strong" : "text-warn"}`}>{counts.account.default_part} on TMS (default){onlyDefaultPart ? " ✓" : ""}</button></>}
         </> : !error && !inactive ? <span className="skeleton inline-block h-4 w-64" /> : null}
         <Link href={`/?account=${account}`} className="ml-auto text-accent-strong hover:underline">Dashboard →</Link>
       </div>
-      <HealthBanner account={account} compact />
+      <HealthBanner account={account === "all" ? undefined : account} compact />
 
       {inactive && (
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-panel px-4 py-3 text-sm">
@@ -302,7 +301,8 @@ function Inbox() {
                         <a href={t.devrev_url} target="_blank" rel="noreferrer" title="Open in DevRev" aria-label={`Open ${t.display_id} in DevRev`} className="ml-1.5 text-xs text-muted hover:text-accent">↗</a>
                         {marked.has(t.display_id) && <span className="ml-2 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-semibold uppercase text-white">new</span>}
                       </td>
-                      <td className="min-w-56 max-w-sm px-4 py-3"><span className="line-clamp-2" title={t.title}>{t.title}</span></td>
+                      <td className="min-w-56 max-w-sm px-4 py-3"><span className="line-clamp-2" title={t.title}>{t.title}</span>
+                        {account === "all" && t.account && <span className="block truncate text-xs text-muted">{t.account}</span>}</td>
                       <td className="whitespace-nowrap px-4 py-3">
                         <InlineEdit ticket={t.display_id} kind="pod" current={t.pod} onSaved={refresh}>
                           {t.pod

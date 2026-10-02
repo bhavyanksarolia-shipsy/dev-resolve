@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AccountPicker, type PickerAccount } from "@/components/AccountPicker";
+import { AccountPicker, withAllClients, type PickerAccount } from "@/components/AccountPicker";
 import { HealthBanner } from "@/components/HealthBanner";
 
 interface Count { value: string; count: number }
@@ -38,8 +38,7 @@ function Dashboard() {
   useEffect(() => {
     fetch("/api/accounts").then((r) => r.json()).then((d) => { setAccounts(d.accounts ?? []); setLoaded(true); }).catch(() => setLoaded(true));
   }, []);
-  const firstActive = accounts.find((a) => a.status === "active" && a.client_active !== false)?.slug ?? "";
-  const account = params.get("account") || firstActive;
+  const account = params.get("account") || "all"; // all clients by default; narrow down in the picker
   const days = [7, 30, 90].includes(Number(params.get("days"))) ? Number(params.get("days")) : 30;
   const go = (patch: Record<string, string>) => {
     const sp = new URLSearchParams(params.toString());
@@ -50,7 +49,6 @@ function Dashboard() {
   const [data, setData] = useState<{ key: string; d: Dash } | null>(null);
   const key = `${account}|${days}`;
   useEffect(() => {
-    if (!account) return;
     let live = true;
     fetch(`/api/dashboard?account=${account}&days=${days}`, { cache: "no-store" })
       .then(async (r) => { const d = await r.json(); if (live) setData({ key, d: r.ok ? d : { error: d.error || `HTTP ${r.status}` } as Dash }); })
@@ -66,7 +64,7 @@ function Dashboard() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end gap-3">
-        <AccountPicker accounts={accounts} value={account} onChange={(slug) => go({ account: slug })} />
+        <AccountPicker accounts={withAllClients(accounts)} value={account} onChange={(slug) => go({ account: slug })} />
         <div className="inline-flex rounded-lg border border-line bg-panel p-0.5 text-sm font-medium" role="tablist" aria-label="Period">
           {[7, 30, 90].map((n) => (
             <button key={n} role="tab" aria-selected={days === n} onClick={() => go({ days: String(n) })}
@@ -75,17 +73,17 @@ function Dashboard() {
         </div>
         <Link href={t("")} className="ml-auto rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-accent-strong">Open tickets →</Link>
       </div>
-      {account && <HealthBanner account={account} compact />}
+      {loaded && <HealthBanner account={account === "all" ? undefined : account} compact />}
 
       {d?.inactive && <div className="card p-5 text-sm">This client is marked <b>inactive</b> — nothing is fetched for it. <Link href={t("")} className="text-accent-strong underline">Open its tickets anyway</Link>.</div>}
       {d?.error && <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-bad ring-1 ring-red-200">{d.error}</div>}
-      {!d && account && <Skeleton />}
+      {!d && <Skeleton />}
 
       {d && !d.inactive && !d.error && (
         <>
           {/* Headline numbers */}
           <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-            <Kpi label="Open tickets" value={d.open.total} sub={`${d.counts.account.wms} in DevRev's WMS view`} href={t("")} />
+            <Kpi label="Open tickets" value={d.open.total} sub={`${d.open.gaps.unassigned} unassigned`} href={t("")} />
             <Kpi label={`Opened · ${days} days`} value={d.flow.opened} sub={`${(d.flow.opened / days).toFixed(1)} a day`} />
             <Kpi label={`Closed · ${days} days`} value={d.flow.closed}
               sub={d.flow.closed >= d.flow.opened ? "keeping up with new tickets" : `${d.flow.opened - d.flow.closed} more opened than closed`}
