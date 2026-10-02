@@ -32,7 +32,7 @@ export default function NotFound() {
         <h1 className="mt-2 text-xl font-semibold">We investigated — nothing lives here</h1>
         <p className="mt-2 text-sm text-muted">Logs, database and code all came back empty for this address. It may have moved, or the link has a typo.</p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
-          <Link href="/" className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-accent-strong">Back to tickets</Link>
+          <Link href="/tickets" className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-accent-strong">Back to tickets</Link>
           <Link href="/knowledge" className="rounded-lg border border-line bg-panel px-4 py-2 text-sm font-medium hover:border-accent">Knowledge</Link>
         </div>
       </div>

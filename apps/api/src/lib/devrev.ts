@@ -331,3 +331,28 @@ export async function resolveFields(sample: TicketSummary): Promise<ResolveField
   resolveCache = { at: Date.now(), fields };
   return fields;
 }
+
+export interface WorkRow extends TicketSummary { actual_close_date?: string; applies_to_part?: { id: string; name?: string } }
+/** Every ticket matching a works.list filter (follows cursors, capped). */
+export async function listAllWorks(body: Record<string, unknown>, max = 1000): Promise<WorkRow[]> {
+  const out: WorkRow[] = [];
+  let cursor: string | undefined;
+  while (out.length < max) {
+    const r = await call<{ works: WorkRow[]; next_cursor?: string }>("/works.list", { ...body, limit: 100, ...(cursor && { cursor }) });
+    out.push(...r.works);
+    cursor = r.next_cursor;
+    if (!cursor) break;
+  }
+  return out;
+}
+
+/** Support tickets of these accounts created since `after` (any stage) — for "opened per day". */
+export const ticketsCreatedSince = (accountIds: string[], after: string) =>
+  listAllWorks({ type: ["ticket"], ticket: { subtype: [getDevrevView().subtype], account: accountIds }, created_date: { type: "range", after }, sort_by: ["created_date:desc"] });
+
+/** Tickets of these accounts closed (resolved / canceled) since `after`. */
+export const ticketsClosedSince = (accountIds: string[], after: string) =>
+  listAllWorks({ type: ["ticket"], ticket: { account: accountIds }, stage: { name: ["resolved", "canceled"] }, actual_close_date: { type: "range", after }, sort_by: ["actual_close_date:desc"] });
+
+/** Every open ticket in the support view for these accounts (what the Tickets table shows). */
+export const openTickets = (accountIds: string[]) => listAllWorks({ ...viewBase(accountIds), sort_by: ["created_date:desc"] });
