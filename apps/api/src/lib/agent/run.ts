@@ -262,16 +262,31 @@ export async function sendChatMessage(id: number, text: string, by = "unknown", 
   await q(`UPDATE investigations SET chat_running=true WHERE id=$1`, [id]);
   await step(id, next, "user_message", null, { by, files: files.map(({ id, name, type, size }) => ({ id, name, type, size })) }, text);
   const fileBlocks = files.length ? await uploadedFileBlocks(files) : [];
+  // Replies (and their attachments) added to the ticket since the agent last looked: the investigation read the
+  // ticket once, so without this a chat would answer from an outdated conversation.
+  const [{ since }] = await q<{ since: string }>(
+    `SELECT COALESCE((SELECT max(created_at) FROM investigation_steps WHERE investigation_id=$1 AND kind='user_message' AND seq < $2),
+                     (SELECT started_at FROM agent_runs WHERE investigation_id=$1 ORDER BY id LIMIT 1),
+                     (SELECT created_at FROM investigations WHERE id=$1)) AS since`, [id, next]);
+  const fresh = (await listTimeline(inv.ticket_id).catch(() => [])).filter((c) => new Date(c.created_date) > new Date(since));
+  const freshAtts = fresh.length ? await listAttachments(fresh).catch(() => []) : [];
+  const freshBlocks = freshAtts.length ? await agentAttachmentBlocks(freshAtts) : [];
+  const freshText = fresh.length
+    ? `\n\n## New on the ticket since you last looked (${fresh.length} comment(s), oldest first — read them; they may change the answer)\n` +
+      fresh.slice().reverse().map((c) => `[${c.created_date}] (${c.visibility}) ${c.created_by?.display_name || c.created_by?.email || "?"}: ${clip(c.body || "", 15000)}`).join("\n\n") +
+      (freshAtts.length ? `\nNew attachments: ${freshAtts.filter((a) => !a.signature).map((a) => a.name).join(", ")} — included below.` : "")
+    : "";
 
   const followUp =
     `Follow-up from reviewer "${by}" on ${inv.ticket_display}:\n\n${text || "(no message — see the attached files)"}\n\n` +
     (files.length ? `They attached ${files.length} file(s): ${files.map((f) => f.name).join(", ")} — included below; read them.\n\n` : "") +
+    (freshText ? freshText.trim() + "\n\n" : "") +
     `Run any log / DB / code checks needed to verify — don't answer from memory when the data can be checked. ` +
     `If the findings change the RCA (including Current status), call submit_rca again with the FULL revised RCA.\n\n` +
     CHAT_REPLY_STYLE;
   let message: SDKUserMessage;
   if (inv.session_id) {
-    message = userMessage([{ type: "text", text: followUp }, ...fileBlocks]);
+    message = userMessage([{ type: "text", text: followUp }, ...fileBlocks, ...freshBlocks]);
   } else {
     // Investigations created before chat existed have no saved session: re-seed with the ticket + current RCA.
     const ticket = await getTicket(inv.ticket_id);
@@ -279,7 +294,7 @@ export async function sendChatMessage(id: number, text: string, by = "unknown", 
     message = userMessage([{
       type: "text",
       text: `${ticketPrompt(ticket, comments)}\n\n## Current RCA draft (from an earlier investigation)\n${inv.draft_rca ?? "(none)"}\n\n---\n${followUp}`,
-    }, ...fileBlocks]);
+    }, ...fileBlocks, ...freshBlocks]);
   }
   void (async () => {
     try {
