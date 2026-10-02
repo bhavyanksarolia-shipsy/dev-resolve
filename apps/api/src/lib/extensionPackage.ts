@@ -6,7 +6,7 @@ import { relaySuffixes, ssoMetabaseProjects } from "./connector";
 import { appLogInfo } from "./connectorInfo";
 import { iconPng } from "./icon";
 
-export const EXTENSION_VERSION = "1.1.0";
+export const EXTENSION_VERSION = "1.1.1";
 
 /**
  * The Chrome extension's files for one deployment: the manifest lists exactly the hosts it may talk to (this server,

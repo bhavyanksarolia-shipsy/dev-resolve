@@ -7,7 +7,16 @@ let cfg = null;               // { server, app }
 let loopRunning = false;
 let vpn = {};
 let hello = null, helloAt = 0;
-let lastOk = 0, lastError = null; // last successful contact with Dev Resolve, and the last problem
+// Contact state survives the worker being restarted by Chrome (chrome.storage.session lasts for the browser session).
+let lastOk = 0, lastError = null, polling = false;
+const startedAt = Date.now();
+const markOk = () => { lastOk = Date.now(); lastError = null; chrome.storage.session.set({ lastOk, lastError: null }); };
+const markErr = (m) => { lastError = m; chrome.storage.session.set({ lastError: m }); };
+chrome.storage.session.get(["lastOk", "lastError", "hello", "vpn"]).then((s) => {
+  if (s.vpn && !Object.keys(vpn).length) vpn = s.vpn;
+  if (s.lastOk > lastOk) lastOk = s.lastOk;
+  if (!hello && s.hello) hello = s.hello;
+});
 
 const store = {
   get: async (k) => (await chrome.storage.local.get(k))[k],
@@ -70,6 +79,7 @@ async function checkVpn(hosts) {
     catch { next[h] = false; }
   }));
   vpn = next;
+  chrome.storage.session.set({ vpn });
   const ok = hosts.length > 0 && Object.values(vpn).every(Boolean);
   chrome.action.setBadgeText({ text: ok ? "" : "VPN" });
   chrome.action.setBadgeBackgroundColor({ color: "#b91c1c" });
@@ -147,14 +157,16 @@ async function loop() {
       await chrome.storage.session.set({ alive: Date.now() }); // extension API call → keeps the worker awake
       try {
         if (!hello || Date.now() - helloAt > 10 * 60e3) {
-          hello = await api("/api/connector/hello"); helloAt = Date.now();
+          hello = await api("/api/connector/hello"); helloAt = Date.now(); markOk();
+          chrome.storage.session.set({ hello });
           if (!(await store.get("allowSuffixes"))) await store.set("allowSuffixes", hello.allowSuffixes);
           await store.set("user", hello.user);
           await checkVpn(hello.vpnHosts);
           await doSignins(hello); // silently picks up existing Metabase sign-ins
         }
-        const { jobs, signin } = await api("/api/connector/poll", { headers: { "x-connector-vpn": JSON.stringify(vpn) }, timeout: 35000 });
-        backoff = 2000; lastOk = Date.now(); lastError = null;
+        polling = true;
+        const { jobs, signin } = await api("/api/connector/poll", { headers: { "x-connector-vpn": JSON.stringify(vpn) }, timeout: 35000 }).finally(() => { polling = false; });
+        backoff = 2000; markOk();
         if (signin?.length) api("/api/connector/hello").then((h) => { hello = h; return doSignins(h, signin); }).catch(() => {});
         for (const job of jobs) {
           doRequest(job.req)
@@ -162,7 +174,7 @@ async function loop() {
             .catch((e) => api("/api/connector/result", { method: "POST", body: { id: job.id, ok: false, error: e.message } }).catch(() => {}));
         }
       } catch (e) {
-        lastError = e.code === "NO_TOKEN" ? "not linked" : e.message;
+        markErr(e.code === "NO_TOKEN" ? "not linked" : e.message);
         if (e.code === "NO_TOKEN") { chrome.action.setBadgeText({ text: "!" }); chrome.action.setBadgeBackgroundColor({ color: "#b45309" }); return; }
         await sleep(backoff); backoff = Math.min(backoff * 2, 30000);
       }
@@ -198,7 +210,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       const s = hello?.signins;
       return {
         version: VERSION, linked: !!(await store.get("token")), user: await store.get("user"), vpn, server: c.server, app: c.app,
-        connected: Date.now() - lastOk < 60000, lastOk, lastError,
+        // Connected = heard from Dev Resolve in the last minute, or a request to it is open right now without errors.
+        connected: Date.now() - lastOk < 60000 || (polling && !lastError),
+        connecting: !lastError && Date.now() - startedAt < 45000 && Date.now() - lastOk >= 60000,
+        lastOk, lastError,
         signins: s ? [...s.metabase.map((m) => ({ label: `Metabase · ${m.project}`, ok: m.signedIn })), ...(s.appLog ? [{ label: "App logs", ok: s.appLog.signedIn }] : [])] : [],
       };
     }
