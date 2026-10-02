@@ -128,14 +128,17 @@ export function Workspace({ ticketId }: { ticketId: string }) {
 
   async function post() {
     if (!inv) return;
+    const again = !!inv.posted_at && inv.posted_version >= inv.rca_version;
     const ok = await confirmDialog({
-      title: inv.posted_at ? `Post RCA v${inv.rca_version} as an update?` : `Post RCA v${inv.rca_version}?`,
-      message: `It goes to ${ticketId}'s internal discussion in DevRev (not visible to the customer).`,
-      confirmLabel: inv.posted_at ? "Post update" : "Post RCA",
+      title: again ? `Post RCA v${inv.rca_version} again?` : inv.posted_at ? `Post RCA v${inv.rca_version} as an update?` : `Post RCA v${inv.rca_version}?`,
+      message: again
+        ? `It was already posted ${new Date(inv.posted_at!).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}. This adds it to ${ticketId}'s internal discussion once more (not visible to the customer), marked as superseding the earlier one.`
+        : `It goes to ${ticketId}'s internal discussion in DevRev (not visible to the customer).`,
+      confirmLabel: again ? "Post again" : inv.posted_at ? "Post update" : "Post RCA",
     });
     if (!ok) return;
     setBusy(true);
-    const r = await fetch(`/api/investigations/${inv.id}/post`, { method: "POST", body: JSON.stringify({ rca, rating: rating || null }) });
+    const r = await fetch(`/api/investigations/${inv.id}/post`, { method: "POST", body: JSON.stringify({ rca, rating: rating || null, again }) });
     const d = await r.json();
     setBusy(false);
     if (!r.ok) return notify({ title: `Not posted${d.connection ? ` — ${d.connection}` : ""}`, message: `${d.tag ? `${d.tag}: ` : ""}${d.error}`, tone: "error" });
@@ -256,7 +259,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
                 {inv.case_draft.current_status_detail && <span className="text-fg"> — {hidePaths(inv.case_draft.current_status_detail)}</span>}
               </div>
             )}
-            {!currentPosted && (
+            {(
               <div className="mb-2 inline-flex rounded-lg border border-line bg-bg p-0.5 text-xs font-medium">
                 {(["preview", "edit"] as const).map((m) => (
                   <button key={m} onClick={() => setRcaMode(m)}
@@ -266,7 +269,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
                 ))}
               </div>
             )}
-            {currentPosted || rcaMode === "preview" ? (
+            {rcaMode === "preview" ? (
               <div className="rounded-xl border border-line bg-panel px-6 py-5">
                 <Markdown>{hidePaths(rca)}</Markdown>
               </div>
@@ -286,11 +289,9 @@ export function Workspace({ ticketId }: { ticketId: string }) {
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
                 Investigate more
               </button>
-              {!currentPosted && (
-                <button onClick={post} disabled={busy} className="rounded-md bg-ok px-3 py-1.5 text-white disabled:opacity-50">
-                  {inv.posted_at ? `Approve & post update (v${inv.rca_version})` : "Approve & post to internal discussion"}
-                </button>
-              )}
+              <button onClick={post} disabled={busy} className="rounded-md bg-ok px-3 py-1.5 text-white disabled:opacity-50">
+                {currentPosted ? "Post again to internal discussion" : inv.posted_at ? `Approve & post update (v${inv.rca_version})` : "Approve & post to internal discussion"}
+              </button>
             </div>
           </div>
         )}

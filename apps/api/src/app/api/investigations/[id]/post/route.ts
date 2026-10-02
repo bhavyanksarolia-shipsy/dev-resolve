@@ -5,17 +5,18 @@ import { currentUser } from "@/lib/auth";
 /** Human-approved: post the (edited) RCA to the ticket's INTERNAL discussion and record it as a resolved case. */
 export async function POST(req: Request, ctx: RouteContext<"/api/investigations/[id]/post">) {
   const { id } = await ctx.params;
-  const { rca, rating } = (await req.json()) as { rca?: string; rating?: number };
+  const { rca, rating, again } = (await req.json()) as { rca?: string; rating?: number; again?: boolean };
   if (!rca?.trim()) return Response.json({ error: "rca is required" }, { status: 400 });
-  const [inv] = await q<{ ticket_id: string; ticket_display: string; ticket_title: string; account_slug: string; category: string; case_draft: Record<string, unknown> | null; posted_at: string | null; draft_rca: string | null; rca_version: number; posted_version: number }>(
+  const [inv] = await q<{ ticket_id: string; ticket_display: string; ticket_title: string; account_slug: string; category: string; case_draft: Record<string, unknown> | null; posted_at: string | null; draft_rca: string | null; final_rca: string | null; rca_version: number; posted_version: number }>(
     `SELECT * FROM investigations WHERE id=$1`, [id]);
   if (!inv) return Response.json({ error: "not found" }, { status: 404 });
-  // Each RCA version can be posted once; a chat revision (v2, v3…) can be posted as an update.
-  if (inv.posted_at && inv.posted_version >= inv.rca_version) return Response.json({ error: `RCA v${inv.rca_version} is already posted` }, { status: 409 });
+  // A version that's already posted goes again only when the reviewer explicitly asks (again: true, after a confirm).
+  const repost = !!inv.posted_at && inv.posted_version >= inv.rca_version;
+  if (repost && !again) return Response.json({ error: `RCA v${inv.rca_version} is already posted` }, { status: 409 });
   const isUpdate = !!inv.posted_at;
   const by = await currentUser(req);
 
-  const body = `${isUpdate ? `**Updated RCA (v${inv.rca_version})** — supersedes the earlier Dev Resolve RCA on this ticket.\n\n` : ""}${rca.trim()}\n\n---\n_Dev Resolve RCA v${inv.rca_version} · investigation #${id} · reviewed & posted by ${by}_`;
+  const body = `${repost ? `**RCA v${inv.rca_version} (posted again${inv.final_rca && inv.final_rca.trim() !== rca.trim() ? ", edited" : ""})** — supersedes the earlier Dev Resolve RCA on this ticket.\n\n` : isUpdate ? `**Updated RCA (v${inv.rca_version})** — supersedes the earlier Dev Resolve RCA on this ticket.\n\n` : ""}${rca.trim()}\n\n---\n_Dev Resolve RCA v${inv.rca_version} · investigation #${id} · reviewed & posted by ${by}_`;
   let entry;
   try {
     entry = await postInternalComment(inv.ticket_id, body);
