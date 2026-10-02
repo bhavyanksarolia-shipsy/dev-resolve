@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Markdown } from "./Markdown";
 import { describeCall, hidePaths, STEP_ICON, toolName } from "./labels";
 import { notify } from "@/components/Dialog";
@@ -44,8 +44,23 @@ export function ChatPanel({ invId, steps, busy, rca, rcaVersion, confidence, onS
   const firstUser = steps.findIndex((s) => s.kind === "user_message");
   const thread = firstUser < 0 ? [] : steps.slice(firstUser).filter((s) =>
     s.kind === "user_message" || s.kind === "text" || s.kind === "tool_call" || (s.kind === "system" && s.output?.startsWith("Chat failed")));
-  useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [thread.length, busy, history.length]);
+  // Replies that arrive while this panel is open type themselves out; older ones show straight away.
+  const [bornAfter] = useState(() => Math.max(-1, ...steps.map((s) => s.seq)));
+  const scrollDown = useCallback(() => { end.current?.scrollIntoView({ block: "end" }); }, []);
+  useEffect(scrollDown, [scrollDown, thread.length, busy, history.length]);
   const lastCall = busy ? [...thread].reverse().find((s) => s.kind === "tool_call") : undefined;
+  // Once the agent has answered a message, keep only its reply (and a revised-RCA note) — the checks it ran and its
+  // "let me look…" notes are only shown while it's still working on that message.
+  const turns: Step[][] = [];
+  for (const st of thread) (st.kind === "user_message" || !turns.length ? turns[turns.push([]) - 1] : turns[turns.length - 1]).push(st);
+  const visible = turns.flatMap((t, i) => {
+    const working = busy && i === turns.length - 1;
+    if (working) return t;
+    const [user, ...rest] = t;
+    const reply = [...rest].reverse().find((x) => x.kind === "text" || x.kind === "system");
+    const rca = rest.find((x) => x.kind === "tool_call" && toolName(x.tool) === "submit_rca");
+    return [user, ...rest.filter((x) => x === reply || x === rca)];
+  });
 
   function add(list: FileList | File[] | null) {
     if (!list) return;
@@ -90,7 +105,7 @@ export function ChatPanel({ invId, steps, busy, rca, rcaVersion, confidence, onS
           <button onClick={onOpenRca} className="mt-2 text-xs font-medium text-accent-strong hover:underline">Open the full RCA →</button>
         </Bot>
 
-        {thread.map((s) => <Message key={s.seq} s={s} onOpenRca={onOpenRca} />)}
+        {visible.map((s) => <Message key={s.seq} s={s} onOpenRca={onOpenRca} animate={s.seq > bornAfter} onTick={scrollDown} />)}
         {busy && (
           <div className="flex items-center gap-2 pl-1 text-xs text-muted">
             <span className="flex gap-1" aria-hidden>{[0, 1, 2].map((i) => <span key={i} className="ip-dot h-1.5 w-1.5 rounded-full bg-accent" style={{ animationDelay: `${i * 0.2}s` }} />)}</span>
@@ -148,11 +163,33 @@ function Bot({ children, error }: { children: React.ReactNode; error?: boolean }
   );
 }
 
-function Message({ s, onOpenRca }: { s: Step; onOpenRca?: () => void }) {
+/** Reveals a reply a few words at a time (about 2–3 s whatever its length), then shows the full Markdown. */
+function Typewriter({ text, onTick }: { text: string; onTick?: () => void }) {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    const step = Math.max(4, Math.ceil(text.length / 90));
+    const t = setInterval(() => setN((x) => {
+      if (x >= text.length) { clearInterval(t); return x; }
+      const next = text.indexOf(" ", Math.min(text.length, x + step));
+      return next < 0 ? text.length : next;
+    }), 28);
+    return () => clearInterval(t);
+  }, [text]);
+  useEffect(() => { onTick?.(); }, [n, onTick]);
+  const done = n >= text.length;
+  return (
+    <div className="chat-reveal">
+      <Markdown compact>{done ? text : text.slice(0, n)}</Markdown>
+      {!done && <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-accent align-middle" aria-hidden />}
+    </div>
+  );
+}
+
+function Message({ s, onOpenRca, animate, onTick }: { s: Step; onOpenRca?: () => void; animate?: boolean; onTick?: () => void }) {
   if (s.kind === "user_message") {
     const files = (s.input?.files as ChatFile[] | undefined) ?? [];
     return (
-      <div className="ml-auto flex max-w-[85%] flex-col items-end gap-1.5">
+      <div className={`ml-auto flex max-w-[85%] flex-col items-end gap-1.5 ${animate ? "chat-pop" : ""}`}>
         <div className="text-xs text-muted"><b className="text-fg">{String(s.input?.by ?? "You")}</b> · {time(s.created_at)}</div>
         {files.length > 0 && (
           <div className="flex flex-wrap justify-end gap-2">
@@ -172,9 +209,15 @@ function Message({ s, onOpenRca }: { s: Step; onOpenRca?: () => void }) {
         </div>
       );
     }
-    return <div className="flex gap-2 pl-10 text-xs text-muted"><span>{STEP_ICON[toolName(s.tool)] ?? "•"}</span>{describeCall(s.tool, s.input)}</div>;
+    return <div className={`flex gap-2 pl-10 text-xs text-muted ${animate ? "chat-pop" : ""}`}><span>{STEP_ICON[toolName(s.tool)] ?? "•"}</span>{describeCall(s.tool, s.input)}</div>;
   }
-  return <Bot error={s.kind === "system"}><Markdown compact>{hidePaths(s.output)}</Markdown></Bot>;
+  return (
+    <div className={animate ? "chat-pop" : ""}>
+      <Bot error={s.kind === "system"}>
+        {animate && s.kind === "text" ? <Typewriter text={hidePaths(s.output)} onTick={onTick} /> : <Markdown compact>{hidePaths(s.output)}</Markdown>}
+      </Bot>
+    </div>
+  );
 }
 
 function SentFile({ f }: { f: ChatFile }) {

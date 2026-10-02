@@ -128,3 +128,8 @@ button:disabled { cursor: not-allowed; }
 .ip-dot { animation: ip-dot 1.2s ease-in-out infinite; }
 .ip-shimmer { background: linear-gradient(90deg, transparent, rgba(255,255,255,.10), transparent); animation: ip-shimmer 3.5s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .ip-ring, .ip-fade, .ip-dot, .ip-shimmer { animation: none; } }
+
+/* ── chat ── */
+@keyframes chat-pop { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.chat-pop { animation: chat-pop .35s ease-out both; }
+@media (prefers-reduced-motion: reduce) { .chat-pop { animation: none; } }
