@@ -41,7 +41,7 @@ export function AppHeader() {
             <Link href="/" className={link}>Tickets</Link>
             <Link href="/knowledge" className={link}>Knowledge</Link>
             {me.connectorMode && <Link href="/connector" className={link}>Connector</Link>}
-            {me.isAdmin && <Link href="/settings" className={link}>Settings</Link>}
+            {me.isAdmin && <Link href="/admin" className={link}>Admin</Link>}
           </nav>
         )}
         {me && (

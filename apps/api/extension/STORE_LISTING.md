@@ -1,15 +1,13 @@
 # Publishing the extension on the Chrome Web Store
 
-1. Build the package for your deployment (repo root, on your laptop):
-   `npm --prefix apps/api run extension:package -- --app https://<frontend> --server https://<backend>`
-   → `dev-resolve-extension-<version>.zip` in the repo root (gitignored — never commit it).
+1. Dev Resolve → **Admin → Files & extension → Download package for the Web Store** (built for this deployment).
 2. https://chrome.google.com/webstore/devconsole → sign in with your **work** Google account → pay the one-time
    developer fee → **New item** → upload the zip.
 3. Fill the listing with the text below. **Visibility: Private** ("only users in my Google Workspace domain") — or
    **Unlisted** if the developer account isn't in your Workspace. Submit for review (usually 1–3 days).
-4. When it's published, copy its store URL and set `EXTENSION_STORE_URL=<that URL>` on the backend (Railway Variables).
+4. When it's published, paste its store link in **Admin → Files & extension → Chrome Web Store link** → Save.
    The Connector page then shows **Add to Chrome**.
-5. New version: bump `EXTENSION_VERSION` in `src/lib/extensionPackage.ts`, rebuild the zip, upload it under the same item.
+5. New version (developers): bump `EXTENSION_VERSION` in `src/lib/extensionPackage.ts`, deploy, download the package again, upload it under the same item.
    Installed copies update automatically.
 
 ## Store listing

@@ -22,7 +22,7 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
       cache: "no-store",
     });
   } catch (e) {
-    throw new DevrevError(0, "NETWORK", `Could not reach ${BASE}: ${(e as Error).message}`);
+    throw new DevrevError(0, "NETWORK", `Could not reach ${BASE()}: ${(e as Error).message}`);
   }
   if (res.status === 401 || res.status === 403) {
     throw new DevrevError(res.status, "AUTH_FAILED", `DevRev rejected DEVREV_TOKEN (HTTP ${res.status})`);
@@ -193,4 +193,11 @@ export async function postInternalComment(objectDon: string, markdown: string) {
 
 export async function whoAmI() {
   return call<{ dev_user: { display_name: string; email: string } }>("/dev-users.self");
+}
+
+/** DevRev accounts matching a name (admin: picking a client's DevRev accounts). */
+export async function searchAccounts(query: string) {
+  const r = await call<{ results?: { account?: { id: string; display_name: string; external_refs?: string[] } }[] }>(
+    "/search.hybrid", { query, namespace: "account", limit: 15 });
+  return (r.results || []).map((x) => x.account).filter((a): a is { id: string; display_name: string } => !!a?.id);
 }

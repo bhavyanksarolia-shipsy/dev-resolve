@@ -50,13 +50,16 @@ Railway sets `PORT` itself. Logs on start print `[settings] {…}` — check the
 
 In the OAuth client add the redirect URI **`<APP_URL>/api/auth/google/callback`** (the Vercel domain).
 
-## 4. Private files (once, by an admin)
+## 4. Running it — everything in the browser (Admin page)
 
-They're stored in the backend's Postgres from then on. Either:
-- **Settings** page (Vercel URL → Sign in with Google → Settings): upload `apps/api/config/projects.json`, `config.env`,
-  and the knowledge archive (`npm --prefix apps/api run pack-knowledge` → `knowledge-upload.tgz`), or
-- one command from your laptop: `npm --prefix apps/api run private -- push "<Railway Postgres DATABASE_PUBLIC_URL>"`,
-  then redeploy the backend.
+| Admin tab | What |
+|---|---|
+| **User access control** | Everyone's login, role (admin/member), status, sessions; add people, promote/demote, disable/enable, sign out, set a break-glass password |
+| **Clients** | Add/edit a client: name, DevRev accounts (search), code repos, logs (OpenSearch cluster or shared app logs + company/warehouse filters), database (Metabase instance + db ids), active switch |
+| **Connections** | Add/edit OpenSearch clusters and Metabase instances: URL, sign-in (password / API key / each person's Google), **needs the company VPN** toggle, log types / databases, **Test connection** |
+| **Files & extension** | Bulk upload/download of the config and knowledge (moving from another Dev Resolve), the Chrome Web Store package and store link |
+
+Everything is stored in the backend's Postgres (credentials are write-only in the UI) and survives every deploy.
 
 ## 5. Each user — once per laptop
 

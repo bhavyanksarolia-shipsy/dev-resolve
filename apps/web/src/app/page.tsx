@@ -136,7 +136,7 @@ function Inbox() {
       <div className="card mx-auto mt-10 max-w-xl p-6 text-sm">
         <h1 className="mb-2 text-lg font-semibold">No accounts on this server yet</h1>
         <p className="text-muted">The backend doesn&apos;t have its private config. An admin uploads <b>projects.json</b> and <b>config.env</b> (and the knowledge archive) on the{" "}
-          <Link href="/settings" className="text-accent-strong underline">Settings</Link> page — then tickets appear here.</p>
+          <Link href="/admin?tab=files" className="text-accent-strong underline">Admin → Files</Link> page — then tickets appear here.</p>
       </div>
     );
   }
