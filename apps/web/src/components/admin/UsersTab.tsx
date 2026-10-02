@@ -35,15 +35,13 @@ export function UsersTab() {
   const active = data.users.filter((u) => !u.disabled_at);
   return (
     <div className="space-y-4">
+      <div className="flex justify-end">
+        <button className={btnPrimary} onClick={() => { setNu(blank); setAdding(true); }}>+ Add user</button>
+      </div>
       <div className="flex flex-wrap gap-3 text-sm">
         <span className="rounded-full bg-accent-soft px-3 py-1 text-accent-strong">{active.length} active</span>
         <span className="rounded-full bg-bg px-3 py-1 ring-1 ring-line">{active.filter((u) => u.is_admin).length} admins</span>
         <span className="rounded-full bg-bg px-3 py-1 text-muted ring-1 ring-line">{data.users.length - active.length} disabled</span>
-      </div>
-      <div className="card flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
-        <span className="font-medium">Who can sign in</span>
-        <span className="text-muted">only the people in this list — with their password or their Google account</span>
-        <button className={`${btnPrimary} ml-auto`} onClick={() => { setNu(blank); setAdding(true); }}>+ Add user</button>
       </div>
       {msg && !adding && <Note ok={msg.ok}>{msg.text}</Note>}
 

@@ -29,10 +29,6 @@ function Admin() {
   if (error) return <p className="text-sm text-bad">{error === "Admins only" ? "Only admins can open this page." : error}</p>;
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold">Admin</h1>
-        <p className="mt-1 text-sm text-muted">People, clients and the systems they use — all saved on the backend (and its database), nothing to run anywhere.</p>
-      </div>
       <nav className="flex flex-wrap gap-1 border-b border-line">
         {TABS.map(([k, l]) => (
           <button key={k} onClick={() => go(k)} className={`-mb-px border-b-2 px-3 py-2 text-sm ${tab === k ? "border-accent font-medium text-accent-strong" : "border-transparent text-muted hover:text-fg"}`}>{l}</button>
