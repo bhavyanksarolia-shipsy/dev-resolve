@@ -29,6 +29,11 @@ const stageLabel = (s: string) => s.replace(/_/g, " ");
 type Col = "stage" | "pod" | "owner";
 const COLS: Col[] = ["stage", "pod", "owner"];
 const box = "h-4 w-4 cursor-pointer rounded accent-[var(--accent)]";
+/** "17 Jul, 7:34 pm" — the year only when it isn't this year. */
+const shortDate = (iso: string) => {
+  const d = new Date(iso);
+  return d.toLocaleString("en-IN", { day: "numeric", month: "short", ...(d.getFullYear() !== new Date().getFullYear() && { year: "numeric" }), hour: "numeric", minute: "2-digit" });
+};
 const pct = (n: number, d: number) => (d ? `${((n / d) * 100).toFixed(1)}%` : "—");
 
 export default function Home() {
@@ -276,7 +281,7 @@ function Inbox() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-head text-left text-xs font-semibold uppercase tracking-wide text-head-fg">
-                <tr>
+                <tr className="[&>th]:whitespace-nowrap">
                   <th className="w-10 py-3 pl-5 pr-0">
                     <input type="checkbox" className={box} aria-label="Select the tickets on this page"
                       checked={rows.length > 0 && rows.every((t) => picked.has(t.display_id))}
@@ -294,30 +299,30 @@ function Inbox() {
                   const busy = starting.has(t.display_id) || inv?.status === "running";
                   return (
                     <tr key={t.id} className={`transition-colors hover:bg-accent-soft/60 ${picked.has(t.display_id) ? "bg-accent-soft/70" : marked.has(t.display_id) ? "bg-accent-soft" : ""}`}>
-                      <td className="py-3.5 pl-5 pr-0">
+                      <td className="py-3 pl-5 pr-0">
                         <input type="checkbox" className={box} aria-label={`Select ${t.display_id}`} checked={picked.has(t.display_id)}
                           onChange={(e) => setPicked((p) => { const n = new Set(p); if (e.target.checked) n.add(t.display_id); else n.delete(t.display_id); return n; })} />
                       </td>
-                      <td className="whitespace-nowrap px-5 py-3.5 font-mono">
+                      <td className="whitespace-nowrap px-5 py-3 font-mono">
                         <Link className="font-medium text-accent-strong hover:underline" href={`/tickets/${t.display_id}`}>{t.display_id}</Link>
-                        <a href={t.devrev_url} target="_blank" rel="noreferrer" title="Open in DevRev" className="ml-2 text-xs text-muted hover:text-accent">DevRev ↗</a>
+                        <a href={t.devrev_url} target="_blank" rel="noreferrer" title="Open in DevRev" aria-label={`Open ${t.display_id} in DevRev`} className="ml-1.5 text-xs text-muted hover:text-accent">↗</a>
                         {marked.has(t.display_id) && <span className="ml-2 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-semibold uppercase text-white">new</span>}
                       </td>
-                      <td className="min-w-72 px-4 py-3.5">{t.title}</td>
-                      <td className="whitespace-nowrap px-4 py-3.5">
+                      <td className="min-w-56 max-w-sm px-4 py-3"><span className="line-clamp-2" title={t.title}>{t.title}</span></td>
+                      <td className="whitespace-nowrap px-4 py-3">
                         {t.pod
                           ? <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs font-semibold text-accent-strong">{t.pod}</span>
                           : <span className="text-xs text-muted" title="Pod isn't set on this ticket in DevRev yet">not set</span>}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3.5 text-muted">
+                      <td className="whitespace-nowrap px-4 py-3 text-muted">
                         {t.default_part
                           ? <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-warn ring-1 ring-amber-200" title="Default part — not triaged to WMS yet, so not in DevRev's WMS view">TMS (default)</span>
                           : t.part}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3.5"><span className="rounded-full bg-bg px-2 py-0.5 text-xs text-muted ring-1 ring-line">{stageLabel(t.stage || "")}</span></td>
-                      <td className="max-w-44 truncate px-4 py-3.5 text-sm" title={t.owner || "Nobody is assigned in DevRev"}>{t.owner || <span className="text-xs text-muted">unassigned</span>}</td>
-                      <td className="whitespace-nowrap px-4 py-3.5 text-muted">{new Date(t.created_date).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</td>
-                      <td className="whitespace-nowrap px-5 py-3.5">
+                      <td className="whitespace-nowrap px-4 py-3"><span className="rounded-full bg-bg px-2 py-0.5 text-xs text-muted ring-1 ring-line">{stageLabel(t.stage || "")}</span></td>
+                      <td className="max-w-40 truncate whitespace-nowrap px-4 py-3 text-sm" title={t.owner || "Nobody is assigned in DevRev"}>{t.owner || <span className="text-xs text-muted">unassigned</span>}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-muted" title={new Date(t.created_date).toLocaleString("en-IN", { dateStyle: "full", timeStyle: "short" })}>{shortDate(t.created_date)}</td>
+                      <td className="whitespace-nowrap px-5 py-3">
                         <div className="flex items-center gap-2">
                           <button onClick={() => setEditing(t.display_id)} title="Edit stage, Pod and part" aria-label={`Edit ${t.display_id}`}
                             className="grid h-7 w-7 place-items-center rounded-lg text-muted ring-1 ring-line hover:text-accent-strong hover:ring-accent">

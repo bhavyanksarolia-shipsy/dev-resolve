@@ -53,7 +53,7 @@ export function ColumnMenu({ label, values, selected, text, sort, onSort, onSele
   return (
     <>
       <button ref={btn} type="button" onClick={() => { setDraft(text); setOpen((o) => !o); }} aria-haspopup="dialog" aria-expanded={open}
-        className={`inline-flex items-center gap-1 rounded-md px-1 py-0.5 uppercase tracking-wide hover:bg-white/60 ${active ? "text-accent-strong" : ""}`}>
+        className={`-mx-1 inline-flex items-center gap-1 whitespace-nowrap rounded-md px-1 py-0.5 uppercase tracking-wide hover:bg-white/60 ${active ? "text-accent-strong" : ""}`}>
         {label}
         {sort && <span aria-label={sort === "asc" ? "sorted ascending" : "sorted descending"}>{sort === "asc" ? "↑" : "↓"}</span>}
         <svg width="12" height="12" viewBox="0 0 24 24" fill={selected || text ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" aria-hidden><path d="M3 5h18l-7 8v6l-4 2v-8z" /></svg>
