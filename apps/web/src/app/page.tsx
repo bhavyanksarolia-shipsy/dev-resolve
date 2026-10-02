@@ -359,17 +359,19 @@ function RangeCalendar({ initial, onApply, onCancel }: { initial: Range; onApply
   const [from, setFrom] = useState<string | null>(initial.from);
   const [to, setTo] = useState<string | null>(initial.to);
   const [hover, setHover] = useState<string | null>(null);
+  const [single, setSingle] = useState(initial.from === initial.to); // single-day mode: one click = that day
   // Right-hand month = the end of the current range (never past this month).
   const [right, setRight] = useState(monthStart(initial.to > today ? today : initial.to));
   const left = addMonths(right, -1);
   const canNext = right < monthStart(today);
 
   function pick(day: string) {
+    if (single) { setFrom(day); setTo(day); return; }
     if (!from || (from && to)) { setFrom(day); setTo(null); return; }
     if (day < from) { setTo(from); setFrom(day); } else setTo(day);
   }
-  const end = to ?? (from && hover ? (hover < from ? from : hover) : null);
-  const start = to ? from : from && hover && hover < from ? hover : from;
+  const end = to ?? (!single && from && hover ? (hover < from ? from : hover) : from);
+  const start = to ? from : !single && from && hover && hover < from ? hover : from;
   const tooLong = !!(from && to && daysBetween(from, to) > 365);
 
   const navBtn = "grid h-8 w-8 place-items-center rounded-full text-lg text-muted hover:bg-accent-soft hover:text-accent-strong disabled:opacity-30 disabled:hover:bg-transparent";
@@ -411,6 +413,13 @@ function RangeCalendar({ initial, onApply, onCancel }: { initial: Range; onApply
 
   return (
     <div className="p-4">
+      <div className="mb-3 inline-flex rounded-lg border border-line bg-bg p-0.5 text-xs font-medium" role="tablist" aria-label="Pick">
+        {([[false, "Range"], [true, "Single day"]] as const).map(([v, l]) => (
+          <button key={l} type="button" role="tab" aria-selected={single === v}
+            onClick={() => { setSingle(v); if (v && from) setTo(from); }}
+            className={`rounded-md px-3 py-1 ${single === v ? "bg-panel text-accent-strong shadow-sm" : "text-muted hover:text-fg"}`}>{l}</button>
+        ))}
+      </div>
       <div className="flex gap-6">
         <div className="hidden sm:block">{month(left, { left: prev })}</div>
         <div className="sm:hidden">{month(right, { left: prev, right: next })}</div>
@@ -418,12 +427,12 @@ function RangeCalendar({ initial, onApply, onCancel }: { initial: Range; onApply
       </div>
       <div className="mt-4 flex items-center gap-3 border-t border-line pt-3">
         <span className={`min-w-0 flex-1 text-xs ${tooLong ? "text-bad" : "text-muted"}`}>
-          {!from ? "Pick a start date" : !to ? <>From <b className="text-fg">{fmt(from)}</b> — now pick the end date</>
+          {!from ? (single ? "Pick a day" : "Pick a start date") : !to ? <>From <b className="text-fg">{fmt(from)}</b> — pick the end date, or Apply for just this day</>
             : tooLong ? "Pick a range of a year or less"
             : <><b className="text-fg">{fmt(from)}{from !== to && ` – ${fmt(to)}`}</b> · {daysBetween(from, to) + 1} day{from !== to ? "s" : ""}</>}
         </span>
         <button type="button" onClick={onCancel} className="rounded-lg border border-line px-3 py-1.5 font-medium hover:border-accent">Cancel</button>
-        <button type="button" disabled={!from || !to || tooLong} onClick={() => from && to && onApply(from, to)}
+        <button type="button" disabled={!from || tooLong} onClick={() => from && onApply(from, to ?? from)}
           className="rounded-lg bg-accent px-4 py-1.5 font-medium text-white hover:bg-accent-strong disabled:opacity-50">Apply</button>
       </div>
     </div>
