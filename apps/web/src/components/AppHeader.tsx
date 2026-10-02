@@ -29,6 +29,7 @@ export function AppHeader() {
   }, [pathname, router]);
 
   const link = "rounded-md px-2.5 py-1 text-muted hover:bg-accent-soft hover:text-accent-strong";
+  if (pathname === "/login") return null; // the login page is full-screen with its own branding
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-panel/85 backdrop-blur">
       <div className="flex w-full flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
