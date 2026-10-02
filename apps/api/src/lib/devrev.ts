@@ -35,7 +35,9 @@ export interface TicketSummary {
   id: string;
   display_id: string;
   title: string;
-  stage?: { name?: string; display_name?: string };
+  stage?: { name?: string; display_name?: string; stage?: { id: string; name: string } };
+  subtype?: string;
+  custom_schema_fragments?: string[];
   severity?: string;
   created_date: string;
   modified_date?: string;
@@ -200,4 +202,57 @@ export async function searchAccounts(query: string) {
   const r = await call<{ results?: { account?: { id: string; display_name: string; external_refs?: string[] } }[] }>(
     "/search.hybrid", { query, namespace: "account", limit: 15 });
   return (r.results || []).map((x) => x.account).filter((a): a is { id: string; display_name: string } => !!a?.id);
+}
+
+export interface StageOption { id: string; name: string; final: boolean }
+type Diagram = { name: string; is_default: boolean; stages: { stage: { id: string; name: string; state?: { is_final?: boolean } }; transitions: { target_stage: { id: string } }[] }[] };
+let diagrams: { at: number; list: Diagram[] } | null = null;
+
+/** The ticket stage diagram for a subtype (e.g. "implementation_subtype_stage_diagram"), else DevRev's default. Cached 1 h. */
+async function ticketDiagram(subtype?: string) {
+  if (!diagrams || Date.now() - diagrams.at > 60 * 60 * 1000) {
+    const list: Diagram[] = [];
+    let cursor: string | undefined;
+    for (let i = 0; i < 10; i++) {
+      const r = await call<{ result: Diagram[]; next_cursor?: string }>(`/stage-diagrams.list?leaf_type=ticket&limit=50${cursor ? `&cursor=${cursor}` : ""}`);
+      list.push(...r.result);
+      cursor = r.next_cursor;
+      if (!cursor) break;
+    }
+    diagrams = { at: Date.now(), list };
+  }
+  const key = (subtype || "").toLowerCase();
+  return diagrams.list.find((d) => key && d.name.toLowerCase().startsWith(`${key}_subtype`)) ?? diagrams.list.find((d) => d.is_default) ?? diagrams.list[0];
+}
+
+/** Stages a ticket can move to from its current stage (DevRev refuses anything else). */
+export async function stageMoves(subtype: string | undefined, fromStageId: string | undefined): Promise<StageOption[]> {
+  const d = await ticketDiagram(subtype);
+  if (!d) return [];
+  const byId = new Map(d.stages.map((x) => [x.stage.id, x.stage]));
+  const from = d.stages.find((x) => x.stage.id === fromStageId);
+  const ids = from ? from.transitions.map((t) => t.target_stage.id) : d.stages.map((x) => x.stage.id);
+  return ids.map((id) => byId.get(id)).filter(Boolean).map((st) => ({ id: st!.id, name: st!.name, final: !!st!.state?.is_final }));
+}
+
+let podField: { at: number; values: string[] } | null = null;
+/** Allowed Pod values (the tenant "pod" enum field), read from the ticket's own schema fragments. Cached 1 h. */
+export async function podValues(sample: TicketSummary): Promise<string[]> {
+  if (podField && Date.now() - podField.at < 60 * 60 * 1000) return podField.values;
+  for (const frag of (sample.custom_schema_fragments || []).filter((f) => f.includes(":tenant_fragment/"))) {
+    const r = await call<{ fragment: { fields?: { name: string; allowed_values?: string[] }[] } }>(`/schemas.custom.get?id=${encodeURIComponent(frag)}`);
+    const f = r.fragment.fields?.find((x) => x.name === "pod");
+    if (f?.allowed_values?.length) { podField = { at: Date.now(), values: f.allowed_values }; return f.allowed_values; }
+  }
+  return [];
+}
+
+/** Moves a ticket to another stage and/or sets its Pod (null clears it). */
+export async function updateTicket(id: string, change: { stageId?: string; pod?: string | null }) {
+  const r = await call<{ work: TicketSummary }>("/works.update", {
+    id, type: "ticket",
+    ...(change.stageId && { stage: { stage: change.stageId } }),
+    ...(change.pod !== undefined && { custom_fields: { tnt__pod: change.pod } }),
+  });
+  return r.work;
 }

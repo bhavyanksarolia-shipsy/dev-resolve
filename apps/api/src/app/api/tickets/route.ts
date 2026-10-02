@@ -40,7 +40,7 @@ export async function GET(req: Request) {
     const byTicket = Object.fromEntries(invs.map((i) => [i.ticket_display, i]));
     return Response.json({
       tickets: works.map((w) => ({
-        id: w.id, display_id: w.display_id, title: w.title, stage: w.stage?.display_name || w.stage?.name,
+        id: w.id, display_id: w.display_id, title: w.title, stage: w.stage?.display_name || w.stage?.name, stage_name: w.stage?.name,
         severity: w.severity, created_date: w.created_date, account: w.account?.display_name,
         part: (w as { applies_to_part?: { name?: string } }).applies_to_part?.name,
         default_part: (w as { applies_to_part?: { id?: string } }).applies_to_part?.id === getDevrevView().default_part_id,

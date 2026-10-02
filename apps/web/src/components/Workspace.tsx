@@ -6,6 +6,7 @@ import { describeCall, fileLabel, hidePaths, resultSummary, scopeLabel, STEP_ICO
 import { confirmDialog, notify } from "@/components/Dialog";
 import { InvestigationProgress } from "./InvestigationProgress";
 import { ChatPanel } from "./ChatPanel";
+import { TicketControls } from "./TicketActions";
 
 interface Step { seq: number; kind: string; tool: string | null; input: Record<string, unknown> | null; output: string | null; created_at: string }
 interface Proposal { id: number; account_slug: string; file: string; content: string; rationale: string; source: string; status: string }
@@ -43,6 +44,7 @@ const kb = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB
 export function Workspace({ ticketId }: { ticketId: string }) {
   const [data, setData] = useState<TicketData | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [ticketReload, setTicketReload] = useState(0);
   const [invId, setInvId] = useState<number | null>(null);
   const [inv, setInv] = useState<Investigation | null>(null);
   const [trail, setTrail] = useState<{ id: number | null; steps: Step[] }>({ id: null, steps: [] });
@@ -61,9 +63,9 @@ export function Workspace({ ticketId }: { ticketId: string }) {
       const d = await r.json();
       if (!r.ok) return setErr(`${d.tag ?? "Error"} (${d.connection ?? "?"}): ${d.error}`);
       setData(d);
-      if (d.investigations[0]) setInvId(d.investigations[0].id);
+      if (d.investigations[0]) setInvId((cur) => cur ?? d.investigations[0].id);
     });
-  }, [ticketId]);
+  }, [ticketId, ticketReload]);
 
   const poll = useCallback(async () => {
     if (!invId) return;
@@ -162,10 +164,6 @@ export function Workspace({ ticketId }: { ticketId: string }) {
       <section className="min-w-0 lg:overflow-y-auto lg:pr-2">
         <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
           <span className="rounded-md bg-accent-soft px-2 py-0.5 font-mono font-semibold text-accent-strong">{t.display_id}</span>
-          <span className="rounded-full bg-panel px-2 py-0.5 text-muted ring-1 ring-line">{t.stage?.display_name ?? t.stage?.name}</span>
-          {typeof t.custom_fields?.tnt__pod === "string"
-            ? <span className="rounded-full bg-accent-soft px-2 py-0.5 font-semibold text-accent-strong" title="Pod (DevRev)">Pod: {t.custom_fields.tnt__pod}</span>
-            : <span className="text-muted" title="Pod isn't set on this ticket in DevRev yet">Pod: not set</span>}
           <span className="text-muted">{t.account?.display_name}</span>
         </div>
         <h1 className="mb-2 text-2xl font-semibold leading-tight tracking-tight">{t.title}</h1>
@@ -178,6 +176,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
               : <b className="text-bad">{data.routing.kind} — add this DevRev account to config/projects.json</b>}
           </span>
         </div>
+        <div className="mb-4"><TicketControls ticket={t.display_id} onChanged={() => setTicketReload((n) => n + 1)} /></div>
         <HealthBanner account={data.routing.account} />
         {t.body && (
           <div className="card mb-5 p-4">

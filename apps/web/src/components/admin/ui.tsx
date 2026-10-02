@@ -60,8 +60,8 @@ export function Rows({ rows, onChange, keyLabel, valueLabel, keyPlaceholder, val
 export interface Option { value: string; label: string; hint?: string }
 
 /** Dropdown in the app's style (replaces the browser's <select>): keyboard, click-outside, checkmark, optional hint line. */
-export function Select({ value, onChange, options, placeholder = "Choose…", disabled }: {
-  value: string; onChange: (v: string) => void; options: Option[]; placeholder?: string; disabled?: boolean;
+export function Select({ value, onChange, options, placeholder = "Choose…", disabled, up }: {
+  value: string; onChange: (v: string) => void; options: Option[]; placeholder?: string; disabled?: boolean; up?: boolean; // up: list opens above
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -100,7 +100,7 @@ export function Select({ value, onChange, options, placeholder = "Choose…", di
         </svg>
       </button>
       {open && (
-        <ul id={id} role="listbox" className="absolute left-0 right-0 z-50 mt-1 max-h-64 overflow-auto rounded-lg border border-line bg-panel py-1 shadow-lg">
+        <ul id={id} role="listbox" className={`absolute left-0 right-0 z-50 max-h-64 ${up ? "bottom-full mb-1" : "mt-1"} overflow-auto rounded-lg border border-line bg-panel py-1 shadow-lg`}>
           {options.length === 0 && <li className="px-3 py-2 text-sm text-muted">Nothing to choose yet</li>}
           {options.map((o, i) => {
             const sel = o.value === value;

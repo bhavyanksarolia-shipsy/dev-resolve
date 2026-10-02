@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { BulkBar } from "@/components/TicketActions";
 import { useRouter, useSearchParams } from "next/navigation";
 import { HealthBanner } from "@/components/HealthBanner";
 import { AccountPicker, type PickerAccount } from "@/components/AccountPicker";
@@ -25,6 +26,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 /** DevRev stage names → readable ("awaiting_development" → "awaiting development"). */
 const stageLabel = (s: string) => s.replace(/_/g, " ");
+const box = "h-4 w-4 cursor-pointer rounded accent-[var(--accent)]";
 const pct = (n: number, d: number) => (d ? `${((n / d) * 100).toFixed(1)}%` : "—");
 
 export default function Home() {
@@ -58,6 +60,7 @@ function Inbox() {
   const seen = useRef<{ account: string; ids: Set<string> }>({ account, ids: new Set() });
   const refreshing = useRef(false);
   const [starting, setStarting] = useState<Set<string>>(new Set());
+  const [picked, setPicked] = useState<Set<string>>(new Set()); // tickets ticked for a bulk Stage / Pod / resolve
   const [manual, setManual] = useState("");
   const [loadInactive, setLoadInactive] = useState<string | null>(null); // slug the user chose to load anyway
 
@@ -267,6 +270,11 @@ function Inbox() {
             <table className="w-full text-sm">
               <thead className="bg-head text-left text-xs font-semibold uppercase tracking-wide text-head-fg">
                 <tr>
+                  <th className="w-10 py-3 pl-5 pr-0">
+                    <input type="checkbox" className={box} aria-label="Select the tickets on this page"
+                      checked={rows.length > 0 && rows.every((t) => picked.has(t.display_id))}
+                      onChange={(e) => setPicked((p) => { const n = new Set(p); for (const t of rows) { if (e.target.checked) n.add(t.display_id); else n.delete(t.display_id); } return n; })} />
+                  </th>
                   <th className="px-5 py-3">Ticket</th><th className="px-4 py-3">Title</th><th className="px-4 py-3">{colMenu("pod", "Pod")}</th><th className="px-4 py-3">Part</th>
                   <th className="px-4 py-3">{colMenu("stage", "Stage")}</th><th className="px-4 py-3">Created</th><th className="px-5 py-3">Dev Resolve</th>
                 </tr>
@@ -277,7 +285,11 @@ function Inbox() {
                   const inv = t.investigation;
                   const busy = starting.has(t.display_id) || inv?.status === "running";
                   return (
-                    <tr key={t.id} className={`transition-colors hover:bg-accent-soft/60 ${marked.has(t.display_id) ? "bg-accent-soft" : ""}`}>
+                    <tr key={t.id} className={`transition-colors hover:bg-accent-soft/60 ${picked.has(t.display_id) ? "bg-accent-soft/70" : marked.has(t.display_id) ? "bg-accent-soft" : ""}`}>
+                      <td className="py-3.5 pl-5 pr-0">
+                        <input type="checkbox" className={box} aria-label={`Select ${t.display_id}`} checked={picked.has(t.display_id)}
+                          onChange={(e) => setPicked((p) => { const n = new Set(p); if (e.target.checked) n.add(t.display_id); else n.delete(t.display_id); return n; })} />
+                      </td>
                       <td className="whitespace-nowrap px-5 py-3.5 font-mono">
                         <Link className="font-medium text-accent-strong hover:underline" href={`/tickets/${t.display_id}`}>{t.display_id}</Link>
                         <a href={t.devrev_url} target="_blank" rel="noreferrer" title="Open in DevRev" className="ml-2 text-xs text-muted hover:text-accent">DevRev ↗</a>
@@ -313,9 +325,9 @@ function Inbox() {
                     </tr>
                   );
                 })}
-                {tickets && !tickets.length && <tr><td colSpan={7} className="px-5 py-10 text-center text-muted">No open Support tickets for this account.</td></tr>}
+                {tickets && !tickets.length && <tr><td colSpan={8} className="px-5 py-10 text-center text-muted">No open Support tickets for this account.</td></tr>}
                 {tickets && tickets.length > 0 && !view.length && (
-                  <tr><td colSpan={7} className="px-5 py-10 text-center text-muted">No tickets match these filters.{" "}
+                  <tr><td colSpan={8} className="px-5 py-10 text-center text-muted">No tickets match these filters.{" "}
                     <button className="text-accent-strong underline" onClick={() => setView({ sort: null, fstage: null, fpod: null, qstage: null, qpod: null })}>Clear filters</button></td></tr>
                 )}
               </tbody>
@@ -324,6 +336,16 @@ function Inbox() {
         )}
         {!error && tickets && tickets.length > 0 && <div className="border-t border-line px-5 py-3">{pager("bottom")}</div>}
       </section>
+      {picked.size > 0 && rows.length > 0 && rows.every((t) => picked.has(t.display_id)) && view.length > picked.size && (
+        <p className="mt-2 text-center text-sm text-muted">
+          All {rows.length} on this page are selected ·{" "}
+          <button className="font-medium text-accent-strong underline" onClick={() => setPicked(new Set(view.map((t) => t.display_id)))}>select all {view.length} matching</button>
+        </p>
+      )}
+      {picked.size > 0 && (
+        <BulkBar selected={[...picked]} onClear={() => setPicked(new Set())}
+          onDone={() => { setPicked(new Set()); refresh(); }} />
+      )}
     </div>
   );
 }
