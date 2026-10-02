@@ -36,11 +36,27 @@ export async function GET(req: Request) {
   const until = new Date(+new Date(`${to}T00:00:00Z`) - IST + DAY - 1);  // to, 23:59:59 IST
   try {
     const [openedTotal, closedTotal] = await Promise.all([countCreated(ids, since.toISOString(), until.toISOString()), countClosed(ids, since.toISOString(), until.toISOString())]);
-    const [open, created, closed, counts, invs] = await Promise.all([
+    const [openAll, createdAll, closedAll, counts, invsAll] = await Promise.all([
       openTickets(ids), ticketsCreatedSince(ids, since.toISOString(), until.toISOString()), ticketsClosedSince(ids, since.toISOString(), until.toISOString()), ticketCounts(ids),
       q<{ status: string; confidence: string | null; created_at: string; finished_at: string | null; posted_at: string | null; ticket_display: string }>(
         `SELECT status, confidence, created_at, finished_at, posted_at, ticket_display FROM investigations WHERE account_slug = ANY($1) AND created_at BETWEEN $2 AND $3`, [account.slugs, since, until]),
     ]);
+    // Pod filter: pod=A|B ("-" = not set) applies to everything below. The list of Pods (for the picker) is always complete.
+    const podParam = sp.get("pod");
+    const podWanted = podParam ? new Set(podParam.split("|").map((v) => (v === "-" ? "" : v))) : null;
+    const byPod = <T extends WorkRow>(xs: T[]) => (podWanted == null ? xs : xs.filter((w) => podWanted.has(pod(w))));
+    const open = byPod(openAll), created = byPod(createdAll), closed = byPod(closedAll);
+    const podTickets = podWanted == null ? null : new Set([...openAll, ...createdAll, ...closedAll].filter((w) => podWanted.has(pod(w))).map((w) => w.display_id));
+    const invs = podTickets ? invsAll.filter((i) => podTickets.has(i.ticket_display)) : invsAll;
+
+    // Pod × status: open tickets per Pod and stage, plus how many of that Pod closed in the period.
+    const stages = tally(openAll.map((w) => w.stage?.name ?? "")).map((x) => x.value);
+    const podRows = tally(openAll.map(pod)).map(({ value, count }) => {
+      const mine = openAll.filter((w) => pod(w) === value);
+      return { pod: value, open: count, by_stage: Object.fromEntries(stages.map((st) => [st, mine.filter((w) => (w.stage?.name ?? "") === st).length])),
+        closed: closedAll.filter((w) => pod(w) === value).length };
+    });
+    for (const v of new Set(closedAll.map(pod))) if (!podRows.some((r) => r.pod === v)) podRows.push({ pod: v, open: 0, by_stage: Object.fromEntries(stages.map((st) => [st, 0])), closed: closedAll.filter((w) => pod(w) === v).length });
     const now = Date.now(), defPart = getDevrevView().default_part_id;
     const age = (w: WorkRow) => (now - +new Date(w.created_date)) / DAY;
     const buckets = [["Under 1 day", 0, 1], ["1–3 days", 1, 3], ["3–7 days", 3, 7], ["1–4 weeks", 7, 28], ["Over 4 weeks", 28, Infinity]] as const;
@@ -73,7 +89,11 @@ export async function GET(req: Request) {
         },
       },
       // Totals are exact (DevRev counts); the chart covers what was fetched — `partial` if a list hit its cap.
-      flow: { opened: openedTotal, closed: closedTotal, per_day: flow, partial: created.length < openedTotal || closed.length < closedTotal },
+      pod: podWanted ? [...podWanted] : null, pod_status: { stages, rows: podRows },
+      // Totals: exact DevRev counts for all Pods; with a Pod filter they're counted from the fetched tickets.
+      flow: podWanted == null
+        ? { opened: openedTotal, closed: closedTotal, per_day: flow, partial: createdAll.length < openedTotal || closedAll.length < closedTotal }
+        : { opened: created.length, closed: closed.length, per_day: flow, partial: createdAll.length < openedTotal || closedAll.length < closedTotal },
       recently_closed: closed.slice(0, 8).map(brief),
       dev_resolve: {
         investigations: invs.length,

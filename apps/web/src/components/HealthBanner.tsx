@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface Check {
   id: string; label: string; host?: string; status: string; message: string; fix?: string; used_by: string[];
@@ -46,15 +46,8 @@ export function HealthBanner({ account, compact }: { account?: string; compact?:
   if (!checks) return <div className="mb-4 text-sm text-muted">Checking connections…</div>;
   if (paused) return <div className="mb-4 text-xs text-muted">Connection checks paused — this client is marked inactive.</div>;
   const bad = checks.filter((c) => c.status !== "ok");
-  // Compact (ticket page): one quiet line while everything works; the full list only when something needs attention.
-  if (compact && !bad.length) {
-    return (
-      <div className="mb-4 flex items-center gap-2 text-xs text-muted" title={checks.map((c) => `${c.label}: ${c.message}`).join("\n")}>
-        <span className="h-2 w-2 rounded-full bg-ok" aria-hidden />All connections OK
-        <button onClick={load} disabled={loading} className="text-accent-strong hover:underline disabled:opacity-50">{loading ? "checking…" : "re-check"}</button>
-      </div>
-    );
-  }
+  // Compact: one quiet line while everything works; click it for a tidy list (no hosts or session details).
+  if (compact && !bad.length) return <CompactStatus checks={checks} loading={loading} onRecheck={load} />;
   return (
     <div className="mb-5">
       <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -76,6 +69,37 @@ export function HealthBanner({ account, compact }: { account?: string; compact?:
           {c.fix && <div className="mt-1 font-mono text-xs">{c.fix}</div>}
         </div>
       ))}
+    </div>
+  );
+}
+
+function CompactStatus({ checks, loading, onRecheck }: { checks: Check[]; loading: boolean; onRecheck: () => void }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+  }, [open]);
+  return (
+    <div ref={box} className="relative mb-4 flex items-center gap-2 text-xs text-muted">
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex items-center gap-2 hover:text-fg">
+        <span className="h-2 w-2 rounded-full bg-ok" aria-hidden />All connections OK
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden><path d={open ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} /></svg>
+      </button>
+      <button onClick={onRecheck} disabled={loading} className="text-accent-strong hover:underline disabled:opacity-50">{loading ? "checking…" : "re-check"}</button>
+      {open && (
+        <ul className="absolute left-0 top-6 z-40 w-96 max-w-[calc(100vw-2rem)] rounded-xl border border-line bg-panel py-2 text-sm text-fg shadow-xl">
+          {checks.map((c) => (
+            <li key={c.id} className="flex items-center gap-2.5 px-3 py-1">
+              <span className={`h-2 w-2 shrink-0 rounded-full ${c.status === "ok" ? "bg-ok" : c.status === "not_configured" ? "bg-warn" : "bg-bad"}`} aria-hidden />
+              <span className="min-w-0 flex-1 truncate">{c.label}</span>
+              <span className="text-xs text-muted">{c.status === "ok" ? "connected" : c.status === "not_configured" ? "not set up" : "down"}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
