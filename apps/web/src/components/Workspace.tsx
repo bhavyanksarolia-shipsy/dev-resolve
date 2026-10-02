@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { HealthBanner } from "./HealthBanner";
 import { Markdown } from "./Markdown";
 import { describeCall, fileLabel, hidePaths, resultSummary, scopeLabel, STEP_ICON, toolName } from "./labels";
+import { confirmDialog, notify } from "@/components/Dialog";
 
 interface Step { seq: number; kind: string; tool: string | null; input: Record<string, unknown> | null; output: string | null; created_at: string }
 interface Proposal { id: number; account_slug: string; file: string; content: string; rationale: string; source: string; status: string }
@@ -95,7 +96,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
     if (!inv) return false;
     const r = await fetch(`/api/investigations/${inv.id}/chat`, { method: "POST", body: JSON.stringify({ message }) });
     const d = await r.json();
-    if (!r.ok) { alert(d.error); return false; }
+    if (!r.ok) { notify({ title: "Message not sent", message: d.error, tone: "error" }); return false; }
     setInv((p) => (p ? { ...p, chat_running: true } : p));
     setTimeout(poll, 500);
     return true;
@@ -112,18 +113,25 @@ export function Workspace({ ticketId }: { ticketId: string }) {
   }
 
   async function post() {
-    if (!inv || !confirm(`Post RCA v${inv.rca_version}${inv.posted_at ? " as an UPDATE" : ""} to ${ticketId}'s INTERNAL discussion?`)) return;
+    if (!inv) return;
+    const ok = await confirmDialog({
+      title: inv.posted_at ? `Post RCA v${inv.rca_version} as an update?` : `Post RCA v${inv.rca_version}?`,
+      message: `It goes to ${ticketId}'s internal discussion in DevRev (not visible to the customer).`,
+      confirmLabel: inv.posted_at ? "Post update" : "Post RCA",
+    });
+    if (!ok) return;
     setBusy(true);
     const r = await fetch(`/api/investigations/${inv.id}/post`, { method: "POST", body: JSON.stringify({ rca, rating: rating || null }) });
     const d = await r.json();
     setBusy(false);
-    if (!r.ok) return alert(`${d.tag ?? "Error"} (${d.connection ?? "?"}): ${d.error}`);
+    if (!r.ok) return notify({ title: `Not posted${d.connection ? ` — ${d.connection}` : ""}`, message: `${d.tag ? `${d.tag}: ` : ""}${d.error}`, tone: "error" });
+    notify({ message: `Posted to ${ticketId}'s internal discussion`, tone: "ok" });
     poll();
   }
 
   async function decide(p: Proposal, action: "accept" | "reject", content?: string) {
     const r = await fetch(`/api/proposals/${p.id}`, { method: "POST", body: JSON.stringify({ action, content }) });
-    if (!r.ok) alert((await r.json()).error);
+    if (!r.ok) notify({ title: `Couldn't ${action} the proposal`, message: (await r.json()).error, tone: "error" });
     poll();
   }
 

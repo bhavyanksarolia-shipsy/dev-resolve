@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { btn, btnPrimary, input, Note, post, Switch } from "./ui";
+import { btn, btnPrimary, Field, input, Note, post, Switch } from "./ui";
+import { confirmDialog } from "@/components/Dialog";
 
 interface U {
   name: string; email: string | null; display_name: string | null; is_admin: boolean; disabled_at: string | null; last_login_at: string | null;
@@ -12,20 +13,34 @@ const when = (d: string | null) => (d ? new Date(d).toLocaleString("en-IN", { da
 export function UsersTab() {
   const [data, setData] = useState<{ users: U[]; me: string } | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [email, setEmail] = useState("");
-  const [asAdmin, setAsAdmin] = useState(false);
+  const blank = { display_name: "", name: "", email: "", password: "", admin: false };
+  const [nu, setNu] = useState(blank);
   const [pw, setPw] = useState<{ name: string; value: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const load = useCallback(() => fetch("/api/admin/users", { cache: "no-store" }).then((r) => r.json()).then(setData), []);
   useEffect(() => { load(); }, [load]);
+  const [open, setOpen] = useState<{ on: boolean; domains: string } | null>(null);
+  useEffect(() => {
+    fetch("/api/admin/settings").then((r) => r.json()).then((d) => setOpen({ on: d.GOOGLE_AUTO_CREATE?.value === "on", domains: d.allowedDomains?.value || "" }));
+  }, []);
+  async function setInviteOnly(on: boolean) {
+    const ok = await confirmDialog(on
+      ? { title: "Let anyone from the domain sign in?", message: `Anyone with a ${open?.domains || "allowed"} Google account will get a member login the first time they sign in.`, confirmLabel: "Allow" }
+      : { title: "Only people added here can sign in?", message: "Google accounts that aren't on this list will be refused.", confirmLabel: "Turn on invite-only" });
+    if (!ok) return;
+    const r = await post("/api/admin/settings", { GOOGLE_AUTO_CREATE: on ? "on" : "off" });
+    if (!r.error) setOpen((o) => (o ? { ...o, on } : o));
+    setMsg({ ok: !r.error, text: r.error || (on ? "Anyone from the allowed domain can now sign in" : "Invite-only: only people on this list can sign in") });
+  }
 
-  async function act(body: Record<string, unknown>, confirmText?: string) {
-    if (confirmText && !window.confirm(confirmText)) return;
+  async function act(body: Record<string, unknown>, ask?: { title: string; message: string; confirmLabel: string; danger?: boolean; requireText?: string }) {
+    if (ask && !(await confirmDialog(ask))) return;
     setBusy(true);
     const r = await post("/api/admin/users", body);
     setBusy(false);
     setMsg({ ok: !r.error, text: r.error || r.message || "Done" });
-    if (!r.error) { setPw(null); load(); }
+    if (!r.error) { setPw(null); await load(); }
+    return !r.error;
   }
 
   if (!data) return <div className="skeleton h-48 w-full rounded-xl" />;
@@ -37,6 +52,13 @@ export function UsersTab() {
         <span className="rounded-full bg-bg px-3 py-1 ring-1 ring-line">{active.filter((u) => u.is_admin).length} admins</span>
         <span className="rounded-full bg-bg px-3 py-1 text-muted ring-1 ring-line">{data.users.length - active.length} disabled</span>
       </div>
+      {open && (
+        <div className="card flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
+          <span className="font-medium">Who can sign in</span>
+          <span className="text-muted">{open.on ? `anyone with a ${open.domains} Google account (as member)` : "only the people listed below (invite-only)"}</span>
+          <span className="ml-auto"><Switch on={!open.on} onChange={(v) => setInviteOnly(!v)} label={<span className="text-xs">Invite-only</span>} /></span>
+        </div>
+      )}
       {msg && <Note ok={msg.ok}>{msg.text}</Note>}
 
       <div className="card overflow-x-auto">
@@ -56,7 +78,9 @@ export function UsersTab() {
                   <td className="px-4 py-3 text-xs">{[u.email && "Google", u.has_password && "password"].filter(Boolean).join(" + ") || "—"}</td>
                   <td className="px-4 py-3">
                     <Switch on={u.is_admin} disabled={busy || me || !!u.disabled_at} title={me ? "You can't change your own role" : ""}
-                      onChange={(v) => act({ action: "role", name: u.name, admin: v }, v ? `Make ${u.name} an admin? Admins manage users, clients and connections.` : undefined)}
+                      onChange={(v) => act({ action: "role", name: u.name, admin: v }, v
+                        ? { title: `Make ${u.display_name || u.name} an admin?`, message: "Admins manage people, clients, connections and private files.", confirmLabel: "Make admin" }
+                        : { title: `Remove ${u.display_name || u.name}'s admin role?`, message: "They keep investigating as a member.", confirmLabel: "Make member" })}
                       label={<span className="text-xs">{u.is_admin ? "Admin" : "Member"}</span>} />
                   </td>
                   <td className="px-4 py-3 text-xs">{u.disabled_at ? <span className="text-bad">Disabled</span> : locked ? <span className="text-warn">Locked (wrong passwords)</span> : <span className="text-ok">Active</span>}
@@ -68,9 +92,11 @@ export function UsersTab() {
                     <div className="flex flex-wrap gap-1.5">
                       {u.disabled_at
                         ? <button className={btn} disabled={busy} onClick={() => act({ action: "enable", name: u.name })}>Enable</button>
-                        : <button className={`${btn} text-bad`} disabled={busy || me} onClick={() => act({ action: "disable", name: u.name }, `Disable ${u.name}? They're signed out everywhere and can't sign in until enabled again. Their history stays.`)}>Disable</button>}
-                      <button className={btn} disabled={busy || !u.sessions} onClick={() => act({ action: "signout", name: u.name })}>Sign out</button>
+                        : <button className={`${btn} text-bad`} disabled={busy || me} onClick={() => act({ action: "disable", name: u.name }, { title: `Disable ${u.display_name || u.name}?`, message: "They're signed out everywhere and can't sign in until enabled again. Their investigations and history stay.", confirmLabel: "Disable", danger: true })}>Disable</button>}
                       <button className={btn} disabled={busy} onClick={() => setPw(pw?.name === u.name ? null : { name: u.name, value: "" })}>{u.has_password ? "Reset password" : "Set password"}</button>
+                      <button className={`${btn} text-bad`} disabled={busy || me} title={me ? "You can't delete yourself" : ""}
+                        onClick={() => act({ action: "delete", name: u.name, confirm: u.name }, { title: `Delete ${u.display_name || u.name}?`, danger: true, confirmLabel: "Delete permanently", requireText: u.name,
+                          message: "This removes their login, sessions, Chrome extension link and stored Google sign-ins. It can't be undone. Their past investigations stay (to just block them, use Disable)." })}>Delete</button>
                     </div>
                     {pw?.name === u.name && (
                       <div className="mt-2 flex gap-2">
@@ -86,14 +112,26 @@ export function UsersTab() {
         </table>
       </div>
 
-      <div className="card space-y-3 p-4">
-        <div className="font-medium">Add a person</div>
-        <p className="text-xs text-muted">Anyone from the allowed Google domain gets a member login the first time they sign in. Add someone here to give them a role before that.</p>
-        <div className="flex flex-wrap items-center gap-3">
-          <input className={`${input} max-w-xs`} type="email" placeholder="name@company.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <Switch on={asAdmin} onChange={setAsAdmin} label={<span className="text-xs">Admin</span>} />
-          <button className={btnPrimary} disabled={busy || !email.includes("@")} onClick={async () => { await act({ action: "add", email, admin: asAdmin }); setEmail(""); setAsAdmin(false); }}>Add</button>
+      <div className="card space-y-4 p-5">
+        <div>
+          <div className="font-medium">Add a person</div>
+          <p className="mt-1 text-xs text-muted">Only people added here can sign in. Give them a password, a Google email, or both.</p>
         </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <Field label="Name"><input className={input} value={nu.display_name} placeholder="Asha Rao" onChange={(e) => setNu({ ...nu, display_name: e.target.value })} /></Field>
+          <Field label="Username" hint="a-z 0-9 . _ -"><input className={input} value={nu.name} placeholder="asha.rao" autoComplete="off"
+            onChange={(e) => setNu({ ...nu, name: e.target.value.toLowerCase().replace(/\s+/g, ".") })} /></Field>
+          <Field label="Password" hint="12+ characters (optional with Google)"><input className={input} type="password" autoComplete="new-password" value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })} /></Field>
+          <Field label="Google email" hint="optional — lets them use Sign in with Google"><input className={input} type="email" value={nu.email} placeholder="asha@company.com" onChange={(e) => setNu({ ...nu, email: e.target.value })} /></Field>
+          <Field label="Role">
+            <select className={input} value={nu.admin ? "admin" : "member"} onChange={(e) => setNu({ ...nu, admin: e.target.value === "admin" })}>
+              <option value="member">Member — investigates tickets</option>
+              <option value="admin">Admin — also manages people, clients, connections</option>
+            </select>
+          </Field>
+        </div>
+        <button className={btnPrimary} disabled={busy || !nu.name || (!nu.password && !nu.email.includes("@"))}
+          onClick={async () => { const ok = await act({ action: "add", ...nu }); if (ok) setNu(blank); }}>Add person</button>
       </div>
     </div>
   );

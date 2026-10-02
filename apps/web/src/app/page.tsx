@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { HealthBanner } from "@/components/HealthBanner";
 import { AccountPicker, type PickerAccount } from "@/components/AccountPicker";
+import { notify } from "@/components/Dialog";
 
 type Account = PickerAccount;
 interface Ticket {
@@ -123,7 +124,7 @@ function Inbox() {
     const r = await fetch("/api/investigations", { method: "POST", body: JSON.stringify({ ticket: t.display_id }) });
     const d = await r.json();
     setStarting((s) => { const n = new Set(s); n.delete(t.display_id); return n; });
-    if (!r.ok) return alert(d.error);
+    if (!r.ok) return notify({ title: `Couldn't start ${t.display_id}`, message: d.error, tone: "error" });
     setTick((n) => n + 1);
   }
 

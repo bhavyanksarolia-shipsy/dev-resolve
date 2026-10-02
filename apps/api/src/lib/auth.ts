@@ -77,8 +77,8 @@ async function openSession(userId: number, meta: { ip?: string; userAgent?: stri
 }
 
 /**
- * Google sign-in (identity already verified in google.ts). Matched by email; a first-timer gets a member login
- * (GOOGLE_AUTO_CREATE=off: only people added with `npm run user -- add <name> --email <email>`).
+ * Google sign-in (identity already verified in google.ts). Matched by email. Only people an admin added can sign in
+ * (GOOGLE_AUTO_CREATE=on would instead give anyone from the allowed domain a member login).
  */
 export async function loginWithGoogle(email: string, displayName: string, meta: { ip?: string; userAgent?: string }):
   Promise<{ ok: true; token: string; maxAge: number; user: SessionUser } | { ok: false; error: string }> {
@@ -87,7 +87,7 @@ export async function loginWithGoogle(email: string, displayName: string, meta: 
     `SELECT id, name, is_admin, disabled_at FROM app_users WHERE lower(email) = $1`, [email]);
   if (!u) {
     if (!googleAutoCreate()) {
-      return { ok: false, error: `${email} doesn't have a Dev Resolve login yet — ask an admin to add you` };
+      return { ok: false, error: `${email} doesn't have access to Dev Resolve — ask an admin to add you (Admin → User access control)` };
     }
     const admins = googleAdminEmails();
     const base = email.split("@")[0].toLowerCase().replace(/[^a-z0-9._-]/g, "-").slice(0, 60) || "user";

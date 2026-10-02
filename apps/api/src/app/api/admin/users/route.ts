@@ -1,6 +1,8 @@
 import { requireAdmin } from "@/lib/adminGuard";
 import { q } from "@/lib/db";
 import { hashPassword, passwordProblem } from "@/lib/passwords";
+import { rmSync } from "node:fs";
+import { userAuthDir } from "@/lib/connector";
 
 /** User access control: list everyone; add / promote / demote / disable / enable / sign out / set a password. */
 export async function GET(req: Request) {
@@ -19,7 +21,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const g = await requireAdmin(req);
   if (g.error) return g.error;
-  const b = (await req.json().catch(() => ({}))) as { action?: string; name?: string; email?: string; admin?: boolean; password?: string };
+  const b = (await req.json().catch(() => ({}))) as { action?: string; name?: string; email?: string; admin?: boolean; password?: string; display_name?: string; confirm?: string };
   const name = (b.name || "").trim().toLowerCase();
   const self = name === g.user.name;
   const one = async (sql: string, params: unknown[]) => {
@@ -29,17 +31,20 @@ export async function POST(req: Request) {
   try {
     switch (b.action) {
       case "add": {
-        const email = (b.email || "").trim().toLowerCase();
-        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error("Enter a valid email");
-        const base = email.split("@")[0].replace(/[^a-z0-9._-]/g, "-").slice(0, 60);
-        const [taken] = await q(`SELECT 1 FROM app_users WHERE lower(email) = $1`, [email]);
-        if (taken) throw new Error(`${email} already has a login`);
-        let added: { name: string } | undefined;
-        for (let i = 0; !added && i < 20; i++) {
-          [added] = await q<{ name: string }>(`INSERT INTO app_users (name, email, is_admin) VALUES ($1, $2, $3) ON CONFLICT (name) DO NOTHING RETURNING name`,
-            [i ? `${base}-${i + 1}` : base, email, !!b.admin]);
-        }
-        return Response.json({ ok: true, message: `Added ${email} as ${b.admin ? "admin" : "member"} — they sign in with Google` });
+        // A login: a username, a name, and at least one way in — a password, and/or a Google email.
+        const username = name;
+        if (!/^[a-z0-9._-]{2,64}$/.test(username)) throw new Error("Username: 2–64 of a-z 0-9 . _ -");
+        const display = (b.display_name || "").trim().slice(0, 120) || null;
+        const email = (b.email || "").trim().toLowerCase() || null;
+        if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error("That email doesn't look right");
+        if (!email && !b.password) throw new Error("Give them a password, a Google email, or both — otherwise they can't sign in");
+        if (b.password) { const problem = passwordProblem(b.password, username); if (problem) throw new Error(`Password: ${problem}`); }
+        const [taken] = await q<{ name: string; email: string | null }>(`SELECT name, email FROM app_users WHERE name = $1 OR ($2::text IS NOT NULL AND lower(email) = $2)`, [username, email]);
+        if (taken) throw new Error(taken.name === username ? `The username "${username}" is taken` : `${email} already has a login (${taken.name})`);
+        await q(`INSERT INTO app_users (name, display_name, email, password_hash, is_admin) VALUES ($1, $2, $3, $4, $5)`,
+          [username, display, email, b.password ? await hashPassword(b.password) : null, !!b.admin]);
+        const how = [b.password && `username "${username}" + password`, email && `Google (${email})`].filter(Boolean).join(" or ");
+        return Response.json({ ok: true, message: `Added ${display || username} as ${b.admin ? "admin" : "member"} — they sign in with ${how}` });
       }
       case "role":
         if (self && !b.admin) throw new Error("You can't remove your own admin role (ask another admin)");
@@ -57,6 +62,15 @@ export async function POST(req: Request) {
       case "signout": {
         const r = await q(`UPDATE app_sessions SET revoked_at = now() WHERE revoked_at IS NULL AND user_id = (SELECT id FROM app_users WHERE name = $1) RETURNING 1`, [name]);
         return Response.json({ ok: true, message: `Ended ${r.length} session(s) for ${name}${self ? " (including this one)" : ""}` });
+      }
+      case "delete": {
+        // Permanent: the login, its sessions, its extension link and its stored sign-ins. Their investigations stay.
+        if (self) throw new Error("You can't delete yourself");
+        if ((b.confirm || "").trim().toLowerCase() !== name) throw new Error("Type the username exactly to confirm");
+        await one(`DELETE FROM app_users WHERE name = $1`, [name]);
+        await q(`DELETE FROM private_files WHERE path LIKE $1`, [`.auth/users/${name}/%`]);
+        try { rmSync(userAuthDir(name), { recursive: true, force: true }); } catch { /* nothing stored */ }
+        return Response.json({ ok: true, message: `${name} was deleted. Their past investigations are kept.` });
       }
       case "set_password": {
         const problem = passwordProblem(b.password || "", name);
