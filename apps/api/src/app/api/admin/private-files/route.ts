@@ -54,17 +54,26 @@ export async function POST(req: Request) {
   if (!(file instanceof File)) return Response.json({ error: "Choose a file" }, { status: 400 });
   if (file.size > MAX) return Response.json({ error: "File is over 5 MB" }, { status: 400 });
   const data = Buffer.from(await file.arrayBuffer());
+  // The real files sit next to their templates (projects.example.json, config.env.example) — easy to pick by mistake.
+  if (/example/i.test(file.name)) {
+    return Response.json({ error: `"${file.name}" is the empty template — pick ${kind === "knowledge.tgz" ? "the knowledge archive" : kind} itself (same folder)` }, { status: 400 });
+  }
   try {
     if (kind === "projects.json") {
       const j = JSON.parse(data.toString("utf8"));
       if (!Array.isArray(j.accounts)) throw new Error("projects.json must have an \"accounts\" list");
+      if (j.accounts.length && j.accounts.every((a: { slug?: string }) => /^(acme|globex)/.test(a.slug || ""))) {
+        throw new Error("that's the example projects.json (Acme / Globex) — upload your real config/projects.json");
+      }
       writeAtomic(path.join(CONFIG_DIR, "projects.json"), data);
       await savePrivate(path.join(CONFIG_DIR, "projects.json"), u.name);
       return Response.json({ ok: true, message: `projects.json saved — ${j.accounts.length} accounts` });
     }
     if (kind === "config.env") {
-      const keys = data.toString("utf8").split("\n").filter((l) => /^[A-Z0-9_]+=/.test(l.trim())).length;
+      const lines = data.toString("utf8").split("\n").map((l) => l.trim()).filter((l) => /^[A-Z0-9_]+=/.test(l));
+      const keys = lines.length;
       if (!keys) throw new Error("config.env has no KEY=value lines");
+      if (lines.every((l) => l.endsWith("="))) throw new Error("every value in that config.env is empty — that's the template; upload your real config/config.env");
       writeAtomic(path.join(CONFIG_DIR, "config.env"), data);
       await savePrivate(path.join(CONFIG_DIR, "config.env"), u.name);
       return Response.json({ ok: true, message: `config.env saved — ${keys} settings` });

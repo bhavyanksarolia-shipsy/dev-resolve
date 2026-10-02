@@ -76,6 +76,7 @@ async function checkVpn(hosts) {
 
 // ── Google sign-ins ────────────────────────────────────────────────────────────────────────────────────────
 async function syncMetabase(m, { openIfMissing }) {
+  if (!/^https?:\/\//.test(m.baseUrl || "")) return false; // server config has no address for it (yet)
   const c = await chrome.cookies.get({ url: m.baseUrl, name: "metabase.SESSION" });
   if (c?.value) {
     await api("/api/connector/signin", { method: "POST", body: { kind: "metabase", project: m.project, session: c.value } });

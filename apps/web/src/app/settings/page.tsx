@@ -3,8 +3,8 @@ import { useEffect, useState } from "react";
 
 type Info = Record<string, { present: boolean; size?: number; updated?: string }>;
 const FILES = [
-  { kind: "projects.json", label: "projects.json", hint: "accounts and connections (apps/api/config/projects.json on your laptop)", accept: ".json" },
-  { kind: "config.env", label: "config.env", hint: "endpoints and credentials (apps/api/config/config.env)", accept: ".env,text/plain" },
+  { kind: "projects.json", label: "projects.json", hint: "accounts and connections — apps/api/config/projects.json (not projects.example.json)", accept: ".json" },
+  { kind: "config.env", label: "config.env", hint: "endpoints and credentials — apps/api/config/config.env (not config.env.example)", accept: ".env,text/plain" },
   { kind: "knowledge.tgz", label: "knowledge (.tgz)", hint: "make it with: npm run pack-knowledge — merged into the server's knowledge", accept: ".tgz,.gz,application/gzip" },
 ];
 

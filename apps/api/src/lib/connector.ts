@@ -141,7 +141,8 @@ function writePrivate(file: string, data: string) {
 
 /** Google-login Metabase projects (projects.json metabase.sso = "google"). */
 export const ssoMetabaseProjects = () =>
-  Object.entries(getConnectionProjects()).filter(([, p]) => p.metabase?.sso === "google").map(([name, p]) => ({ name, baseUrl: cfgValue(p.metabase!.base_url_env) }));
+  Object.entries(getConnectionProjects()).filter(([, p]) => p.metabase?.sso === "google").map(([name, p]) => ({ name, baseUrl: cfgValue(p.metabase!.base_url_env) }))
+    .filter((p) => !!p.baseUrl);
 
 export function saveMetabaseSession(user: string, project: string, session: string) {
   if (!ssoMetabaseProjects().some((p) => p.name === project)) throw new Error(`${project} is not a Google-login Metabase`);
