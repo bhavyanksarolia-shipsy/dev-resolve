@@ -5,6 +5,7 @@ import { Markdown } from "./Markdown";
 import { describeCall, fileLabel, hidePaths, resultSummary, scopeLabel, STEP_ICON, toolName } from "./labels";
 import { confirmDialog, notify } from "@/components/Dialog";
 import { InvestigationProgress } from "./InvestigationProgress";
+import { ChatPanel } from "./ChatPanel";
 
 interface Step { seq: number; kind: string; tool: string | null; input: Record<string, unknown> | null; output: string | null; created_at: string }
 interface Proposal { id: number; account_slug: string; file: string; content: string; rationale: string; source: string; status: string }
@@ -47,6 +48,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
   const [trail, setTrail] = useState<{ id: number | null; steps: Step[] }>({ id: null, steps: [] });
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [fullTrail, setFullTrail] = useState(false);
+  const [mode, setMode] = useState<"rca" | "chat">("rca");
   const [rca, setRca] = useState("");
   const [rating, setRating] = useState(0);
   const [rcaMode, setRcaMode] = useState<"preview" | "edit">("preview");
@@ -95,10 +97,17 @@ export function Workspace({ ticketId }: { ticketId: string }) {
     return () => clearInterval(t);
   }, [agentBusy, poll]);
 
-  async function sendChat(message: string) {
+  async function sendChat(message: string, files: File[] = []) {
     if (!inv) return false;
-    const r = await fetch(`/api/investigations/${inv.id}/chat`, { method: "POST", body: JSON.stringify({ message }) });
-    const d = await r.json();
+    let body: BodyInit = JSON.stringify({ message });
+    if (files.length) {
+      const form = new FormData();
+      form.set("message", message);
+      for (const f of files) form.append("files", f, f.name);
+      body = form;
+    }
+    const r = await fetch(`/api/investigations/${inv.id}/chat`, { method: "POST", body });
+    const d = await r.json().catch(() => ({ error: r.status === 413 ? "Files are too large — send fewer at a time" : `HTTP ${r.status}` }));
     if (!r.ok) { notify({ title: "Message not sent", message: d.error, tone: "error" }); return false; }
     setInv((p) => (p ? { ...p, chat_running: true } : p));
     setTimeout(poll, 500);
@@ -144,6 +153,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
   const connErrors = steps.filter((s) => s.kind === "connection_error");
   const running = inv?.status === "running";
   const currentPosted = !!inv?.posted_at && inv.posted_version >= inv.rca_version;
+  const canChat = !!inv && !running && !!inv.draft_rca;
 
   return (
     // Desktop: both columns fit the window and scroll on their own, so the page itself never scrolls.
@@ -204,7 +214,21 @@ export function Workspace({ ticketId }: { ticketId: string }) {
             </span>
           )}
           {running && <button onClick={() => fetch(`/api/investigations/${inv!.id}`, { method: "DELETE" }).then(poll)} className="text-sm text-bad">cancel</button>}
+          {canChat && (
+            <div className="ml-auto inline-flex rounded-lg border border-line bg-bg p-0.5 text-sm font-medium" role="tablist">
+              {([["rca", `RCA v${inv!.rca_version}`], ["chat", "Chat"]] as const).map(([m, l]) => (
+                <button key={m} role="tab" aria-selected={mode === m} onClick={() => setMode(m)}
+                  className={`flex items-center gap-1.5 rounded-md px-3 py-1 ${mode === m ? "bg-panel text-accent-strong shadow-sm" : "text-muted hover:text-fg"}`}>
+                  {l}{m === "chat" && inv!.chat_running && <span className="ip-dot h-1.5 w-1.5 rounded-full bg-accent" />}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
+        {canChat && mode === "chat" ? (
+          <ChatPanel invId={inv!.id} steps={steps} busy={!!inv!.chat_running} rca={inv!.draft_rca} rcaVersion={inv!.rca_version}
+            confidence={inv!.confidence} onSend={sendChat} onOpenRca={() => setMode("rca")} />
+        ) : (<>
         <div className="min-h-0 flex-1 lg:overflow-y-auto lg:pr-2">
         {inv?.error && <div className="mb-3 rounded-md border border-bad/40 bg-bad/5 px-3 py-2 text-sm text-bad">{inv.error}</div>}
         {connErrors.map((s) => (
@@ -251,17 +275,24 @@ export function Workspace({ ticketId }: { ticketId: string }) {
               <textarea value={rca} onChange={(e) => setRca(e.target.value)}
                 className="h-[85vh] min-h-[32rem] w-full rounded-xl border border-line bg-bg p-4 font-mono text-[13px] leading-relaxed outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft" />
             )}
-            {!currentPosted && (
-              <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
+            <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
+              {!currentPosted && <>
                 <span className="text-muted">Draft quality:</span>
                 {[1, 2, 3, 4, 5].map((n) => (
                   <button key={n} onClick={() => setRating(n)} className={n <= rating ? "text-warn" : "text-muted"}>★</button>
                 ))}
-                <button onClick={post} disabled={busy} className="ml-auto rounded-md bg-ok px-3 py-1.5 text-white disabled:opacity-50">
+              </>}
+              <button onClick={() => setMode("chat")} disabled={!canChat}
+                className="ml-auto flex items-center gap-1.5 rounded-md border border-accent px-3 py-1.5 font-medium text-accent-strong hover:bg-accent-soft disabled:opacity-50">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+                Investigate more
+              </button>
+              {!currentPosted && (
+                <button onClick={post} disabled={busy} className="rounded-md bg-ok px-3 py-1.5 text-white disabled:opacity-50">
                   {inv.posted_at ? `Approve & post update (v${inv.rca_version})` : "Approve & post to internal discussion"}
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         )}
 
@@ -286,8 +317,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
           </Collapsible>
         )}
         </div>
-
-        {inv && !running && <Chat steps={steps} busy={!!inv.chat_running} onSend={sendChat} resumed={!!inv.session_id} />}
+        </>)}
       </section>
       )}
     </div>
@@ -422,59 +452,6 @@ function AttachmentList({ items }: { items: Attachment[] }) {
 }
 
 /** Reviewer ↔ agent discussion on the RCA. Messages resume the investigation's agent session. */
-function Chat({ steps, busy, onSend, resumed }: { steps: Step[]; busy: boolean; onSend: (m: string) => Promise<boolean>; resumed: boolean }) {
-  const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
-  const firstUser = steps.findIndex((s) => s.kind === "user_message");
-  const thread = firstUser < 0 ? [] : steps.slice(firstUser).filter((s) => s.kind === "user_message" || s.kind === "text" || s.kind === "tool_call" || (s.kind === "system" && s.output?.startsWith("Chat failed")));
-  const end = useRef<HTMLDivElement>(null);
-  useEffect(() => { end.current?.scrollIntoView({ block: "nearest" }); }, [thread.length, busy]);
-
-  async function submit() {
-    const m = text.trim();
-    if (!m || sending || busy) return;
-    setSending(true);
-    if (await onSend(m)) setText("");
-    setSending(false);
-  }
-
-  return (
-    <div className="card mt-3 shrink-0 p-3 shadow-sm">
-      <h2 className="mb-0.5 font-semibold">Discuss this RCA</h2>
-      <p className="mb-2 text-xs text-muted max-lg:block lg:line-clamp-1" title="Ask questions or add context; the agent can run new checks and post a revised draft.">
-        Ask questions or add context (&ldquo;also check trip SD39000220&rdquo;, &ldquo;SAP fixed this on 23-Sep, re-verify&rdquo;). The agent keeps
-        {resumed ? " everything it checked in this investigation" : " the ticket + current RCA"}, can run new log / DB / code checks,
-        and will post a revised draft (new version) above if the findings change.
-      </p>
-      {thread.length > 0 && (
-        <div className="mb-2 max-h-[30vh] space-y-2 overflow-y-auto pr-1 text-sm">
-          {thread.map((s) =>
-            s.kind === "user_message" ? (
-              <div key={s.seq} className="ml-10 whitespace-pre-wrap rounded-md bg-accent/10 px-3 py-2"><b className="text-xs text-accent">{String(s.input?.by ?? "You")}</b><br />{s.output}</div>
-            ) : s.kind === "tool_call" ? (
-              <div key={s.seq} className="flex gap-2 pl-1 text-xs text-muted"><span>{STEP_ICON[toolName(s.tool)] ?? "•"}</span>{describeCall(s.tool, s.input)}</div>
-            ) : (
-              <div key={s.seq} className={`mr-6 rounded-xl border px-4 py-3 ${s.kind === "system" ? "border-red-200 bg-red-50 text-bad" : "border-line bg-bg"}`}>
-                <div className="mb-1 text-xs font-semibold text-muted">Dev Resolve</div>
-                <Markdown compact>{hidePaths(s.output)}</Markdown>
-              </div>
-            ),
-          )}
-          {busy && <div className="animate-pulse text-xs text-muted">Dev Resolve is checking…</div>}
-          <div ref={end} />
-        </div>
-      )}
-      <div className="flex gap-2">
-        <textarea value={text} onChange={(e) => setText(e.target.value)} disabled={busy}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
-          placeholder={busy ? "Waiting for the agent…" : "Message Dev Resolve about this RCA… (Enter to send, Shift+Enter for a new line)"}
-          className="h-14 flex-1 resize-y rounded-md border border-line bg-bg p-2 text-sm disabled:opacity-60" />
-        <button onClick={submit} disabled={busy || sending || !text.trim()} className="self-end rounded-md bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50">Send</button>
-      </div>
-    </div>
-  );
-}
-
 function WorkspaceSkeleton() {
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">

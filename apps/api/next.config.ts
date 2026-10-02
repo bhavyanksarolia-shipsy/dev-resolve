@@ -8,6 +8,8 @@ const nextConfig: NextConfig = {
   // Node-only packages that spawn processes / hold sockets — keep them out of the bundle.
   serverExternalPackages: ["@anthropic-ai/claude-agent-sdk", "pg"],
   devIndicators: false,
+  // Chat uploads (screenshots, PDFs, sheets) pass through proxy.ts, which buffers the body — allow up to the route's 30 MB.
+  experimental: { proxyClientMaxBodySize: "32mb" },
   poweredByHeader: false,
   async headers() {
     const security = [

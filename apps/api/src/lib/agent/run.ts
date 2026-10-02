@@ -7,7 +7,7 @@ import { userToolEnv } from "../connector";
 import { q } from "../db";
 import { getTicket, listTimeline } from "../devrev";
 import { accountKnowledge } from "../knowledge";
-import { agentAttachmentBlocks, listAttachments } from "../attachments";
+import { agentAttachmentBlocks, listAttachments, uploadedFileBlocks } from "../attachments";
 import { buildToolServer } from "./tools";
 import { appLogConfigDir, appLogProjects, ensureAppLogAuth, indexAllowed } from "../applog";
 
@@ -221,7 +221,7 @@ async function runAgent(id: number, ticket: Awaited<ReturnType<typeof getTicket>
  * investigation's own agent session, so it keeps every log search / query / code read from the first run.
  * If the findings change, the agent calls submit_rca again → a new draft version.
  */
-export async function sendChatMessage(id: number, text: string, by = "unknown") {
+export async function sendChatMessage(id: number, text: string, by = "unknown", files: { id: number; name: string; type: string; size: number; body: Buffer }[] = []) {
   const [inv] = await q<{
     ticket_id: string; ticket_display: string; account_slug: string; candidate_slugs: string[] | null;
     status: string; session_id: string | null; chat_running: boolean; draft_rca: string | null;
@@ -234,15 +234,17 @@ export async function sendChatMessage(id: number, text: string, by = "unknown") 
 
   const [{ next }] = await q<{ next: number }>(`SELECT COALESCE(max(seq), -1) + 1 AS next FROM investigation_steps WHERE investigation_id=$1`, [id]);
   await q(`UPDATE investigations SET chat_running=true WHERE id=$1`, [id]);
-  await step(id, next, "user_message", null, { by }, text);
+  await step(id, next, "user_message", null, { by, files: files.map(({ id, name, type, size }) => ({ id, name, type, size })) }, text);
+  const fileBlocks = files.length ? await uploadedFileBlocks(files) : [];
 
   const followUp =
-    `Follow-up from reviewer "${by}" on ${inv.ticket_display}:\n\n${text}\n\n` +
+    `Follow-up from reviewer "${by}" on ${inv.ticket_display}:\n\n${text || "(no message — see the attached files)"}\n\n` +
+    (files.length ? `They attached ${files.length} file(s): ${files.map((f) => f.name).join(", ")} — included below; read them.\n\n` : "") +
     `Answer them directly and concisely. Run any log / DB / code checks needed to verify — don't answer from memory when the data can be checked. ` +
     `If the findings change the RCA (including Current status), call submit_rca again with the FULL revised RCA; otherwise just reply.`;
   let message: SDKUserMessage;
   if (inv.session_id) {
-    message = userMessage([{ type: "text", text: followUp }]);
+    message = userMessage([{ type: "text", text: followUp }, ...fileBlocks]);
   } else {
     // Investigations created before chat existed have no saved session: re-seed with the ticket + current RCA.
     const ticket = await getTicket(inv.ticket_id);
@@ -250,7 +252,7 @@ export async function sendChatMessage(id: number, text: string, by = "unknown") 
     message = userMessage([{
       type: "text",
       text: `${ticketPrompt(ticket, comments)}\n\n## Current RCA draft (from an earlier investigation)\n${inv.draft_rca ?? "(none)"}\n\n---\n${followUp}`,
-    }]);
+    }, ...fileBlocks]);
   }
   void (async () => {
     try {

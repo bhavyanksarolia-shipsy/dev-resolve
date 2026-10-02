@@ -199,3 +199,36 @@ export async function agentAttachmentBlocks(atts: Attachment[], maxImages = 8, m
   }
   return blocks;
 }
+
+/** Files a reviewer attached in the RCA chat → the same blocks the agent gets for ticket attachments. */
+export async function uploadedFileBlocks(files: { name: string; type: string; body: Buffer }[]) {
+  type ImageType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+  const blocks: Awaited<ReturnType<typeof agentAttachmentBlocks>> = [];
+  let budget = 200_000;
+  for (const f of files) {
+    const a = { name: f.name, type: f.type, size: f.body.length } as Attachment;
+    try {
+      if (["image/png", "image/jpeg", "image/gif", "image/webp"].includes(f.type)) {
+        if (f.body.length > 5_000_000) { blocks.push({ type: "text", text: `Image "${f.name}" not read — larger than 5 MB.` }); continue; }
+        blocks.push({ type: "text", text: `Reviewer attached image "${f.name}":` });
+        blocks.push({ type: "image", source: { type: "base64", media_type: f.type as ImageType, data: f.body.toString("base64") } });
+      } else if (isPdf(a)) {
+        blocks.push({ type: "text", text: `Reviewer attached PDF "${f.name}":` });
+        blocks.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: f.body.toString("base64") }, title: f.name });
+      } else if (f.type === "message/rfc822" || ext(f.name) === "eml") {
+        const m = await simpleParser(f.body);
+        const body = (m.text || (typeof m.html === "string" ? htmlToText(m.html) : "") || "").trim().slice(0, 30000);
+        blocks.push({ type: "text", text: `Reviewer attached email "${f.name}":\nSubject: ${m.subject ?? ""}\nFrom: ${m.from?.text ?? ""}\nDate: ${m.date?.toISOString() ?? ""}\n\n${body || "(empty body)"}` });
+      } else {
+        const text = await fileText(a, f.body);
+        if (text == null) { blocks.push({ type: "text", text: `Reviewer attached "${f.name}" (${f.type || "unknown type"}) — this kind of file can't be read; ask them what it shows.` }); continue; }
+        const max = Math.min(60000, budget);
+        budget -= Math.min(text.length, max);
+        blocks.push({ type: "text", text: `Reviewer attached file "${f.name}":\n` + (text.length > max ? text.slice(0, max) + `\n…[truncated — ${text.length} characters in total]` : text.trim() || "(empty file)") });
+      }
+    } catch {
+      blocks.push({ type: "text", text: `Reviewer attached "${f.name}" but it couldn't be read.` });
+    }
+  }
+  return blocks;
+}
