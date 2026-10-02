@@ -37,6 +37,8 @@ export const settings = {
 
   /** Where the connector on each laptop receives the app-logs sign-in (must match the app-logs OAuth client). */
   appLogCallbackPort: () => Number(get("APP_LOG_CALLBACK_PORT", "3334")),
+  /** Chrome Web Store page of the published extension — when set, the Connector page shows "Add to Chrome". */
+  extensionStoreUrl: () => url("EXTENSION_STORE_URL", ""),
 };
 
 /** What's in effect (no secrets) — printed at startup so a wrong port/URL is obvious in the logs. */

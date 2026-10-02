@@ -15,7 +15,7 @@ export function AppHeader() {
   const [down, setDown] = useState<string | null>(null);
 
   useEffect(() => {
-    if (pathname === "/login") return;
+    if (pathname === "/login" || pathname === "/privacy") return;
     let live = true;
     fetch("/api/auth/me", { cache: "no-store" }).then(async (r) => {
       if (!live) return;

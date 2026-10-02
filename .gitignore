@@ -38,3 +38,5 @@ apps/api/services/wms_ticket_digest/config/*.json
 
 # knowledge archive made for upload (npm run pack-knowledge)
 knowledge-upload.tgz
+# Chrome Web Store upload package (npm run extension:package)
+dev-resolve-extension-*.zip

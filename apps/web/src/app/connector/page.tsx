@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 
 interface Status {
-  mode: boolean; user: string; online: boolean; vpnUp: boolean; lastSeen: string | null; version?: string;
+  mode: boolean; user: string; online: boolean; storeUrl?: string | null; vpnUp: boolean; lastSeen: string | null; version?: string;
   vpn: Record<string, boolean>; vpnHosts: string[];
   signins: { metabase: { project: string; baseUrl?: string; signedIn: boolean }[]; appLog: { project: string; signedIn: boolean } | null };
 }
@@ -117,7 +117,13 @@ export default function ConnectorPage() {
 
       <section className="card space-y-3 p-5 text-sm">
         <h2 className="font-semibold">Chrome extension {ext ? <span className="ml-2 text-xs font-normal text-ok">installed · v{ext.version}{ext.linked ? " · linked to you" : " · linking…"}</span> : <span className="ml-2 text-xs font-normal text-muted">not installed in this browser</span>}</h2>
-        {!ext && (
+        {!ext && s.storeUrl && (
+          <div className="space-y-2">
+            <a href={s.storeUrl} target="_blank" rel="noreferrer" className="inline-block rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-strong">Add to Chrome</a>
+            <p className="text-xs text-muted">Click <b>Add to Chrome</b> on the store page, then come back here — it links itself to you. Nothing else to do.</p>
+          </div>
+        )}
+        {!ext && !s.storeUrl && (
           <ol className="list-decimal space-y-2 pl-5">
             <li><a className="font-medium text-accent hover:underline" href="/api/connector/extension">Download the extension</a> (set up for this Dev Resolve — nothing to configure) and <b>unzip</b> it.</li>
             <li>Open <code className="rounded bg-bg px-1 font-mono text-xs">chrome://extensions</code>, switch on <b>Developer mode</b> (top right).</li>
