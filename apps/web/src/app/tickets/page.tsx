@@ -53,6 +53,10 @@ function Inbox() {
   // "not set" / "unassigned" is the empty value — written as "-" in the URL so it survives there.
   const listParam = (k: string) => (params.get(k) ? params.get(k)!.split("|").map((v) => (v === "-" ? "" : v)) : null);
   const onlyDefaultPart = params.get("part") === "default"; // from the dashboard: tickets still on the default TMS part
+  // From the dashboard's age buckets: age=<min days>-<max days> (max empty = no upper limit).
+  const ageMatch = (params.get("age") || "").match(/^(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)?$/);
+  const [loadedAt] = useState(() => Date.now()); // "now" for the age filter, fixed while the page is open
+  const ageRange = ageMatch ? { min: Number(ageMatch[1]), max: ageMatch[2] ? Number(ageMatch[2]) : Infinity, label: params.get("agelabel") || `${ageMatch[1]}+ days` } : null;
   const filters = { stage: listParam("fstage"), pod: listParam("fpod"), owner: listParam("fowner") };
   const texts = { stage: params.get("qstage") || "", pod: params.get("qpod") || "", owner: params.get("qowner") || "" };
   const setView = (patch: Record<string, string | null>, keepPage = false) => {
@@ -131,6 +135,7 @@ function Inbox() {
   const view = useMemo(() => {
     let list = tickets ?? [];
     if (onlyDefaultPart) list = list.filter((t) => t.default_part);
+    if (ageRange) list = list.filter((t) => { const a = (loadedAt - +new Date(t.created_date)) / 864e5; return a >= ageRange.min && a < ageRange.max; });
     for (const col of COLS) {
       const sel = filters[col], txt = texts[col].trim().toLowerCase();
       if (sel) list = list.filter((t) => sel.includes(valueOf(t, col)));
@@ -167,8 +172,8 @@ function Inbox() {
     for (const t of tickets ?? []) if (others.every((o) => passes(t, o))) m.set(valueOf(t, col), (m.get(valueOf(t, col)) ?? 0) + 1);
     return [...m.entries()].sort((a, b) => (!a[0] ? 1 : !b[0] ? -1 : a[0].localeCompare(b[0]))).map(([value, count]) => ({ value, count }));
   };
-  const anyFilter = !!(COLS.some((c) => filters[c] || texts[c]) || sort || onlyDefaultPart);
-  const clearAll = { sort: null, fstage: null, fpod: null, fowner: null, qstage: null, qpod: null, qowner: null, part: null };
+  const anyFilter = !!(COLS.some((c) => filters[c] || texts[c]) || sort || onlyDefaultPart || ageRange);
+  const clearAll = { sort: null, fstage: null, fpod: null, fowner: null, qstage: null, qpod: null, qowner: null, part: null, age: null, agelabel: null };
   const colMenu = (col: Col, label: string) => (
     <ColumnMenu label={label} values={distinct(col)} selected={filters[col]} text={texts[col]}
       sort={sort.startsWith(`${col}:`) ? (sort.split(":")[1] as "asc" | "desc") : null}
@@ -225,6 +230,12 @@ function Inbox() {
             <button onClick={() => setView({ part: onlyDefaultPart ? null : "default" })} title="Still on the default TMS part — not in DevRev's WMS view until triaged"
               className={`font-medium hover:underline ${onlyDefaultPart ? "text-accent-strong" : "text-warn"}`}>{counts.account.default_part} on TMS (default){onlyDefaultPart ? " ✓" : ""}</button></>}
         </> : !error && !inactive ? <span className="skeleton inline-block h-4 w-64" /> : null}
+        {ageRange && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent-strong">
+            Open for {ageRange.label}
+            <button onClick={() => setView({ age: null, agelabel: null })} aria-label="Remove the age filter" className="hover:text-fg">✕</button>
+          </span>
+        )}
         <Link href={`/?account=${account}`} className="ml-auto text-accent-strong hover:underline">Dashboard →</Link>
       </div>
       <HealthBanner account={account === "all" ? undefined : account} compact />

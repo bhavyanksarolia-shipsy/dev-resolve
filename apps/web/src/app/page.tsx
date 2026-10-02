@@ -11,7 +11,7 @@ interface Dash {
   inactive?: boolean; error?: string;
   account: { slug: string; name: string }; days: number; from: string; to: string; step: number;
   counts: { account: { total: number; wms: number; default_part: number }; org: { total: number; wms: number } };
-  open: { total: number; by_stage: Count[]; by_pod: Count[]; by_owner: Count[]; by_age: { label: string; count: number }[]; oldest: Brief[];
+  open: { total: number; by_stage: Count[]; by_pod: Count[]; by_owner: Count[]; by_age: { label: string; min: number; max: number | null; count: number }[]; oldest: Brief[];
     gaps: { default_part: number; no_pod: number; unassigned: number; not_investigated: number } };
   flow: { opened: number; closed: number; partial?: boolean; per_day: { day: string; opened: number; closed: number }[] };
   recently_closed: Brief[];
@@ -106,7 +106,7 @@ function Dashboard() {
 
           <div className="grid gap-4 lg:grid-cols-3">
             <Panel title="Age of open tickets">
-              <Bars items={d.open.by_age.map((a) => ({ label: a.label, count: a.count }))} tone={(i) => (i >= 3 ? "bg-warn" : "bg-accent")} />
+              <Bars items={d.open.by_age.map((a) => ({ label: a.label, count: a.count, href: t(`&age=${a.min}-${a.max ?? ""}&agelabel=${encodeURIComponent(a.label)}`) }))} tone={(i) => (i >= 3 ? "bg-warn" : "bg-accent")} />
             </Panel>
             <Panel title="By stage">
               <Bars items={d.open.by_stage.map((s) => ({ label: stageLabel(s.value), count: s.count, href: t(`&fstage=${encodeURIComponent(s.value)}`) }))} />
@@ -299,8 +299,6 @@ function resolveRange(key: string | null, from: string | null, to: string | null
 
 function DateRangePicker({ range, onChange }: { range: Range; onChange: (r: Range) => void }) {
   const [open, setOpen] = useState(false);
-  const [from, setFrom] = useState(range.from);
-  const [to, setTo] = useState(range.to);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -309,11 +307,9 @@ function DateRangePicker({ range, onChange }: { range: Range; onChange: (r: Rang
     document.addEventListener("mousedown", away); document.addEventListener("keydown", esc);
     return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
   }, [open]);
-  const today = istToday();
-  const input = "w-full rounded-md border border-line bg-bg px-2 py-1.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft";
   return (
     <div ref={box} className="relative">
-      <button type="button" onClick={() => { setFrom(range.from); setTo(range.to); setOpen((o) => !o); }} aria-haspopup="dialog" aria-expanded={open}
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-haspopup="dialog" aria-expanded={open}
         className={`flex items-center gap-2 rounded-lg border bg-panel px-3 py-2 text-sm shadow-sm transition hover:border-accent ${open ? "border-accent ring-2 ring-accent-soft" : "border-line"}`}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-muted" aria-hidden><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></svg>
         <span className="font-medium">{range.label}</span>
@@ -321,30 +317,105 @@ function DateRangePicker({ range, onChange }: { range: Range; onChange: (r: Rang
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-muted" aria-hidden><path d={open ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} /></svg>
       </button>
       {open && (
-        <div role="dialog" aria-label="Choose a period" className="absolute left-0 z-40 mt-1.5 flex w-[26rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-line bg-panel text-sm shadow-xl">
-          <ul className="w-40 shrink-0 border-r border-line py-1">
+        <div role="dialog" aria-label="Choose a period"
+          className="absolute left-0 z-40 mt-1.5 flex max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-line bg-panel text-sm shadow-xl">
+          <ul className="w-36 shrink-0 border-r border-line bg-bg/40 py-2">
             {PRESETS.map((p) => (
               <li key={p.key}>
                 <button type="button" onClick={() => { onChange(resolveRange(p.key, null, null)); setOpen(false); }}
-                  className={`flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-accent-soft ${range.key === p.key ? "font-medium text-accent-strong" : ""}`}>
+                  className={`mx-1.5 flex w-[calc(100%-0.75rem)] items-center justify-between rounded-lg px-2.5 py-1.5 text-left transition hover:bg-accent-soft ${range.key === p.key ? "bg-accent-soft font-medium text-accent-strong" : ""}`}>
                   {p.label}{range.key === p.key && <span aria-hidden>✓</span>}
                 </button>
               </li>
             ))}
           </ul>
-          <div className="flex-1 space-y-3 p-3">
-            <div className="text-xs font-semibold uppercase tracking-wide text-muted">Custom range</div>
-            <label className="block"><span className="mb-1 block text-xs text-muted">From</span>
-              <input type="date" className={input} value={from} max={to || today} onChange={(e) => setFrom(e.target.value)} /></label>
-            <label className="block"><span className="mb-1 block text-xs text-muted">To</span>
-              <input type="date" className={input} value={to} min={from} max={today} onChange={(e) => setTo(e.target.value)} /></label>
-            <button type="button" disabled={!from || !to}
-              onClick={() => { onChange(resolveRange("custom", from, to)); setOpen(false); }}
-              className="w-full rounded-lg bg-accent px-3 py-1.5 font-medium text-white hover:bg-accent-strong disabled:opacity-50">Apply</button>
-            <p className="text-[11px] text-muted">Up to a year. Longer than ~3 months shows the chart per week.</p>
-          </div>
+          <RangeCalendar initial={range} onCancel={() => setOpen(false)} onApply={(f, t) => { onChange(resolveRange("custom", f, t)); setOpen(false); }} />
         </div>
       )}
+    </div>
+  );
+}
+
+const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+const monthStart = (day: string) => `${day.slice(0, 8)}01`;
+const addMonths = (first: string, n: number) => {
+  const d = new Date(`${first}T00:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() + n);
+  return d.toISOString().slice(0, 10);
+};
+const daysBetween = (a: string, b: string) => Math.round((+new Date(`${b}T00:00:00Z`) - +new Date(`${a}T00:00:00Z`)) / 864e5);
+
+/** Two months side by side: click a start day, then an end day (hover previews the range). Future days are off. */
+function RangeCalendar({ initial, onApply, onCancel }: { initial: Range; onApply: (from: string, to: string) => void; onCancel: () => void }) {
+  const today = istToday();
+  const [from, setFrom] = useState<string | null>(initial.from);
+  const [to, setTo] = useState<string | null>(initial.to);
+  const [hover, setHover] = useState<string | null>(null);
+  // Right-hand month = the end of the current range (never past this month).
+  const [right, setRight] = useState(monthStart(initial.to > today ? today : initial.to));
+  const left = addMonths(right, -1);
+  const canNext = right < monthStart(today);
+
+  function pick(day: string) {
+    if (!from || (from && to)) { setFrom(day); setTo(null); return; }
+    if (day < from) { setTo(from); setFrom(day); } else setTo(day);
+  }
+  const end = to ?? (from && hover ? (hover < from ? from : hover) : null);
+  const start = to ? from : from && hover && hover < from ? hover : from;
+  const tooLong = !!(from && to && daysBetween(from, to) > 365);
+
+  const month = (first: string) => {
+    const lead = (new Date(`${first}T00:00:00Z`).getUTCDay() + 6) % 7; // Monday first
+    const len = daysBetween(first, addMonths(first, 1));
+    const cells: (string | null)[] = [...Array(lead).fill(null), ...Array.from({ length: len }, (_, i) => shift(first, i))];
+    return (
+      <div className="w-60">
+        <div className="mb-2 text-center font-semibold">{new Date(`${first}T00:00:00Z`).toLocaleDateString("en-IN", { month: "long", year: "numeric", timeZone: "UTC" })}</div>
+        <div className="grid grid-cols-7 text-center text-[11px] font-medium text-muted">{WEEKDAYS.map((w) => <span key={w} className="py-1">{w}</span>)}</div>
+        <div className="grid grid-cols-7" onMouseLeave={() => setHover(null)}>
+          {cells.map((day, i) => {
+            if (!day) return <span key={`x${i}`} />;
+            const future = day > today;
+            const edge = day === start || day === end;
+            const inside = !!(start && end && day > start && day < end);
+            return (
+              <button key={day} type="button" disabled={future} onClick={() => pick(day)} onMouseEnter={() => setHover(day)}
+                className={`relative h-8 text-sm tabular-nums transition disabled:cursor-not-allowed disabled:text-line
+                  ${inside ? "bg-accent-soft text-accent-strong" : ""}
+                  ${day === start && end && end !== start ? "rounded-l-full bg-accent-soft" : ""} ${day === end && start && end !== start ? "rounded-r-full bg-accent-soft" : ""}`}>
+                <span className={`mx-auto grid h-8 w-8 place-items-center rounded-full
+                  ${edge ? "bg-accent font-semibold text-white" : !future ? "hover:bg-accent-soft" : ""}
+                  ${day === today && !edge ? "ring-1 ring-accent" : ""}`}>{Number(day.slice(8))}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="p-4">
+      <div className="mb-1 flex items-center justify-between">
+        <button type="button" onClick={() => setRight(addMonths(right, -1))} aria-label="Previous month"
+          className="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-accent-soft hover:text-accent-strong">‹</button>
+        <button type="button" onClick={() => canNext && setRight(addMonths(right, 1))} disabled={!canNext} aria-label="Next month"
+          className="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-accent-soft hover:text-accent-strong disabled:opacity-30">›</button>
+      </div>
+      <div className="-mt-9 flex gap-6">
+        <div className="hidden sm:block">{month(left)}</div>
+        {month(right)}
+      </div>
+      <div className="mt-4 flex items-center gap-3 border-t border-line pt-3">
+        <span className={`min-w-0 flex-1 text-xs ${tooLong ? "text-bad" : "text-muted"}`}>
+          {!from ? "Pick a start date" : !to ? <>From <b className="text-fg">{fmt(from)}</b> — now pick the end date</>
+            : tooLong ? "Pick a range of a year or less"
+            : <><b className="text-fg">{fmt(from)}{from !== to && ` – ${fmt(to)}`}</b> · {daysBetween(from, to) + 1} day{from !== to ? "s" : ""}</>}
+        </span>
+        <button type="button" onClick={onCancel} className="rounded-lg border border-line px-3 py-1.5 font-medium hover:border-accent">Cancel</button>
+        <button type="button" disabled={!from || !to || tooLong} onClick={() => from && to && onApply(from, to)}
+          className="rounded-lg bg-accent px-4 py-1.5 font-medium text-white hover:bg-accent-strong disabled:opacity-50">Apply</button>
+      </div>
     </div>
   );
 }

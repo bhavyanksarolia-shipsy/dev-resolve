@@ -63,7 +63,7 @@ export async function GET(req: Request) {
         by_stage: tally(open.map((w) => w.stage?.name ?? "")),
         by_pod: tally(open.map(pod)),
         by_owner: tally(open.map((w) => owner(w))),
-        by_age: buckets.map(([label, lo, hi]) => ({ label, count: open.filter((w) => age(w) >= lo && age(w) < hi).length })),
+        by_age: buckets.map(([label, lo, hi]) => ({ label, min: lo, max: Number.isFinite(hi) ? hi : null, count: open.filter((w) => age(w) >= lo && age(w) < hi).length })),
         oldest: [...open].sort((a, b) => +new Date(a.created_date) - +new Date(b.created_date)).slice(0, 6).map(brief),
         gaps: {
           default_part: open.filter((w) => w.applies_to_part?.id === defPart).length,
