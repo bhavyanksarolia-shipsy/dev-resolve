@@ -347,12 +347,20 @@ export async function listAllWorks(body: Record<string, unknown>, max = 1000): P
 }
 
 /** Support tickets of these accounts created since `after` (any stage) — for "opened per day". */
-export const ticketsCreatedSince = (accountIds: string[], after: string) =>
-  listAllWorks({ type: ["ticket"], ticket: { subtype: [getDevrevView().subtype], account: accountIds }, created_date: { type: "range", after }, sort_by: ["created_date:desc"] });
+const createdFilter = (accountIds: string[], after: string, before?: string) =>
+  ({ type: ["ticket"], ticket: { subtype: [getDevrevView().subtype], account: accountIds }, created_date: { type: "range", after, ...(before && { before }) } });
+const closedFilter = (accountIds: string[], after: string, before?: string) =>
+  ({ type: ["ticket"], ticket: { account: accountIds }, stage: { name: ["resolved", "canceled"] }, actual_close_date: { type: "range", after, ...(before && { before }) } });
+/** Exact totals for a period (the lists below are capped). */
+export const countCreated = (accountIds: string[], after: string, before?: string) => count(createdFilter(accountIds, after, before));
+export const countClosed = (accountIds: string[], after: string, before?: string) => count(closedFilter(accountIds, after, before));
+const PERIOD_MAX = 5000;
+export const ticketsCreatedSince = (accountIds: string[], after: string, before?: string) =>
+  listAllWorks({ ...createdFilter(accountIds, after, before), sort_by: ["created_date:desc"] }, PERIOD_MAX);
 
 /** Tickets of these accounts closed (resolved / canceled) since `after`. */
-export const ticketsClosedSince = (accountIds: string[], after: string) =>
-  listAllWorks({ type: ["ticket"], ticket: { account: accountIds }, stage: { name: ["resolved", "canceled"] }, actual_close_date: { type: "range", after }, sort_by: ["actual_close_date:desc"] });
+export const ticketsClosedSince = (accountIds: string[], after: string, before?: string) =>
+  listAllWorks({ ...closedFilter(accountIds, after, before), sort_by: ["actual_close_date:desc"] }, PERIOD_MAX);
 
 /** Every open ticket in the support view for these accounts (what the Tickets table shows). */
 export const openTickets = (accountIds: string[]) => listAllWorks({ ...viewBase(accountIds), sort_by: ["created_date:desc"] });

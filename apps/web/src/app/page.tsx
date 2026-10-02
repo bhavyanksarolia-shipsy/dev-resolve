@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AccountPicker, withAllClients, type PickerAccount } from "@/components/AccountPicker";
 import { HealthBanner } from "@/components/HealthBanner";
@@ -9,11 +9,11 @@ interface Count { value: string; count: number }
 interface Brief { display_id: string; title: string; created: string; closed: string | null; stage: string; owner: string | null; pod: string | null }
 interface Dash {
   inactive?: boolean; error?: string;
-  account: { slug: string; name: string }; days: number;
+  account: { slug: string; name: string }; days: number; from: string; to: string; step: number;
   counts: { account: { total: number; wms: number; default_part: number }; org: { total: number; wms: number } };
   open: { total: number; by_stage: Count[]; by_pod: Count[]; by_owner: Count[]; by_age: { label: string; count: number }[]; oldest: Brief[];
     gaps: { default_part: number; no_pod: number; unassigned: number; not_investigated: number } };
-  flow: { opened: number; closed: number; per_day: { day: string; opened: number; closed: number }[] };
+  flow: { opened: number; closed: number; partial?: boolean; per_day: { day: string; opened: number; closed: number }[] };
   recently_closed: Brief[];
   dev_resolve: { investigations: number; posted: number; draft_ready: number; failed: number; running: number; confidence: Count[]; avg_minutes: number | null; tickets: number };
 }
@@ -39,22 +39,23 @@ function Dashboard() {
     fetch("/api/accounts").then((r) => r.json()).then((d) => { setAccounts(d.accounts ?? []); setLoaded(true); }).catch(() => setLoaded(true));
   }, []);
   const account = params.get("account") || "all"; // all clients by default; narrow down in the picker
-  const days = [7, 30, 90].includes(Number(params.get("days"))) ? Number(params.get("days")) : 30;
-  const go = (patch: Record<string, string>) => {
+  const range = resolveRange(params.get("range"), params.get("from"), params.get("to"));
+  const go = (patch: Record<string, string | null>) => {
     const sp = new URLSearchParams(params.toString());
-    for (const [k, v] of Object.entries(patch)) sp.set(k, v);
+    for (const [k, v] of Object.entries(patch)) { if (v == null) sp.delete(k); else sp.set(k, v); }
     router.replace(`/?${sp.toString()}`, { scroll: false });
   };
 
   const [data, setData] = useState<{ key: string; d: Dash } | null>(null);
-  const key = `${account}|${days}`;
+  const key = `${account}|${range.from}|${range.to}`;
   useEffect(() => {
     let live = true;
-    fetch(`/api/dashboard?account=${account}&days=${days}`, { cache: "no-store" })
+    fetch(`/api/dashboard?account=${account}&from=${range.from}&to=${range.to}`, { cache: "no-store" })
       .then(async (r) => { const d = await r.json(); if (live) setData({ key, d: r.ok ? d : { error: d.error || `HTTP ${r.status}` } as Dash }); })
       .catch(() => live && setData({ key, d: { error: "Couldn't reach the backend" } as Dash }));
     return () => { live = false; };
-  }, [account, days, key]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
   const d = data?.key === key ? data.d : null;
   const t = (q: string) => `/tickets?account=${account}${q}`; // Tickets table link with filters
 
@@ -65,12 +66,7 @@ function Dashboard() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-end gap-3">
         <AccountPicker accounts={withAllClients(accounts)} value={account} onChange={(slug) => go({ account: slug })} />
-        <div className="inline-flex rounded-lg border border-line bg-panel p-0.5 text-sm font-medium" role="tablist" aria-label="Period">
-          {[7, 30, 90].map((n) => (
-            <button key={n} role="tab" aria-selected={days === n} onClick={() => go({ days: String(n) })}
-              className={`rounded-md px-3 py-1.5 ${days === n ? "bg-accent text-white shadow-sm" : "text-muted hover:text-fg"}`}>{n} days</button>
-          ))}
-        </div>
+        <DateRangePicker range={range} onChange={(r) => go(r.key === "custom" ? { range: "custom", from: r.from, to: r.to } : { range: r.key, from: null, to: null })} />
         <Link href={t("")} className="ml-auto rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-accent-strong">Open tickets →</Link>
       </div>
       {loaded && <HealthBanner account={account === "all" ? undefined : account} compact />}
@@ -84,11 +80,11 @@ function Dashboard() {
           {/* Headline numbers */}
           <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
             <Kpi label="Open tickets" value={d.open.total} sub={`${d.open.gaps.unassigned} unassigned`} href={t("")} />
-            <Kpi label={`Opened · ${days} days`} value={d.flow.opened} sub={`${(d.flow.opened / days).toFixed(1)} a day`} />
-            <Kpi label={`Closed · ${days} days`} value={d.flow.closed}
+            <Kpi label={`Opened · ${range.label}`} value={d.flow.opened} sub={`${(d.flow.opened / d.days).toFixed(1)} a day`} />
+            <Kpi label={`Closed · ${range.label}`} value={d.flow.closed}
               sub={d.flow.closed >= d.flow.opened ? "keeping up with new tickets" : `${d.flow.opened - d.flow.closed} more opened than closed`}
               tone={d.flow.closed >= d.flow.opened ? "ok" : "warn"} />
-            <Kpi label={`RCAs posted · ${days} days`} value={d.dev_resolve.posted} sub={`${d.dev_resolve.investigations} investigations on ${d.dev_resolve.tickets} tickets`} />
+            <Kpi label={`RCAs posted · ${range.label}`} value={d.dev_resolve.posted} sub={`${d.dev_resolve.investigations} investigations on ${d.dev_resolve.tickets} tickets`} />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-3">
@@ -102,8 +98,9 @@ function Dashboard() {
               </ul>
             </Panel>
             {/* Flow */}
-            <Panel title="Opened vs closed" hint={`Per day, last ${days} days`} className="lg:col-span-2">
+            <Panel title="Opened vs closed" hint={`${d.step > 1 ? "Per week" : "Per day"} · ${range.label}`} className="lg:col-span-2">
               <FlowChart rows={d.flow.per_day} />
+              {d.flow.partial && <p className="mt-2 text-xs text-warn">Very busy period — the chart shows the most recent 5,000 tickets; the totals above are exact.</p>}
             </Panel>
           </div>
 
@@ -129,7 +126,7 @@ function Dashboard() {
           </div>
 
           <div className="grid gap-4 lg:grid-cols-3">
-            <Panel title="Dev Resolve" hint={`Last ${days} days`}>
+            <Panel title="Dev Resolve" hint={`Last ${range.label}`}>
               <dl className="grid grid-cols-2 gap-3 text-sm">
                 <Stat k="Investigations" v={d.dev_resolve.investigations} />
                 <Stat k="RCAs posted" v={d.dev_resolve.posted} />
@@ -151,7 +148,7 @@ function Dashboard() {
                 </div>
               )}
             </Panel>
-            <Panel title="Recently closed" hint={`Last ${days} days`} className="lg:col-span-2">
+            <Panel title="Recently closed" hint={`Last ${range.label}`} className="lg:col-span-2">
               {d.recently_closed.length ? <TicketList rows={d.recently_closed} right={(r) => <span className="text-ok">{r.closed ? shortDate(r.closed) : ""}</span>} />
                 : <p className="py-6 text-center text-sm text-muted">Nothing closed in this period.</p>}
             </Panel>
@@ -269,6 +266,85 @@ function Skeleton() {
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">{[0, 1, 2, 3].map((i) => <div key={i} className="skeleton h-24 rounded-2xl" />)}</div>
       <div className="grid gap-4 lg:grid-cols-3"><div className="skeleton h-56 rounded-2xl" /><div className="skeleton h-56 rounded-2xl lg:col-span-2" /></div>
       <div className="grid gap-4 lg:grid-cols-3">{[0, 1, 2].map((i) => <div key={i} className="skeleton h-48 rounded-2xl" />)}</div>
+    </div>
+  );
+}
+
+/* ── Date range ───────────────────────────────────────────────────────────── */
+interface Range { key: string; label: string; from: string; to: string }
+const IST = 5.5 * 3600e3;
+const istToday = () => new Date(Date.now() + IST).toISOString().slice(0, 10);
+const shift = (day: string, n: number) => new Date(+new Date(`${day}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
+const fmt = (day: string) => new Date(`${day}T00:00:00Z`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: day.slice(0, 4) === istToday().slice(0, 4) ? undefined : "numeric", timeZone: "UTC" });
+const PRESETS: { key: string; label: string; get: () => [string, string] }[] = [
+  { key: "today", label: "Today", get: () => [istToday(), istToday()] },
+  { key: "yesterday", label: "Yesterday", get: () => [shift(istToday(), -1), shift(istToday(), -1)] },
+  { key: "7d", label: "Last 7 days", get: () => [shift(istToday(), -6), istToday()] },
+  { key: "30d", label: "Last 30 days", get: () => [shift(istToday(), -29), istToday()] },
+  { key: "90d", label: "Last 90 days", get: () => [shift(istToday(), -89), istToday()] },
+  { key: "month", label: "This month", get: () => [`${istToday().slice(0, 8)}01`, istToday()] },
+  { key: "lastmonth", label: "Last month", get: () => { const first = `${istToday().slice(0, 8)}01`; const end = shift(first, -1); return [`${end.slice(0, 8)}01`, end]; } },
+];
+/** The period from the URL: a preset key (default last 30 days) or range=custom with from / to. */
+function resolveRange(key: string | null, from: string | null, to: string | null): Range {
+  const ok = (v: string | null) => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  if (key === "custom" && ok(from) && ok(to)) {
+    const [a, b] = from! <= to! ? [from!, to!] : [to!, from!];
+    return { key: "custom", from: a, to: b, label: a === b ? fmt(a) : `${fmt(a)} – ${fmt(b)}` };
+  }
+  const p = PRESETS.find((x) => x.key === key) ?? PRESETS[3];
+  const [f, t] = p.get();
+  return { key: p.key, label: p.label, from: f, to: t };
+}
+
+function DateRangePicker({ range, onChange }: { range: Range; onChange: (r: Range) => void }) {
+  const [open, setOpen] = useState(false);
+  const [from, setFrom] = useState(range.from);
+  const [to, setTo] = useState(range.to);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", away); document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  const today = istToday();
+  const input = "w-full rounded-md border border-line bg-bg px-2 py-1.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft";
+  return (
+    <div ref={box} className="relative">
+      <button type="button" onClick={() => { setFrom(range.from); setTo(range.to); setOpen((o) => !o); }} aria-haspopup="dialog" aria-expanded={open}
+        className={`flex items-center gap-2 rounded-lg border bg-panel px-3 py-2 text-sm shadow-sm transition hover:border-accent ${open ? "border-accent ring-2 ring-accent-soft" : "border-line"}`}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-muted" aria-hidden><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></svg>
+        <span className="font-medium">{range.label}</span>
+        {range.key !== "custom" && range.from !== range.to && <span className="hidden text-xs text-muted sm:inline">{fmt(range.from)} – {fmt(range.to)}</span>}
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-muted" aria-hidden><path d={open ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} /></svg>
+      </button>
+      {open && (
+        <div role="dialog" aria-label="Choose a period" className="absolute left-0 z-40 mt-1.5 flex w-[26rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-line bg-panel text-sm shadow-xl">
+          <ul className="w-40 shrink-0 border-r border-line py-1">
+            {PRESETS.map((p) => (
+              <li key={p.key}>
+                <button type="button" onClick={() => { onChange(resolveRange(p.key, null, null)); setOpen(false); }}
+                  className={`flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-accent-soft ${range.key === p.key ? "font-medium text-accent-strong" : ""}`}>
+                  {p.label}{range.key === p.key && <span aria-hidden>✓</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div className="flex-1 space-y-3 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted">Custom range</div>
+            <label className="block"><span className="mb-1 block text-xs text-muted">From</span>
+              <input type="date" className={input} value={from} max={to || today} onChange={(e) => setFrom(e.target.value)} /></label>
+            <label className="block"><span className="mb-1 block text-xs text-muted">To</span>
+              <input type="date" className={input} value={to} min={from} max={today} onChange={(e) => setTo(e.target.value)} /></label>
+            <button type="button" disabled={!from || !to}
+              onClick={() => { onChange(resolveRange("custom", from, to)); setOpen(false); }}
+              className="w-full rounded-lg bg-accent px-3 py-1.5 font-medium text-white hover:bg-accent-strong disabled:opacity-50">Apply</button>
+            <p className="text-[11px] text-muted">Up to a year. Longer than ~3 months shows the chart per week.</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
