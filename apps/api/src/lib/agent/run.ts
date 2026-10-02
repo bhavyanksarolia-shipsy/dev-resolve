@@ -101,8 +101,12 @@ bullet lists with **bold labels**, one fact per line, identifiers in \`code\`. P
    - **When:** gate-in blocked 27–29 Sep; GRN still pending)
 ## Evidence  (numbered list, one item per check, the FINDING first, then where it came from — format example only:
    1. **Appointment \`11000009\` is already linked to gate pass GP6** (unloaded, not closed) — DB, appointment + gate pass tables
-   2. **Every gate-in with GP8 was rejected "appointment already in use"**, 27 Sep 10:42 → 29 Sep 09:15, 5 attempts — audit logs, request id \`abc123\`
-   Include timestamps and request ids. No raw SQL or query syntax — the reviewer can see the exact queries in the trail.)
+   2. **Every gate-in with GP8 was rejected "appointment already in use"**, 27 Sep 10:42 → 29 Sep 09:15, 5 attempts
+      - Verify: audit logs · 27 Sep 10:42:13 IST · request \`abc123de\` (first), \`f00d9876\` (last) · "Appointment already in use"
+   Every finding that comes from logs gets a "Verify:" sub-line so a reviewer can find the exact entry: which logs
+   (app / audit / integration), the timestamp, the request id(s) — first and last of a series, at most 3 — and the
+   exact log message in quotes. DB findings: the table and record id. No raw SQL or query syntax — the exact queries
+   are in the trail.)
 ## Root cause  (the code path file:line and condition, or the upstream system, with proof)
 ## Current status  (state of the data RIGHT NOW vs. what was reported: still broken / fixed manually by whom & when /
    recovered automatically / partially — with the query result that shows it, and whether it can recur)
@@ -233,8 +237,9 @@ const CHAT_REPLY_STYLE = `How to write your reply (the reviewer sees ONLY your l
   (before/after, expected vs actual, per-store status) are tables too.
 - Use everyday words. Name a thing once with its id in \`code\`, then refer to it in words ("the LPN", "the trip").
   Leave out request ids, user ids and other raw identifiers unless the reviewer asked for them or one is the proof of
-  the point. Never write lists of request ids like "fail [54ca5482, 0130fb7a, …]" — say "4 attempts, all failed" instead.
-  If an id really matters, give one example in a final "Evidence" line.
+  the point. Never write lists of request ids inline like "fail [54ca5482, 0130fb7a, …]" — say "4 attempts, all failed".
+- When the answer rests on logs, end with a small "Logs to verify" table: | What | Logs | Time (IST) | Request id |
+  — the key entries only (first/last of a series, the success, the decisive error), at most 6 rows.
 - Say plainly what's confirmed vs not, in a final "Still open" line (only if something is).
 - If the RCA changed, say in one line what changed. Otherwise don't mention the RCA.
 - Keep it short: about 150–250 words unless they asked for the full detail. No preamble, no sign-off, no repeating their question.`;
