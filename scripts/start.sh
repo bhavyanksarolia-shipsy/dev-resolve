@@ -4,7 +4,8 @@
 # Prereq you do yourself: connect the client VPN (see VPN_HINT in config/config.env) for VPN-only logs/Metabase.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-PORT="${PORT:-3001}"
+# Local port: PORT from .env.local if set there, else 3001.
+PORT="${PORT:-$(grep -E '^PORT=' .env.local 2>/dev/null | cut -d= -f2)}"; PORT="${PORT:-3001}"
 LOGS="$(pwd)/.logs"; mkdir -p "$LOGS"
 WITH_TUNNEL=0; [ "${1:-}" = "--tunnel" ] && WITH_TUNNEL=1
 

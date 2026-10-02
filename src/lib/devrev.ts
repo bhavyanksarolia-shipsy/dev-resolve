@@ -1,7 +1,8 @@
 import "server-only";
 import { getDevrevView } from "./config";
+import { settings } from "./settings";
 
-const BASE = (process.env.DEVREV_BASE_URL || "https://api.devrev.ai").replace(/\/$/, "");
+const BASE = () => settings.devrevApiUrl();
 
 export class DevrevError extends Error {
   constructor(public status: number, public tag: "AUTH_FAILED" | "HTTP_ERROR" | "NETWORK", message: string) {
@@ -14,7 +15,7 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
   if (!token) throw new DevrevError(0, "AUTH_FAILED", "DEVREV_TOKEN is not set in .env.local");
   let res: Response;
   try {
-    res = await fetch(`${BASE}${path}`, {
+    res = await fetch(`${BASE()}${path}`, {
       method: body === undefined ? "GET" : "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       ...(body !== undefined && { body: JSON.stringify(body) }),
@@ -133,7 +134,7 @@ export async function countsByAccount(accounts: { key: string; accountIds: strin
 }
 
 export function devrevUrl(displayId: string) {
-  return `${(process.env.DEVREV_APP_URL || "https://app.devrev.ai").replace(/\/$/, "")}/works/${displayId}`;
+  return `${settings.devrevAppUrl()}/works/${displayId}`;
 }
 
 /** Accepts a display id (TKT-123) or a full DON. */

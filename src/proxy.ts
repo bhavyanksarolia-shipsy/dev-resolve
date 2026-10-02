@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, verifySession } from "@/lib/auth";
+import { settings } from "@/lib/settings";
 
 /**
  * Every page and API needs a login — the app reads production logs/DB and posts to DevRev.
@@ -10,9 +11,10 @@ import { SESSION_COOKIE, verifySession } from "@/lib/auth";
 function sameOrigin(req: NextRequest) {
   if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return true;
   const origin = req.headers.get("origin");
-  if (!origin) return !process.env.APP_URL; // non-browser clients (curl, scripts) only when no APP_URL is pinned
-  const allowed = process.env.APP_URL
-    ? new URL(process.env.APP_URL).origin
+  const appUrl = settings.appUrl();
+  if (!origin) return !appUrl; // non-browser clients (curl, scripts) only when no APP_URL is pinned
+  const allowed = appUrl
+    ? new URL(appUrl).origin
     : `${req.headers.get("x-forwarded-proto") || req.nextUrl.protocol.replace(":", "")}://${req.headers.get("x-forwarded-host") || req.headers.get("host")}`;
   return origin === allowed;
 }

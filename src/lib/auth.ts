@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { q } from "./db";
 import { hashPassword, verifyPassword } from "./passwords";
 import { googleAdminEmails, googleAutoCreate } from "./google";
+import { settings } from "./settings";
 
 /**
  * App login. Accounts live in Postgres (app_users, scrypt-hashed passwords) and are managed with
@@ -136,6 +137,6 @@ export { tokenFrom as sessionToken };
 
 /** Secure only over HTTPS (behind a proxy: X-Forwarded-Proto), so plain-http localhost keeps working. */
 export function sessionCookie(req: Request, value: string, maxAge: number) {
-  const secure = new URL(req.url).protocol === "https:" || req.headers.get("x-forwarded-proto") === "https" || !!process.env.APP_URL?.startsWith("https:");
+  const secure = new URL(req.url).protocol === "https:" || req.headers.get("x-forwarded-proto") === "https" || settings.appUrl().startsWith("https:");
   return `${SESSION_COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? "; Secure" : ""}`;
 }

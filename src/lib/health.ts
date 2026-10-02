@@ -5,6 +5,7 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 import { cfgValue, getAccounts, getConnectionProjects, ROOT } from "./config";
 import { getPool } from "./db";
+import { settings } from "./settings";
 import { ConnectorOffline, connectorMode, metabaseSession, needsRelay, relay, userToolEnv } from "./connector";
 import { whoAmI, DevrevError } from "./devrev";
 import { appLogProjects, ensureAppLogAuth } from "./applog";
@@ -171,7 +172,7 @@ function checkMetabase(project: string, cfg: NonNullable<ReturnType<typeof getCo
 }
 
 async function checkDevrev(): Promise<ConnectionHealth> {
-  const base = { id: "devrev", kind: "devrev" as const, label: "DevRev API", host: "api.devrev.ai", used_by: ["all accounts"] };
+  const base = { id: "devrev", kind: "devrev" as const, label: "DevRev API", host: new URL(settings.devrevApiUrl()).host, used_by: ["all accounts"] };
   try {
     const me = await whoAmI();
     return { ...base, status: "ok", message: `Authenticated as ${me.dev_user.display_name}` };
@@ -193,7 +194,7 @@ async function checkPostgres(): Promise<ConnectionHealth> {
 }
 
 async function checkClaude(): Promise<ConnectionHealth> {
-  const base = { id: "claude", kind: "claude" as const, label: "Claude (investigation agent)", host: "api.anthropic.com", used_by: ["all accounts"] };
+  const base = { id: "claude", kind: "claude" as const, label: "Claude (investigation agent)", host: new URL(settings.anthropicApiUrl()).host, used_by: ["all accounts"] };
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) {
     // Server without an API key: a long-lived token from `claude setup-token` (your Claude subscription login).
@@ -205,7 +206,7 @@ async function checkClaude(): Promise<ConnectionHealth> {
     return { ...base, status: "ok", message: "Using your local Claude Code login (no ANTHROPIC_API_KEY set)" };
   }
   try {
-    const res = await fetch("https://api.anthropic.com/v1/models?limit=1", { headers: { "x-api-key": key, "anthropic-version": "2023-06-01" }, cache: "no-store" });
+    const res = await fetch(`${settings.anthropicApiUrl()}/v1/models?limit=1`, { headers: { "x-api-key": key, "anthropic-version": "2023-06-01" }, cache: "no-store" });
     if (res.status === 401 || res.status === 403) return { ...base, status: "auth_failed", message: `HTTP ${res.status}`, fix: "Fix ANTHROPIC_API_KEY in .env.local" };
     if (!res.ok) return { ...base, status: "error", message: `HTTP ${res.status}` };
     return { ...base, status: "ok", message: "API key valid" };

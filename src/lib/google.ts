@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash, createPublicKey, randomBytes, verify, type JsonWebKey } from "node:crypto";
 import { cfgValue } from "./config";
+import { settings } from "./settings";
 
 /** Env first (Render / .env.local), then config/config.env. */
 const setting = (k: string) => cfgValue(k)?.trim() || "";
@@ -29,7 +30,7 @@ export function googleProblem() {
 
 /** The URL people use to reach Dev Resolve: APP_URL when set, else what the browser asked for (Host header). */
 export function publicOrigin(req: Request) {
-  if (setting("APP_URL")) return setting("APP_URL").replace(/\/+$/, "");
+  if (settings.appUrl()) return settings.appUrl();
   const u = new URL(req.url);
   const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || u.host;
   return `${req.headers.get("x-forwarded-proto") || u.protocol.replace(":", "")}://${host}`;
@@ -43,7 +44,7 @@ export function startAuth(req: Request) {
   const state = randomBytes(16).toString("base64url");
   const nonce = randomBytes(16).toString("base64url");
   const verifier = randomBytes(32).toString("base64url");
-  const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  const url = new URL(settings.googleAuthUrl());
   url.search = new URLSearchParams({
     client_id: googleClientId(), redirect_uri: redirectUri(req), response_type: "code",
     scope: "openid email profile", state, nonce, prompt: "select_account",
@@ -59,7 +60,7 @@ interface IdClaims { iss: string; aud: string; exp: number; nonce?: string; emai
 let jwks: { at: number; keys: (JsonWebKey & { kid?: string })[] } | null = null;
 async function googleKey(kid: string) {
   if (!jwks || Date.now() - jwks.at > 3600e3 || !jwks.keys.some((k) => k.kid === kid)) {
-    const r = await fetch("https://www.googleapis.com/oauth2/v3/certs", { signal: AbortSignal.timeout(10_000) });
+    const r = await fetch(settings.googleCertsUrl(), { signal: AbortSignal.timeout(10_000) });
     jwks = { at: Date.now(), keys: (await r.json()).keys };
   }
   const k = jwks.keys.find((x) => x.kid === kid);
@@ -69,7 +70,7 @@ async function googleKey(kid: string) {
 
 /** Code → tokens → a verified identity (signature, issuer, audience, expiry, nonce, verified email, allowed domain). */
 export async function finishAuth(req: Request, code: string, verifier: string, nonce: string) {
-  const r = await fetch("https://oauth2.googleapis.com/token", {
+  const r = await fetch(settings.googleTokenUrl(), {
     method: "POST", signal: AbortSignal.timeout(15_000),
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({

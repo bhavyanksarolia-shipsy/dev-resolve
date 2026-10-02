@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { cfgValue, getConnectionProjects, ROOT, toolEnv } from "./config";
 import { q } from "./db";
+import { settings } from "./settings";
 
 /**
  * Local connector mode (DEV_RESOLVE_CONNECTOR=on, for the deployed server).
@@ -174,7 +175,7 @@ export function userToolEnv(user?: string | null): Record<string, string> {
   if (!connectorMode()) return env;
   const extra: Record<string, string> = {
     DEV_RESOLVE_CONNECTOR: "on",
-    DEV_RESOLVE_RELAY_URL: `http://127.0.0.1:${process.env.PORT || 3000}/api/relay`,
+    DEV_RESOLVE_RELAY_URL: `${settings.internalUrl()}/api/relay`,
     DEV_RESOLVE_RELAY_SECRET: relaySecret(),
     DEV_RESOLVE_RELAY_USER: user || "",
     DEV_RESOLVE_RELAY_SUFFIXES: relaySuffixes().join(","),

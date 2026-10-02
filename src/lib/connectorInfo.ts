@@ -1,6 +1,7 @@
 import "server-only";
 import { cfgValue, getConnectionProjects } from "./config";
 import { appLogProjects } from "./applog";
+import { settings } from "./settings";
 import { needsRelay, ssoMetabaseProjects, metabaseSession, appLogUserConfigDir } from "./connector";
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
@@ -19,7 +20,7 @@ export function appLogInfo() {
   if (!p) return null;
   const gateway = p.args.find((a) => /^https:\/\//.test(a))!;
   const clientId = JSON.parse(p.args[p.args.indexOf("--static-oauth-client-info") + 1]).client_id as string;
-  const port = Number(p.args.find((a) => /^\d{4,5}$/.test(a)) || 3334);
+  const port = Number(p.args.find((a) => /^\d{4,5}$/.test(a)) || settings.appLogCallbackPort());
   return { project: p.name, gateway, clientId, callbackPort: port };
 }
 

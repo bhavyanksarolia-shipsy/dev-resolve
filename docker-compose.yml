@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: devresolve
       POSTGRES_DB: devresolve
     ports:
-      - "5434:5432"
+      - "${DEV_RESOLVE_DB_PORT:-5434}:5432"   # local Postgres port (DATABASE_URL must match)
     volumes:
       - dev-resolve-pg:/var/lib/postgresql/data
 volumes:
