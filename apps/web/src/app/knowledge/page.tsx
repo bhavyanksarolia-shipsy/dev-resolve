@@ -2,7 +2,6 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { fileLabel, hidePaths, scopeLabel } from "@/components/labels";
-import { ClientActiveToggle } from "@/components/ClientActiveToggle";
 
 interface Data {
   pending: { id: number; account_slug: string; file: string; rationale: string; ticket_display: string; source: string }[];
@@ -44,19 +43,17 @@ export default function KnowledgePage() {
       <section>
         <h2 className="mb-1 font-semibold">Knowledge per account</h2>
         <p className="mb-3 text-xs text-muted">
-          {rows.filter((r) => r.clientActive).length} active clients · {rows.filter((r) => !r.clientActive).length} inactive ·
-          switch a client off when they&apos;re no longer with us — it moves to &ldquo;Inactive clients&rdquo; in the account picker; nothing is deleted.
+          {rows.filter((r) => r.clientActive).length} active clients · {rows.filter((r) => !r.clientActive).length} inactive (greyed out) — switch clients on/off in Admin → Clients.
         </p>
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-head text-left text-xs font-semibold uppercase tracking-wide text-head-fg">
-              <tr><th className="px-4 py-3">Account</th><th className="px-4 py-3">Client</th><th className="px-4 py-3">Connections</th><th className="px-4 py-3">Last WMS ticket</th><th className="px-4 py-3 text-right">Learnings</th><th className="px-4 py-3 text-right">Saved queries</th><th className="px-4 py-3 text-right">Resolved cases</th></tr>
+              <tr><th className="px-4 py-3">Account</th><th className="px-4 py-3">Connections</th><th className="px-4 py-3">Last WMS ticket</th><th className="px-4 py-3 text-right">Learnings</th><th className="px-4 py-3 text-right">Saved queries</th><th className="px-4 py-3 text-right">Resolved cases</th></tr>
             </thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.slug} className={`border-b border-line last:border-0 ${r.clientActive ? "" : "bg-bg text-muted"}`}>
                   <td className="px-4 py-2.5 font-medium">{r.name}</td>
-                  <td className="px-4 py-2.5"><ClientActiveToggle slug={r.slug} name={r.name} initial={r.clientActive} changed={r.client_active_changed ?? undefined} onChanged={load} /></td>
                   <td className={`px-4 py-2.5 ${r.status === "active" ? "text-ok" : "text-muted"}`}>{r.status === "active" ? "connected" : r.status.replace("_", " ")}</td>
                   <td className="px-4 py-2.5 tabular-nums text-muted">{r.last_ticket ? new Date(r.last_ticket).toLocaleDateString("en-IN", { dateStyle: "medium" }) : "—"}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{r.learnings}</td>

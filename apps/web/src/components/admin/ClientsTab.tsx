@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import type { Acc, AdminConfig } from "./types";
+import { ClientActiveToggle } from "@/components/ClientActiveToggle";
 import { btn, btnPrimary, Field, input, Note, post, Switch } from "./ui";
 
 const SLOTS = ["app", "audit", "integration"] as const;
@@ -109,7 +110,7 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
           <div className="card overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-head text-left text-xs font-semibold uppercase tracking-wide text-head-fg">
-                <tr><th className="px-4 py-3">Client</th><th className="px-4 py-3">DevRev accounts</th><th className="px-4 py-3">Logs</th><th className="px-4 py-3">Database</th><th className="px-4 py-3">Status</th><th className="px-4 py-3" /></tr>
+                <tr><th className="px-4 py-3">Client</th><th className="px-4 py-3">Active with us</th><th className="px-4 py-3">DevRev accounts</th><th className="px-4 py-3">Logs</th><th className="px-4 py-3">Database</th><th className="px-4 py-3">Status</th><th className="px-4 py-3" /></tr>
               </thead>
               <tbody className="divide-y divide-line">
                 {list.map((a) => {
@@ -118,10 +119,11 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
                   return (
                     <tr key={a.slug} className={a.client_active === false ? "bg-bg text-muted" : ""}>
                       <td className="px-4 py-3 font-medium">{a.name}{vpn && <span className="ml-2 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] text-warn ring-1 ring-amber-200">VPN</span>}</td>
+                      <td className="px-4 py-3"><ClientActiveToggle slug={a.slug} name={a.name} initial={a.client_active !== false} changed={(a as Acc & { client_active_changed?: { by: string; at: string } }).client_active_changed} onChanged={reload} /></td>
                       <td className="px-4 py-3 text-xs text-muted">{a.devrev.names.slice(0, 2).join(", ")}{a.devrev.names.length > 2 && ` +${a.devrev.names.length - 2}`}</td>
                       <td className="px-4 py-3 text-xs">{a.app_log ? `app logs · ${[a.app_log.company].flat().filter(Boolean).join(", ") || "own indices"}` : osC ? `${osC.name} · ${Object.keys(a.opensearch_log_types).join("/")}` : <span className="text-muted">—</span>}</td>
                       <td className="px-4 py-3 text-xs">{a.metabase_project ? `${a.metabase_project} · db ${a.metabase_database}` : <span className="text-muted">—</span>}</td>
-                      <td className="px-4 py-3 text-xs">{a.client_active === false ? "inactive client" : a.status === "active" ? <span className="text-ok">connected</span> : <span className="text-warn">{a.status.replace("_", " ")}</span>}</td>
+                      <td className="px-4 py-3 text-xs">{a.status === "active" ? <span className="text-ok">connected</span> : <span className="text-warn">{a.status.replace("_", " ")}</span>}</td>
                       <td className="px-4 py-3"><button className={btn} onClick={() => setForm(toForm(a, cfg))}>Edit</button></td>
                     </tr>
                   );
