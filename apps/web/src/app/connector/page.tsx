@@ -104,7 +104,7 @@ export default function ConnectorPage() {
         <p className="mt-1 text-sm text-muted">Your investigations use <b>your</b> laptop&apos;s VPN and <b>your</b> Google sign-ins, through the Dev Resolve Chrome extension.</p>
       </div>
 
-      {!s.mode && <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-warn ring-1 ring-amber-200">Connector mode is off on this server (local setup) — connections are made directly from the server.</div>}
+      {!s.mode && <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-warn ring-1 ring-amber-200">Connector mode is off on this server (local setup): the server reaches the client VPN and your sign-ins directly, so the extension isn&apos;t needed here. Set <code className="rounded bg-white/60 px-1 font-mono text-xs">DEV_RESOLVE_CONNECTOR=on</code> in config.env to test it locally.</div>}
 
       <div className={`flex items-center gap-3 rounded-xl px-5 py-4 ring-1 ${todo.length ? "bg-amber-50 ring-amber-200" : "bg-emerald-50 ring-emerald-200"}`}>
         <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-lg text-white ${todo.length ? "bg-warn" : "bg-ok"}`}>{todo.length ? "!" : "✓"}</span>
