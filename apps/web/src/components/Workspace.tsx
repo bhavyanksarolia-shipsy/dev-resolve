@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { HealthBanner } from "./HealthBanner";
 import { Markdown } from "./Markdown";
 import { describeCall, fileLabel, hidePaths, resultSummary, scopeLabel, STEP_ICON, toolName } from "./labels";
@@ -27,9 +28,9 @@ const CURRENT_STATUS: Record<string, [string, string]> = {
 };
 interface TicketData {
   ticket: { id: string; display_id: string; title: string; body?: string; created_date: string; stage?: { display_name?: string; name?: string }; account?: { display_name?: string }; custom_fields?: Record<string, unknown> };
-  timeline: { id: string; body?: string; visibility?: string; created_date: string; created_by?: { display_name?: string; email?: string }; via_email?: { from: string; to: string; cc: string } }[];
+  timeline?: { id: string; body?: string; visibility?: string; created_date: string; created_by?: { display_name?: string; email?: string }; via_email?: { from: string; to: string; cc: string } }[];
   investigations: { id: number; status: string }[];
-  attachments: Attachment[];
+  attachments?: Attachment[];
   routing: { kind: string; account?: string; name?: string; candidates?: string[] };
   devrev_url: string;
 }
@@ -58,6 +59,9 @@ export function Workspace({ ticketId }: { ticketId: string }) {
   const cursor = useRef<{ id: number | null; seq: number }>({ id: null, seq: -1 });
   const steps = trail.id === invId ? trail.steps : [];
 
+  // Two requests: the ticket itself (fast) shows the page at once; the conversation (DevRev is slow to list
+  // comments and attachments) fills in when ready — the server caches it per ticket.
+  const [conv, setConv] = useState<{ id: string; timeline: NonNullable<TicketData["timeline"]>; attachments: Attachment[] } | null>(null);
   useEffect(() => {
     fetch(`/api/tickets/${ticketId}`).then(async (r) => {
       const d = await r.json();
@@ -65,7 +69,30 @@ export function Workspace({ ticketId }: { ticketId: string }) {
       setData(d);
       if (d.investigations[0]) setInvId((cur) => cur ?? d.investigations[0].id);
     });
+    fetch(`/api/tickets/${ticketId}?part=conversation`).then(async (r) => {
+      const d = await r.json().catch(() => null);
+      if (r.ok && d) setConv({ id: ticketId, timeline: d.timeline ?? [], attachments: d.attachments ?? [] });
+    }).catch(() => {});
   }, [ticketId, ticketReload]);
+  const timeline = conv?.id === ticketId ? conv.timeline : null;
+  const attachments = conv?.id === ticketId ? conv.attachments : [];
+  const router = useRouter();
+  // ✕: back to where you came from (inbox / dashboard, with its filters); the inbox if the ticket was opened directly.
+  const close = () => {
+    const fromApp = typeof document !== "undefined" && document.referrer.startsWith(window.location.origin);
+    if (fromApp && window.history.length > 1) router.back(); else router.push("/tickets");
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      const el = document.activeElement;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable)) return;
+      if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')) return;
+      close();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  });
 
   const poll = useCallback(async () => {
     if (!invId) return;
@@ -162,7 +189,11 @@ export function Workspace({ ticketId }: { ticketId: string }) {
 
   return (
     // Desktop: both columns fit the window and scroll on their own, so the page itself never scrolls.
-    <div className="grid gap-6 lg:h-[calc(100dvh-7.5rem)] lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+    <div className="relative grid gap-6 lg:h-[calc(100dvh-7.5rem)] lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+      <button type="button" onClick={close} title="Close (Esc)" aria-label="Close this ticket"
+        className="absolute -top-1 right-0 z-20 grid h-9 w-9 place-items-center rounded-full border border-line bg-panel text-muted shadow-sm transition hover:border-accent hover:text-fg">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden><path d="M18 6 6 18M6 6l12 12" /></svg>
+      </button>
       {/* Left: ticket */}
       <section className="min-w-0 lg:overflow-y-auto lg:pr-2">
         <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
@@ -186,10 +217,15 @@ export function Workspace({ ticketId }: { ticketId: string }) {
             <Markdown>{t.body}</Markdown>
           </div>
         )}
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Conversation · {data.timeline.length}</h2>
+        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Conversation{timeline ? ` · ${timeline.length}` : ""}</h2>
+        {!timeline && (
+          <div className="space-y-2" aria-label="Loading the conversation">
+            {[0, 1, 2, 3].map((i) => <div key={i} className="skeleton h-14 w-full rounded-xl" />)}
+          </div>
+        )}
         <ol className="space-y-2">
-          {data.timeline.slice().reverse().map((c, i) => (
-            <CommentCard key={c.id} c={c} attachments={data.attachments.filter((a) => a.comment_id === c.id)}
+          {(timeline ?? []).slice().reverse().map((c, i) => (
+            <CommentCard key={c.id} c={c} attachments={attachments.filter((a) => a.comment_id === c.id)}
               defaultOpen={i === 0 && c.visibility !== "internal" && (c.body || "").length < 1500} />
           ))}
         </ol>
@@ -203,7 +239,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
         </section>
       ) : (
       <section className="flex min-w-0 flex-col lg:min-h-0">
-        <div className="mb-3 flex flex-wrap items-center gap-3">
+        <div className="mb-3 flex flex-wrap items-center gap-3 pr-12">
           {/* Follow-ups go through Chat (same investigation, keeps its findings); a fresh run is only for a first or failed one. */}
           {(!inv || inv.status === "failed") && (
             <button onClick={start} disabled={busy || running || data.routing.kind === "unmapped" || data.routing.kind === "ignored"}
@@ -472,7 +508,7 @@ function WorkspaceSkeleton() {
 }
 
 function CommentCard({ c, attachments, defaultOpen }: {
-  c: TicketData["timeline"][number]; attachments: Attachment[]; defaultOpen: boolean;
+  c: NonNullable<TicketData["timeline"]>[number]; attachments: Attachment[]; defaultOpen: boolean;
 }) {
   const shown = attachments.filter((a) => !a.signature).length;
   const [open, setOpen] = useState(defaultOpen);

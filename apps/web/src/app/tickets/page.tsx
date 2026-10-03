@@ -79,6 +79,13 @@ function Inbox() {
   const refreshing = useRef(false);
   const [starting, setStarting] = useState<Set<string>>(new Set());
   const [picked, setPicked] = useState<Set<string>>(new Set()); // tickets ticked for a bulk resolve
+  // Hovering a row warms the server's cache for that ticket, so opening it is quick.
+  const warmed = useRef(new Set<string>());
+  const warm = (id: string) => {
+    if (warmed.current.has(id)) return;
+    warmed.current.add(id);
+    fetch(`/api/tickets/${id}`, { priority: "low" } as RequestInit).catch(() => warmed.current.delete(id));
+  };
   const [manual, setManual] = useState("");
   const [loadInactive, setLoadInactive] = useState<string | null>(null); // slug the user chose to load anyway
 
@@ -326,7 +333,7 @@ function Inbox() {
                   const inv = t.investigation;
                   const busy = starting.has(t.display_id) || inv?.status === "running";
                   return (
-                    <tr key={t.id} className={`transition-colors hover:bg-accent-soft/60 ${picked.has(t.display_id) ? "bg-accent-soft/70" : marked.has(t.display_id) ? "bg-accent-soft" : ""}`}>
+                    <tr key={t.id} onMouseEnter={() => warm(t.display_id)} className={`transition-colors hover:bg-accent-soft/60 ${picked.has(t.display_id) ? "bg-accent-soft/70" : marked.has(t.display_id) ? "bg-accent-soft" : ""}`}>
                       <td className="py-3 pl-5 pr-0">
                         <input type="checkbox" className={box} aria-label={`Select ${t.display_id}`} checked={picked.has(t.display_id)}
                           onChange={(e) => setPicked((p) => { const n = new Set(p); if (e.target.checked) n.add(t.display_id); else n.delete(t.display_id); return n; })} />

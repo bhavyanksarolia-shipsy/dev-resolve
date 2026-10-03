@@ -185,6 +185,7 @@ export async function listTimeline(objectId: string, maxPages = 20) {
     const r = await call<{ timeline_entries: TimelineEntry[]; next_cursor?: string }>("/timeline-entries.list", {
       object: objectId,
       limit: 100,
+      collections: ["discussions"], // comments only — skips stage / SLA / field-change events (fewer pages)
       ...(cursor && { cursor }),
     });
     comments.push(...(r.timeline_entries || []).filter((e) => e.type === "timeline_comment" && !isDevrevNotice(e)));

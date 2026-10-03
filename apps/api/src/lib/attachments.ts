@@ -29,12 +29,18 @@ async function download(artifactId: string): Promise<Buffer> {
   return Buffer.from(await res.arrayBuffer());
 }
 
+const emlInflight = new Map<string, Promise<ParsedMail>>();
+/** Parsed email.eml (cached 30 min; concurrent callers share one download). */
 export async function parseEmail(artifactId: string): Promise<ParsedMail> {
   const hit = emlCache.get(artifactId);
   if (hit && Date.now() - hit.at < EML_TTL_MS) return hit.mail;
-  const mail = await simpleParser(await download(artifactId));
-  emlCache.set(artifactId, { at: Date.now(), mail });
-  return mail;
+  let p = emlInflight.get(artifactId);
+  if (!p) {
+    p = download(artifactId).then(simpleParser).then((mail) => { emlCache.set(artifactId, { at: Date.now(), mail }); return mail; })
+      .finally(() => emlInflight.delete(artifactId));
+    emlInflight.set(artifactId, p);
+  }
+  return p;
 }
 
 export async function fetchArtifact(artifactId: string, part?: number): Promise<{ body: Buffer; type: string; name: string }> {
