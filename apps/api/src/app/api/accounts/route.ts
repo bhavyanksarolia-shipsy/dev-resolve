@@ -13,7 +13,8 @@ export async function GET(req: Request) {
   try {
     // Inactive clients are skipped: no DevRev count calls for them.
     counts = await countsByAccount(accounts.filter((a) => a.client_active !== false).map((a) => ({ key: a.slug, accountIds: a.devrev.account_ids })), force);
-    if (pods) counts = await scopedCounts(accounts.filter((a) => a.client_active !== false), pods, force);
+    // With a Pod scope the counts MUST be scoped — never fall back to all-Pod counts silently.
+    if (pods) counts = await scopedCounts(accounts.filter((a) => a.client_active !== false), pods, force).catch((e) => { countsError = (e as Error).message; return {}; });
   } catch (e) {
     countsError = (e as DevrevError).message;
   }

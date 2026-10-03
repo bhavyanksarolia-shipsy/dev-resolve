@@ -43,7 +43,11 @@ function Dashboard() {
   const scope = usePodScope(); // header "My Pods"
   const scopeKey = scope.join("|");
   useEffect(() => {
-    fetch(`/api/accounts${scope.length ? `?pods=${encodeURIComponent(scope.join("|"))}` : ""}`).then((r) => r.json()).then((d) => { setAccounts(d.accounts ?? []); setLoaded(true); }).catch(() => setLoaded(true));
+    // Only the latest request wins (an earlier, unscoped one can finish later and must not overwrite the counts).
+    let live = true;
+    fetch(`/api/accounts${scope.length ? `?pods=${encodeURIComponent(scope.join("|"))}` : ""}`).then((r) => r.json())
+      .then((d) => { if (live) { setAccounts(d.accounts ?? []); setLoaded(true); } }).catch(() => live && setLoaded(true));
+    return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeKey]);
   const account = params.get("account") || "all"; // all clients by default; narrow down in the picker

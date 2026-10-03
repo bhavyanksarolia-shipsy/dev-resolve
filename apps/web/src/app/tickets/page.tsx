@@ -109,12 +109,13 @@ function Inbox() {
   const scopeKey = scope.join("|");
 
   useEffect(() => {
-    fetch(`/api/accounts${scope.length ? `?pods=${encodeURIComponent(scope.join("|"))}` : ""}`).then((r) => r.json()).then((d) => { setAccounts(d.accounts ?? []); setAccountsLoaded(true); });
+    let live = true; // only the latest request wins (see the dashboard)
+    fetch(`/api/accounts${scope.length ? `?pods=${encodeURIComponent(scope.join("|"))}` : ""}`).then((r) => r.json()).then((d) => { if (live) { setAccounts(d.accounts ?? []); setAccountsLoaded(true); } });
     // Ticket resolved / moved here → refresh the picker's per-client counts (they're cached on the server).
-    const onChange = () => setTimeout(() => fetch(`/api/accounts?refresh=1${scope.length ? `&pods=${encodeURIComponent(scope.join("|"))}` : ""}`).then((r) => r.json()).then((d) => d.accounts && setAccounts(d.accounts)).catch(() => {}), 2500);
+    const onChange = () => setTimeout(() => fetch(`/api/accounts?refresh=1${scope.length ? `&pods=${encodeURIComponent(scope.join("|"))}` : ""}`).then((r) => r.json()).then((d) => live && d.accounts && setAccounts(d.accounts)).catch(() => {}), 2500);
     window.addEventListener("ticket-changed", onChange);
     window.addEventListener("tickets-refreshed", onChange);
-    return () => { window.removeEventListener("ticket-changed", onChange); window.removeEventListener("tickets-refreshed", onChange); };
+    return () => { live = false; window.removeEventListener("ticket-changed", onChange); window.removeEventListener("tickets-refreshed", onChange); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeKey]);
 
