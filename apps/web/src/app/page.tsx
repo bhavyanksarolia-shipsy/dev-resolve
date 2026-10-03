@@ -15,7 +15,7 @@ interface Dash {
     gaps: { default_part: number; no_pod: number; unassigned: number; not_investigated: number } };
   flow: { opened: number; closed: number; partial?: boolean; per_day: { day: string; opened: number; closed: number }[] };
   recently_closed: Brief[];
-  by_client: { slug: string; name: string; open: number; opened: number; closed: number; unassigned: number; oldest_days: number | null }[];
+  by_client: { slug: string; name: string; open: number }[];
   pod: string[] | null;
   pod_status: { stages: string[]; rows: { pod: string; open: number; by_stage: Record<string, number>; closed: number }[] };
   dev_resolve: { investigations: number; posted: number; draft_ready: number; failed: number; running: number; confidence: Count[]; avg_minutes: number | null; tickets: number };
@@ -96,7 +96,8 @@ function Dashboard() {
             <Kpi label={`RCAs posted · ${range.label}`} value={d.dev_resolve.posted} sub={`${d.dev_resolve.investigations} investigations on ${d.dev_resolve.tickets} tickets`} />
           </div>
 
-          <ClientTable rows={d.by_client} rangeLabel={range.label} link={(slug, q = "") => `/tickets?account=${slug}${podParam ? `&fpod=${encodeURIComponent(podParam)}` : ""}${q}`} />
+          <ClientTable rows={d.by_client} rangeLabel={range.label}
+            link={(slug) => `/tickets?account=${slug}${podParam ? `&fpod=${encodeURIComponent(podParam)}` : ""}&cfrom=${range.from}&cto=${range.to}&clabel=${encodeURIComponent(range.label)}`} />
 
           <div className="grid gap-4 lg:grid-cols-3">
             {/* Flow */}
@@ -478,50 +479,34 @@ function PodPicker({ value, choices, onChange }: { value: string[] | null; choic
   );
 }
 
-/** One row per client: the morning view — what's open, what came in and went out in the period, and what's unowned. */
-function ClientTable({ rows, rangeLabel, link }: { rows: Dash["by_client"]; rangeLabel: string; link: (slug: string, q?: string) => string }) {
-  const tot = (k: "open" | "opened" | "closed" | "unassigned") => rows.reduce((n, r) => n + r[k], 0);
-  const num = "px-4 py-2.5 text-right tabular-nums";
+/** One row per client: open tickets created in the selected period (date and Pod filters apply). */
+function ClientTable({ rows, rangeLabel, link }: { rows: Dash["by_client"]; rangeLabel: string; link: (slug: string) => string }) {
+  const total = rows.reduce((n, r) => n + r.open, 0);
   return (
     <section className="card overflow-hidden">
       <div className="flex items-baseline gap-2 px-5 pt-4">
         <h2 className="font-semibold">By client</h2>
-        <span className="text-xs text-muted">Open now · new and closed in {rangeLabel.toLowerCase()} · click a client to see its tickets</span>
+        <span className="text-xs text-muted">Open tickets created {rangeLabel === "Today" || rangeLabel === "Yesterday" ? rangeLabel.toLowerCase() : `in ${rangeLabel.toLowerCase()}`} · click a client to see them</span>
       </div>
       <div className="mt-3 max-h-[26rem] overflow-auto">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-head text-xs font-semibold uppercase tracking-wide text-head-fg">
-            <tr className="[&>th]:whitespace-nowrap">
-              <th className="px-5 py-2.5 text-left">Client</th>
-              <th className="px-4 py-2.5 text-right">Open now</th>
-              <th className="px-4 py-2.5 text-right">New</th>
-              <th className="px-4 py-2.5 text-right">Closed</th>
-              <th className="px-4 py-2.5 text-right">Unassigned</th>
-              <th className="px-5 py-2.5 text-right">Oldest open</th>
-            </tr>
+            <tr><th className="px-5 py-2.5 text-left">Client</th><th className="px-5 py-2.5 text-right">Open tickets</th></tr>
           </thead>
           <tbody className="divide-y divide-line">
             {rows.map((r) => (
               <tr key={r.slug} className="hover:bg-accent-soft/40">
                 <td className="px-5 py-2.5"><Link href={link(r.slug)} className="font-medium hover:text-accent-strong hover:underline">{r.name}</Link></td>
-                <td className={`${num} font-semibold`}>{r.open ? <Link href={link(r.slug)} className="hover:underline">{r.open}</Link> : <span className="text-line">–</span>}</td>
-                <td className={num}>{r.opened ? <span className="text-accent-strong">+{r.opened}</span> : <span className="text-line">–</span>}</td>
-                <td className={num}>{r.closed ? <span className="text-ok">{r.closed}</span> : <span className="text-line">–</span>}</td>
-                <td className={num}>{r.unassigned ? <Link href={link(r.slug, "&fowner=-")} className="rounded-full bg-amber-50 px-2 py-0.5 text-warn hover:underline">{r.unassigned}</Link> : <span className="text-line">–</span>}</td>
-                <td className={`${num} pr-5 ${r.oldest_days != null && r.oldest_days >= 7 ? "text-warn" : "text-muted"}`}>{r.oldest_days == null ? "–" : r.oldest_days < 1 ? "today" : `${r.oldest_days} d`}</td>
+                <td className="px-5 py-2.5 text-right font-semibold tabular-nums"><Link href={link(r.slug)} className="hover:underline">{r.open}</Link></td>
               </tr>
             ))}
-            {!rows.length && <tr><td colSpan={6} className="px-5 py-6 text-center text-muted">No tickets for this selection.</td></tr>}
+            {!rows.length && <tr><td colSpan={2} className="px-5 py-6 text-center text-muted">No open tickets created in this period.</td></tr>}
           </tbody>
           {rows.length > 1 && (
             <tfoot className="sticky bottom-0 bg-panel">
               <tr className="border-t border-line font-semibold">
                 <td className="px-5 py-2.5">Total · {rows.length} clients</td>
-                <td className={num}>{tot("open")}</td>
-                <td className={`${num} text-accent-strong`}>+{tot("opened")}</td>
-                <td className={`${num} text-ok`}>{tot("closed")}</td>
-                <td className={`${num} text-warn`}>{tot("unassigned")}</td>
-                <td className="px-5" />
+                <td className="px-5 py-2.5 text-right tabular-nums">{total}</td>
               </tr>
             </tfoot>
           )}
