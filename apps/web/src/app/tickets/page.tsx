@@ -207,7 +207,7 @@ function Inbox() {
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tickets, sort, params]);
-  const PAGE = [25, 50, 100].includes(Number(params.get("size"))) ? Number(params.get("size")) : 25; // rows per page (URL)
+  const PAGE = [10, 25, 50, 100].includes(Number(params.get("size"))) ? Number(params.get("size")) : 25; // rows per page (URL)
   const pages = Math.max(1, Math.ceil(view.length / PAGE));
   const pageNow = Math.min(page, pages);
   const rows = view.slice((pageNow - 1) * PAGE, pageNow * PAGE);

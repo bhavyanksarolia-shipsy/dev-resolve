@@ -106,9 +106,9 @@ export function Pager({ where, from, to, total, all, page, pages, onPage, disabl
   );
   return (
     <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2 text-xs text-muted">
-      {onSize && size && total > 10 && (
+      {onSize && size && total > 0 && (
         <label className="flex items-center gap-1.5">Rows
-          <span className="w-[4.5rem] [&_button]:py-1 [&_button]:text-xs"><Select up value={String(size)} onChange={(v) => onSize(Number(v))} options={[25, 50, 100].map((n) => ({ value: String(n), label: String(n) }))} /></span>
+          <span className="w-20 [&_button]:py-1 [&_button]:text-xs [&_ul]:min-w-24"><Select up value={String(size)} onChange={(v) => onSize(Number(v))} options={[10, 25, 50, 100].map((n) => ({ value: String(n), label: String(n) }))} /></span>
         </label>
       )}
       <span>
