@@ -105,15 +105,18 @@ function Inbox() {
   };
   const [manual, setManual] = useState("");
   const [loadInactive, setLoadInactive] = useState<string | null>(null); // slug the user chose to load anyway
+  const scope = usePodScope(); // header "My Pods" (tickets with no Pod always stay)
+  const scopeKey = scope.join("|");
 
   useEffect(() => {
-    fetch("/api/accounts").then((r) => r.json()).then((d) => { setAccounts(d.accounts ?? []); setAccountsLoaded(true); });
+    fetch(`/api/accounts${scope.length ? `?pods=${encodeURIComponent(scope.join("|"))}` : ""}`).then((r) => r.json()).then((d) => { setAccounts(d.accounts ?? []); setAccountsLoaded(true); });
     // Ticket resolved / moved here → refresh the picker's per-client counts (they're cached on the server).
-    const onChange = () => setTimeout(() => fetch("/api/accounts?refresh=1").then((r) => r.json()).then((d) => d.accounts && setAccounts(d.accounts)).catch(() => {}), 2500);
+    const onChange = () => setTimeout(() => fetch(`/api/accounts?refresh=1${scope.length ? `&pods=${encodeURIComponent(scope.join("|"))}` : ""}`).then((r) => r.json()).then((d) => d.accounts && setAccounts(d.accounts)).catch(() => {}), 2500);
     window.addEventListener("ticket-changed", onChange);
     window.addEventListener("tickets-refreshed", onChange);
     return () => { window.removeEventListener("ticket-changed", onChange); window.removeEventListener("tickets-refreshed", onChange); };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopeKey]);
 
   const key = account;
   useEffect(() => {
@@ -143,7 +146,6 @@ function Inbox() {
   const fetching = !result || result.key !== key || result.tick !== tick;
   // Changes made here show at once: closed tickets drop out, edited rows update (DevRev's list can lag a few seconds).
   const [local, setLocal] = useState<Record<string, SavedChange>>({});
-  const scope = usePodScope(); // header "My Pods" (tickets with no Pod always stay)
   const tickets = useMemo(() => (fresh?.tickets ?? null)?.filter((t) => !local[t.display_id]?.closed).map((t) => {
     const c = local[t.display_id];
     if (!c) return t;

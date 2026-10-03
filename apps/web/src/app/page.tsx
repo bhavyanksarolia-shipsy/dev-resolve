@@ -40,13 +40,15 @@ function Dashboard() {
   const params = useSearchParams();
   const [accounts, setAccounts] = useState<PickerAccount[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const scope = usePodScope(); // header "My Pods"
+  const scopeKey = scope.join("|");
   useEffect(() => {
-    fetch("/api/accounts").then((r) => r.json()).then((d) => { setAccounts(d.accounts ?? []); setLoaded(true); }).catch(() => setLoaded(true));
-  }, []);
+    fetch(`/api/accounts${scope.length ? `?pods=${encodeURIComponent(scope.join("|"))}` : ""}`).then((r) => r.json()).then((d) => { setAccounts(d.accounts ?? []); setLoaded(true); }).catch(() => setLoaded(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopeKey]);
   const account = params.get("account") || "all"; // all clients by default; narrow down in the picker
   const range = resolveRange(params.get("range"), params.get("from"), params.get("to"));
   // Header "My Pods" scope: those Pods + tickets with no Pod ("-"). Empty = every Pod.
-  const scope = usePodScope();
   // Dashboard Pod filter: narrows inside the header scope (e.g. WMS team → just "WMS Inbound"). Empty = whole scope.
   const podPick = params.get("pod") ? params.get("pod")!.split("|") : null;
   const podParam = podPick?.length ? podPick.join("|") : scope.length ? [...scope, "-"].join("|") : null;
