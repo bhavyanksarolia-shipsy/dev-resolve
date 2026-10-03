@@ -266,18 +266,10 @@ function Inbox() {
   }
 
   return (
-    <div className="space-y-5 lg:flex lg:h-[calc(100dvh-7.5rem)] lg:flex-col lg:space-y-0 lg:[&>*+*]:mt-5">
-      <div className="flex flex-wrap items-end gap-3">
-        <AccountPicker accounts={withAllClients(accounts)} value={account} onChange={setAccount} />
-        <form className="ml-auto flex gap-2" onSubmit={(e) => { e.preventDefault(); if (manual.trim()) router.push(`/tickets/${manual.trim().toUpperCase()}`); }}>
-          <input value={manual} onChange={(e) => setManual(e.target.value)} placeholder="Open TKT-…"
-            className="w-44 rounded-lg border border-line bg-panel px-3 py-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft" />
-          <button className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-accent-strong">Open</button>
-        </form>
-      </div>
-
-      {/* Only the active filter chips (from the dashboard) and the Dashboard link — counts live on the Dashboard. */}
-      <div className="-mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
+    <div className="space-y-5 lg:flex lg:h-[calc(100dvh-7.5rem)] lg:flex-col lg:space-y-0 lg:[&>*+*]:mt-3">
+      {/* One compact toolbar: client · active filter chips · connection status · open a ticket by number. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <AccountPicker label={false} accounts={withAllClients(accounts)} value={account} onChange={setAccount} />
         {onlyDefaultPart && (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent-strong">
             On DevRev&apos;s default part
@@ -296,8 +288,13 @@ function Inbox() {
             <button onClick={() => setView({ age: null, agelabel: null })} aria-label="Remove the age filter" className="hover:text-fg">✕</button>
           </span>
         )}
+        <div className="min-w-0 text-sm [&>*]:mb-0"><HealthBanner account={account === "all" ? undefined : account} compact /></div>
+        <form className="ml-auto flex gap-2" onSubmit={(e) => { e.preventDefault(); if (manual.trim()) router.push(`/tickets/${manual.trim().toUpperCase()}`); }}>
+          <input value={manual} onChange={(e) => setManual(e.target.value)} placeholder="Open TKT-…"
+            className="w-40 rounded-lg border border-line bg-panel px-3 py-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft" />
+          <button className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-accent-strong">Open</button>
+        </form>
       </div>
-      <HealthBanner account={account === "all" ? undefined : account} compact />
 
       {inactive && (
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-panel px-4 py-3 text-sm">

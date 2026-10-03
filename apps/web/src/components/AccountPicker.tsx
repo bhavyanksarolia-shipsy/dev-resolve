@@ -12,7 +12,7 @@ export function withAllClients(accounts: PickerAccount[]): PickerAccount[] {
   return [{ name: "All clients", slug: "all", status: "active", client_active: true, devrev_names: [], open_tickets: sum("open_tickets"), wms_tickets: sum("wms_tickets") }, ...accounts];
 }
 
-export function AccountPicker({ accounts, value, onChange }: { accounts: PickerAccount[]; value: string; onChange: (slug: string) => void }) {
+export function AccountPicker({ accounts, value, onChange, label = true }: { accounts: PickerAccount[]; value: string; onChange: (slug: string) => void; label?: boolean }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [hi, setHi] = useState(0);
@@ -65,7 +65,7 @@ export function AccountPicker({ accounts, value, onChange }: { accounts: PickerA
 
   return (
     <div ref={box} className="relative text-sm">
-      <div className="mb-1 text-muted">Account</div>
+      {label && <div className="mb-1 text-muted">Account</div>}
       <button type="button" onClick={() => (open ? setOpen(false) : openPicker())}
         className="flex w-full min-w-0 items-center sm:w-auto sm:min-w-72 gap-2 rounded-lg border border-line bg-panel px-3 py-2 text-left shadow-sm hover:border-accent">
         {current ? <span className="truncate">{current.name}</span> : <span className="skeleton h-4 w-40" />}
