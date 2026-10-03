@@ -37,7 +37,7 @@ export function ColumnMenu({ label, values, selected, text, sort, onSort, onSele
   useEffect(() => { if (!open) return; const t = setTimeout(() => draft !== text && onText(draft), 250); return () => clearTimeout(t); }, [draft, open, text, onText]);
 
   const shown = values.filter((v) => !draft || (v.value ? format(v.value) : "not set").toLowerCase().includes(draft.toLowerCase()));
-  // selected: null = every value ticked (no filter) · [] = nothing ticked (also no filter, boxes shown empty) · list = those.
+  // selected: null = every value ticked (no filter) · [] = nothing ticked (no rows) · list = only those values.
   const isOn = (v: string) => !selected || selected.includes(v);
   const toggle = (v: string) => {
     const base = selected ?? values.map((x) => x.value);

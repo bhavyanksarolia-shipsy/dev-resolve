@@ -51,7 +51,7 @@ function Inbox() {
   const page = Math.max(1, Number(params.get("page")) || 1);
   const sort = params.get("sort") || ""; // "stage:asc" | "pod:desc" | "" (newest first)
   // "not set" / "unassigned" is the empty value — written as "-" in the URL so it survives there.
-  // "~" = nothing ticked (kept so the menu shows empty boxes; it doesn't hide any tickets).
+  // "~" = nothing ticked → no tickets shown (the table follows the boxes; Select all brings them back).
   const listParam = (k: string) => (params.get(k) === "~" ? [] : params.get(k) ? params.get(k)!.split("|").map((v) => (v === "-" ? "" : v)) : null);
   const onlyDefaultPart = params.get("part") === "default"; // from the dashboard: tickets still on the default TMS part
   // From the dashboard's age buckets: age=<min days>-<max days> (max empty = no upper limit).
@@ -159,7 +159,7 @@ function Inbox() {
     if (ageRange) list = list.filter((t) => { const a = (loadedAt - +new Date(t.created_date)) / 864e5; return a >= ageRange.min && a < ageRange.max; });
     for (const col of COLS) {
       const sel = filters[col], txt = texts[col].trim().toLowerCase();
-      if (sel?.length) list = list.filter((t) => sel.includes(valueOf(t, col)));
+      if (sel) list = list.filter((t) => sel.includes(valueOf(t, col)));
       if (txt) list = list.filter((t) => (valueOf(t, col) ? labelOf(col, valueOf(t, col)) : "not set").toLowerCase().includes(txt));
     }
     const [col, dir] = sort.split(":") as [Col | "created" | "", "asc" | "desc"];
@@ -184,7 +184,7 @@ function Inbox() {
   // Counts in a column's menu reflect the OTHER column's filter, so they always add up to what you'd see.
   const passes = (t: Ticket, col: Col) => {
     const sel = filters[col], txt = texts[col].trim().toLowerCase(), v = valueOf(t, col);
-    return (!sel?.length || sel.includes(v)) && (!txt || (v ? labelOf(col, v) : "not set").toLowerCase().includes(txt));
+    return (!sel || sel.includes(v)) && (!txt || (v ? labelOf(col, v) : "not set").toLowerCase().includes(txt));
   };
   const distinct = (col: Col) => {
     const others = COLS.filter((c) => c !== col);
@@ -193,7 +193,7 @@ function Inbox() {
     for (const t of tickets ?? []) if (others.every((o) => passes(t, o))) m.set(valueOf(t, col), (m.get(valueOf(t, col)) ?? 0) + 1);
     return [...m.entries()].sort((a, b) => (!a[0] ? 1 : !b[0] ? -1 : a[0].localeCompare(b[0]))).map(([value, count]) => ({ value, count }));
   };
-  const anyFilter = !!(COLS.some((c) => filters[c]?.length || texts[c]) || sort || onlyDefaultPart || ageRange || created);
+  const anyFilter = !!(COLS.some((c) => filters[c] || texts[c]) || sort || onlyDefaultPart || ageRange || created);
   const clearAll = { sort: null, fstage: null, fpod: null, fowner: null, qstage: null, qpod: null, qowner: null, part: null, age: null, agelabel: null, cfrom: null, cto: null, clabel: null };
   const colMenu = (col: Col, label: string) => (
     <ColumnMenu label={label} values={distinct(col)} selected={filters[col]} text={texts[col]}
