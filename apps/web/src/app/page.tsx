@@ -78,7 +78,7 @@ function Dashboard() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-end gap-3">
         <AccountPicker accounts={withAllClients(accounts)} value={account} onChange={(slug) => go({ account: slug })} />
-        <PodPicker allLabel={scope.length ? "All my Pods" : "All Pods"} value={podPick} choices={podChoices} onChange={(v) => go({ pod: v && v.length && v.length < podChoices.length ? v.join("|") : null })} />
+        <PodPicker allLabel={scope.length === 1 ? scope[0] : scope.length ? `${scope.length} Pods` : "All Pods"} value={podPick} choices={podChoices} onChange={(v) => go({ pod: v && v.length && v.length < podChoices.length ? v.join("|") : null })} />
         <DateRangePicker range={range} onChange={(r) => go(r.key === "custom" ? { range: "custom", from: r.from, to: r.to } : { range: r.key, from: null, to: null })} />
       </div>
       {loaded && <HealthBanner account={account === "all" ? undefined : account} compact />}

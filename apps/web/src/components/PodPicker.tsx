@@ -25,7 +25,7 @@ export function PodPicker({ value, choices, onChange, allLabel = "All Pods" }: {
   return (
     <div ref={box} className="relative">
       <button type="button" onClick={() => { setDraft(value?.length ? value : null); setOpen((o) => !o); }} aria-haspopup="listbox" aria-expanded={open}
-        title={value?.length ? value.map(name).join(", ") : undefined}
+        title={value?.length ? value.map(name).join(", ") : choices.map((c) => c.value || "Not set").join(", ") || undefined}
         className={`flex items-center gap-2 rounded-lg border bg-panel px-3 py-2 text-sm shadow-sm transition hover:border-accent ${open ? "border-accent ring-2 ring-accent-soft" : value?.length ? "border-accent" : "border-line"}`}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted" aria-hidden><path d="M3 5h18l-7 8v6l-4 2v-8Z" /></svg>
         <span className={`max-w-48 truncate font-medium ${value?.length ? "text-accent-strong" : ""}`}>{label}</span>
