@@ -266,7 +266,7 @@ function Inbox() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 lg:flex lg:h-[calc(100dvh-7.5rem)] lg:flex-col lg:space-y-0 lg:[&>*+*]:mt-5">
       <div className="flex flex-wrap items-end gap-3">
         <AccountPicker accounts={withAllClients(accounts)} value={account} onChange={setAccount} />
         <form className="ml-auto flex gap-2" onSubmit={(e) => { e.preventDefault(); if (manual.trim()) router.push(`/tickets/${manual.trim().toUpperCase()}`); }}>
@@ -315,7 +315,7 @@ function Inbox() {
         </div>
       )}
 
-      <section className="card overflow-hidden">
+      <section className="card overflow-hidden lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
         <div className="flex flex-wrap items-center gap-3 px-5 py-4">
           <div>
             <h2 className="font-semibold">Open Support tickets</h2>
@@ -341,9 +341,9 @@ function Inbox() {
           </div>
         )}
         {!error && (
-          <div className="overflow-x-auto">
+          <div data-scroll-table className="overflow-x-auto lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
             <table className="w-full text-sm">
-              <thead className="bg-head text-left text-xs font-semibold uppercase tracking-wide text-head-fg">
+              <thead className="sticky top-0 z-10 bg-head text-left text-xs font-semibold uppercase tracking-wide text-head-fg">
                 <tr className="[&>th]:whitespace-nowrap">
                   <th className="w-10 py-3 pl-5 pr-0">
                     <input type="checkbox" className={box} aria-label="Select the tickets on this page"

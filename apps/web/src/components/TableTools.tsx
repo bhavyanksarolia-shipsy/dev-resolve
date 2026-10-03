@@ -99,7 +99,7 @@ export function Pager({ where, from, to, total, all, page, pages, onPage, disabl
     if (i === 1 || i === pages || Math.abs(i - page) <= 1) nums.push(i);
     else if (nums[nums.length - 1] !== "…") nums.push("…");
   }
-  const go = (n: number) => { onPage(n); if (where === "bottom") window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const go = (n: number) => { onPage(n); if (where === "bottom") { window.scrollTo({ top: 0, behavior: "smooth" }); document.querySelector("[data-scroll-table]")?.scrollTo({ top: 0, behavior: "smooth" }); } };
   const b = "min-w-8 rounded-lg border px-2.5 py-1.5 text-sm disabled:opacity-40";
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm">
