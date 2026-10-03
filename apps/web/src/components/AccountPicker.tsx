@@ -56,7 +56,7 @@ export function AccountPicker({ accounts, value, onChange }: { accounts: PickerA
         <button type="button" onMouseEnter={() => setHi(i)} onClick={() => choose(a.slug)}
           className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm ${i === hi ? "bg-accent-soft text-accent-strong" : ""} ${a.slug === value ? "font-semibold" : ""}`}>
           <span className="truncate">{a.name}</span>
-          <span className="ml-auto shrink-0 tabular-nums text-xs text-muted" title="WMS view count · all open">{a.wms_tickets ?? "…"} WMS · {a.open_tickets ?? "…"}</span>
+          <span className="ml-auto shrink-0 tabular-nums text-xs text-muted" title="Open Support tickets">{a.open_tickets ?? "…"} open</span>
         </button>
       </li>
     );
@@ -68,7 +68,7 @@ export function AccountPicker({ accounts, value, onChange }: { accounts: PickerA
       <button type="button" onClick={() => (open ? setOpen(false) : openPicker())}
         className="flex w-full min-w-0 items-center sm:w-auto sm:min-w-72 gap-2 rounded-lg border border-line bg-panel px-3 py-2 text-left shadow-sm hover:border-accent">
         {current ? <span className="truncate">{current.name}</span> : <span className="skeleton h-4 w-40" />}
-        {current?.open_tickets != null && <span className="text-xs text-muted">{current.wms_tickets} WMS · {current.open_tickets} open</span>}
+        {current?.open_tickets != null && <span className="text-xs text-muted">{current.open_tickets} open</span>}
         <span className="ml-auto text-muted">▾</span>
       </button>
       {open && (

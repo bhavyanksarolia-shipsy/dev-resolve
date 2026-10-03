@@ -107,6 +107,11 @@ function Inbox() {
 
   useEffect(() => {
     fetch("/api/accounts").then((r) => r.json()).then((d) => { setAccounts(d.accounts ?? []); setAccountsLoaded(true); });
+    // Ticket resolved / moved here → refresh the picker's per-client counts (they're cached on the server).
+    const onChange = () => setTimeout(() => fetch("/api/accounts?refresh=1").then((r) => r.json()).then((d) => d.accounts && setAccounts(d.accounts)).catch(() => {}), 2500);
+    window.addEventListener("ticket-changed", onChange);
+    window.addEventListener("tickets-refreshed", onChange);
+    return () => { window.removeEventListener("ticket-changed", onChange); window.removeEventListener("tickets-refreshed", onChange); };
   }, []);
 
   const key = account;
@@ -142,7 +147,7 @@ function Inbox() {
     if (!c) return t;
     return { ...t, ...(c.stage && { stage: c.stage, stage_name: c.stage }), ...(c.pod !== undefined && { pod: c.pod }), ...(c.part && { part: c.part, default_part: false }), ...(c.owner && { owner: c.owner }) };
   }) ?? null, [fresh, local]);
-  const saved = (id: string) => (c: SavedChange) => { setLocal((m) => ({ ...m, [id]: { ...m[id], ...c } })); refresh(); };
+  const saved = (id: string) => (c: SavedChange) => { setLocal((m) => ({ ...m, [id]: { ...m[id], ...c } })); refresh(); window.dispatchEvent(new Event("tickets-refreshed")); };
   // Changes made in the ticket sheet (opened over this table) arrive as "ticket-changed".
   useEffect(() => {
     const on = (e: Event) => { const { id, change } = (e as CustomEvent<{ id: string; change: SavedChange }>).detail; setLocal((m) => ({ ...m, [id]: { ...m[id], ...change } })); };
@@ -440,7 +445,7 @@ function Inbox() {
       {sheet && <TicketSheet key={sheet} ticketId={sheet} onClosed={() => window.history.back()} />}
       {picked.size > 0 && (
         <BulkBar selected={[...picked]} onClear={() => setPicked(new Set())}
-          onDone={(done) => { setLocal((m) => ({ ...m, ...Object.fromEntries(done.map((id) => [id, { closed: true }])) })); setPicked(new Set()); refresh(); }} />
+          onDone={(done) => { setLocal((m) => ({ ...m, ...Object.fromEntries(done.map((id) => [id, { closed: true }])) })); setPicked(new Set()); refresh(); window.dispatchEvent(new Event("tickets-refreshed")); }} />
       )}
     </div>
   );
