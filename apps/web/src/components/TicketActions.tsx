@@ -119,6 +119,9 @@ export function TicketControls({ ticket, onChanged }: { ticket: string; onChange
   );
 }
 
+/** What changed on a ticket, so the inbox can update the row (or drop it, once closed) without waiting for DevRev. */
+export interface SavedChange { stage?: string; closed?: boolean; pod?: string | null; part?: string }
+
 /** Inbox: resolve the ticked tickets in one click (sticky at the bottom of the screen). */
 export function BulkBar({ selected, onDone, onClear }: { selected: string[]; onDone: (resolved: string[]) => void; onClear: () => void }) {
   const [busy, setBusy] = useState(false);
@@ -149,7 +152,7 @@ export function BulkBar({ selected, onDone, onClear }: { selected: string[]; onD
  * The menu is fixed-positioned so the table's scroll box doesn't clip it; options load when it opens.
  */
 export function InlineEdit({ ticket, kind, current, children, onSaved }: {
-  ticket: string; kind: "stage" | "pod" | "part"; current?: string | null; children: React.ReactNode; onSaved: () => void;
+  ticket: string; kind: "stage" | "pod" | "part"; current?: string | null; children: React.ReactNode; onSaved: (s: SavedChange) => void;
 }) {
   const [open, setOpen] = useState(false);
   // Where the fixed menu goes: below the cell, or above it when there isn't room — and never past the screen edge.
@@ -187,21 +190,21 @@ export function InlineEdit({ ticket, kind, current, children, onSaved }: {
     });
     setQ(""); setOpen(true);
   }
-  async function pick(change: { stage?: string; pod?: string | null; part?: string }) {
+  async function pick(change: { stage?: string; pod?: string | null; part?: string }, shown: SavedChange) {
     setBusy(true);
     const r = await fetch("/api/tickets/update", { method: "POST", body: JSON.stringify({ tickets: [ticket], ...change }) });
     const d = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
     setBusy(false); setOpen(false);
     if (d.error || d.failed?.length) return notify({ title: `${ticket} not updated`, message: d.error || d.failed[0].error, tone: "error" });
-    notify({ message: `${ticket}: ${kind} updated`, tone: "ok" });
-    onSaved();
+    notify({ message: shown.closed ? `${ticket} ${change.stage === "resolved" ? "resolved" : "closed"}` : `${ticket}: ${kind} updated`, tone: "ok" });
+    onSaved(shown);
   }
 
   const items: { key: string; label: string; hint?: string; on: () => void }[] = !opts ? [] :
-    kind === "stage" ? opts.stages.map((s) => ({ key: s.name, label: stageLabel(s.name), hint: s.final ? "Closes the ticket" : undefined, on: () => pick({ stage: s.name }) }))
-    : kind === "pod" ? [...opts.pods.filter((p) => p !== opts.pod).map((p) => ({ key: p, label: p, on: () => pick({ pod: p }) })),
-        ...(opts.pod ? [{ key: CLEAR_POD, label: "Clear Pod", on: () => pick({ pod: null }) }] : [])]
-    : opts.parts.filter((p) => p.id !== opts.part?.id).map((p) => ({ key: p.id, label: p.name, on: () => pick({ part: p.id }) }));
+    kind === "stage" ? opts.stages.map((s) => ({ key: s.name, label: stageLabel(s.name), hint: s.final ? "Closes the ticket" : undefined, on: () => pick({ stage: s.name }, { stage: s.name, closed: s.final }) }))
+    : kind === "pod" ? [...opts.pods.filter((p) => p !== opts.pod).map((p) => ({ key: p, label: p, on: () => pick({ pod: p }, { pod: p }) })),
+        ...(opts.pod ? [{ key: CLEAR_POD, label: "Clear Pod", on: () => pick({ pod: null }, { pod: null }) }] : [])]
+    : opts.parts.filter((p) => p.id !== opts.part?.id).map((p) => ({ key: p.id, label: p.name, on: () => pick({ part: p.id }, { part: p.name }) }));
   const needle = q.trim().toLowerCase();
   const shown = needle ? items.filter((i) => i.label.toLowerCase().includes(needle)) : items;
 

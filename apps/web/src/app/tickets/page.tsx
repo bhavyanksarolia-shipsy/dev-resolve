@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { BulkBar, InlineEdit } from "@/components/TicketActions";
+import { BulkBar, InlineEdit, type SavedChange } from "@/components/TicketActions";
 import { PodPicker } from "@/components/PodPicker";
 import { useRouter, useSearchParams } from "next/navigation";
 import { HealthBanner } from "@/components/HealthBanner";
@@ -112,7 +112,14 @@ function Inbox() {
   const fresh = result?.key === key ? result : null;
   // Anything in flight: first load, page change, manual refresh or the background status refresh.
   const fetching = !result || result.key !== key || result.tick !== tick;
-  const tickets = fresh?.tickets ?? null;
+  // Changes made here show at once: closed tickets drop out, edited rows update (DevRev's list can lag a few seconds).
+  const [local, setLocal] = useState<Record<string, SavedChange>>({});
+  const tickets = useMemo(() => (fresh?.tickets ?? null)?.filter((t) => !local[t.display_id]?.closed).map((t) => {
+    const c = local[t.display_id];
+    if (!c) return t;
+    return { ...t, ...(c.stage && { stage: c.stage, stage_name: c.stage }), ...(c.pod !== undefined && { pod: c.pod }), ...(c.part && { part: c.part, default_part: false }) };
+  }) ?? null, [fresh, local]);
+  const saved = (id: string) => (c: SavedChange) => { setLocal((m) => ({ ...m, [id]: { ...m[id], ...c } })); refresh(); };
   const counts = fresh?.counts ?? (result?.key === account ? result.counts : undefined);
   const error = fresh?.error ?? null;
   const inactive = !!fresh?.inactive;
@@ -332,21 +339,21 @@ function Inbox() {
                       <td className="min-w-56 max-w-sm px-4 py-3"><span className="line-clamp-2" title={t.title}>{t.title}</span>
                         {account === "all" && t.account && <span className="block truncate text-xs text-muted">{t.account}</span>}</td>
                       <td className="whitespace-nowrap px-4 py-3">
-                        <InlineEdit ticket={t.display_id} kind="pod" current={t.pod} onSaved={refresh}>
+                        <InlineEdit ticket={t.display_id} kind="pod" current={t.pod} onSaved={saved(t.display_id)}>
                           {t.pod
                             ? <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs font-semibold text-accent-strong">{t.pod}</span>
                             : <span className="text-xs text-muted">not set</span>}
                         </InlineEdit>
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-muted">
-                        <InlineEdit ticket={t.display_id} kind="part" current={t.default_part ? "TMS (default)" : t.part} onSaved={refresh}>
+                        <InlineEdit ticket={t.display_id} kind="part" current={t.default_part ? "TMS (default)" : t.part} onSaved={saved(t.display_id)}>
                           {t.default_part
                             ? <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-warn ring-1 ring-amber-200">TMS (default)</span>
                             : t.part}
                         </InlineEdit>
                       </td>
                       <td className="whitespace-nowrap px-4 py-3">
-                        <InlineEdit ticket={t.display_id} kind="stage" current={(t as { stage_name?: string }).stage_name ?? t.stage} onSaved={refresh}>
+                        <InlineEdit ticket={t.display_id} kind="stage" current={(t as { stage_name?: string }).stage_name ?? t.stage} onSaved={saved(t.display_id)}>
                           <span className="rounded-full bg-bg px-2 py-0.5 text-xs text-muted ring-1 ring-line">{stageLabel(t.stage || "")}</span>
                         </InlineEdit>
                       </td>
@@ -391,7 +398,7 @@ function Inbox() {
       )}
       {picked.size > 0 && (
         <BulkBar selected={[...picked]} onClear={() => setPicked(new Set())}
-          onDone={() => { setPicked(new Set()); refresh(); }} />
+          onDone={(done) => { setLocal((m) => ({ ...m, ...Object.fromEntries(done.map((id) => [id, { closed: true }])) })); setPicked(new Set()); refresh(); }} />
       )}
     </div>
   );
