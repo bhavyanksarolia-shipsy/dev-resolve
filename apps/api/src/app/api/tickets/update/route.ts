@@ -14,11 +14,11 @@ const blank = (v: unknown) => v == null || (typeof v === "string" && !v.trim());
 export async function POST(req: Request) {
   const by = await currentUser(req);
   // fields: resolve-time custom fields (same for every ticket); perTicket: per-ticket overrides (e.g. each ticket's root cause).
-  const b = (await req.json().catch(() => ({}))) as { tickets?: string[]; stage?: string; pod?: string | null; part?: string;
+  const b = (await req.json().catch(() => ({}))) as { tickets?: string[]; stage?: string; pod?: string | null; part?: string; owner?: string;
     fields?: Record<string, unknown>; perTicket?: Record<string, Record<string, unknown>> };
   const tickets = Array.from(new Set((b.tickets || []).map(String).filter((t) => /^TKT-\d+$/.test(t)))).slice(0, 200);
   if (!tickets.length) return Response.json({ error: "Pick at least one ticket" }, { status: 400 });
-  if (!b.stage && b.pod === undefined && !b.part && !b.fields && !b.perTicket) return Response.json({ error: "Nothing to change" }, { status: 400 });
+  if (!b.stage && b.pod === undefined && !b.part && !b.owner && !b.fields && !b.perTicket) return Response.json({ error: "Nothing to change" }, { status: 400 });
 
   // The signed-in person's DevRev user — the CX Lead when a resolved ticket has none.
   let me: string | null | undefined;
@@ -34,7 +34,7 @@ export async function POST(req: Request) {
   const queue = [...tickets];
   async function worker() {
     for (let t = queue.shift(); t; t = queue.shift()) {
-      const change: { stageId?: string; pod?: string | null; partId?: string; fields?: Record<string, unknown> } = {};
+      const change: { stageId?: string; pod?: string | null; partId?: string; ownerId?: string; fields?: Record<string, unknown> } = {};
       try {
         const cur = await getTicket(t);
         const want = { ...(b.fields ?? {}), ...(b.perTicket?.[t] ?? {}) };
@@ -75,6 +75,10 @@ export async function POST(req: Request) {
           }
           if (Object.keys(fill).length) change.fields = { ...fill, ...(change.fields ?? {}) };
         }
+        if (b.owner) {
+          if (!(await devUsers()).some((u) => u.id === b.owner)) throw new Error("unknown DevRev user");
+          change.ownerId = b.owner;
+        }
         if (b.part) {
           if (!(await wmsPartList()).some((p) => p.id === b.part)) throw new Error("that part isn't under the WMS product");
           change.partId = b.part;
@@ -85,7 +89,7 @@ export async function POST(req: Request) {
         }
         const w = await updateTicket(cur.id, change, cur.subtype);
         results.push({ ticket: t, ok: true, stage: w.stage?.name, pod: typeof w.custom_fields?.tnt__pod === "string" ? w.custom_fields.tnt__pod : null });
-        await q(`INSERT INTO ticket_updates (ticket, changed_by, change, ok) VALUES ($1,$2,$3,true)`, [t, by, JSON.stringify({ stage: b.stage, pod: b.pod, part: b.part, fields: change.fields })]);
+        await q(`INSERT INTO ticket_updates (ticket, changed_by, change, ok) VALUES ($1,$2,$3,true)`, [t, by, JSON.stringify({ stage: b.stage, pod: b.pod, part: b.part, owner: b.owner, fields: change.fields })]);
       } catch (e) {
         // DevRev answers with JSON ({"message","reason",…}) — show its reason, not the raw body.
         const raw = (e as Error).message.replace(/^DevRev \/works\.update HTTP \d+: /, "");

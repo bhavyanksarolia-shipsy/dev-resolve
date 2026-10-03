@@ -117,7 +117,7 @@ function Inbox() {
   const tickets = useMemo(() => (fresh?.tickets ?? null)?.filter((t) => !local[t.display_id]?.closed).map((t) => {
     const c = local[t.display_id];
     if (!c) return t;
-    return { ...t, ...(c.stage && { stage: c.stage, stage_name: c.stage }), ...(c.pod !== undefined && { pod: c.pod }), ...(c.part && { part: c.part, default_part: false }) };
+    return { ...t, ...(c.stage && { stage: c.stage, stage_name: c.stage }), ...(c.pod !== undefined && { pod: c.pod }), ...(c.part && { part: c.part, default_part: false }), ...(c.owner && { owner: c.owner }) };
   }) ?? null, [fresh, local]);
   const saved = (id: string) => (c: SavedChange) => { setLocal((m) => ({ ...m, [id]: { ...m[id], ...c } })); refresh(); };
   const counts = fresh?.counts ?? (result?.key === account ? result.counts : undefined);
@@ -357,7 +357,11 @@ function Inbox() {
                           <span className="rounded-full bg-bg px-2 py-0.5 text-xs text-muted ring-1 ring-line">{stageLabel(t.stage || "")}</span>
                         </InlineEdit>
                       </td>
-                      <td className="max-w-40 truncate whitespace-nowrap px-4 py-3 text-sm" title={t.owner || "Nobody is assigned in DevRev"}>{t.owner || <span className="text-xs text-muted">unassigned</span>}</td>
+                      <td className="max-w-44 whitespace-nowrap px-4 py-3 text-sm">
+                        <InlineEdit ticket={t.display_id} kind="owner" current={t.owner} onSaved={saved(t.display_id)}>
+                          {t.owner ? <span className="inline-block max-w-36 truncate align-bottom">{t.owner}</span> : <span className="text-xs text-muted">unassigned</span>}
+                        </InlineEdit>
+                      </td>
                       <td className="whitespace-nowrap px-4 py-3 text-muted" title={new Date(t.created_date).toLocaleString("en-IN", { dateStyle: "full", timeStyle: "short" })}>{shortDate(t.created_date)}</td>
                       <td className="whitespace-nowrap px-5 py-3">
                         <div className="flex items-center gap-2">
@@ -367,7 +371,8 @@ function Inbox() {
                             </Link>
                           )}
                           {/* Investigated tickets: the status chip (and the ticket number) open the page — no extra button. */}
-                          {(!inv || inv.status === "failed" || busy) && (
+                          {/* Running: the status chip says "investigating…" — no second button. */}
+                          {(!inv || inv.status === "failed") && inv?.status !== "running" && (
                             <button onClick={() => investigate(t)} disabled={busy}
                               className="inline-flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-accent-strong disabled:opacity-60">
                               {busy && <span className="spin inline-block">↻</span>}

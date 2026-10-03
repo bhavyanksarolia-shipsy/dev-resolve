@@ -120,7 +120,21 @@ export function TicketControls({ ticket, onChanged }: { ticket: string; onChange
 }
 
 /** What changed on a ticket, so the inbox can update the row (or drop it, once closed) without waiting for DevRev. */
-export interface SavedChange { stage?: string; closed?: boolean; pod?: string | null; part?: string }
+export interface SavedChange { stage?: string; closed?: boolean; pod?: string | null; part?: string; owner?: string }
+
+/** DevRev users for "Assigned to" — loaded once per page. */
+let usersPromise: Promise<{ users: { id: string; name: string; email?: string }[]; me: string | null }> | null = null;
+function useDevrevUsers(active: boolean) {
+  const [data, setData] = useState<Awaited<NonNullable<typeof usersPromise>> | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    usersPromise ??= fetch("/api/devrev-users").then((r) => (r.ok ? r.json() : { users: [], me: null })).catch(() => { usersPromise = null; return { users: [], me: null }; });
+    let live = true;
+    usersPromise.then((d) => { if (live) setData(d); });
+    return () => { live = false; };
+  }, [active]);
+  return data;
+}
 
 /** Inbox: resolve the ticked tickets in one click (sticky at the bottom of the screen). */
 export function BulkBar({ selected, onDone, onClear }: { selected: string[]; onDone: (resolved: string[]) => void; onClear: () => void }) {
@@ -152,7 +166,7 @@ export function BulkBar({ selected, onDone, onClear }: { selected: string[]; onD
  * The menu is fixed-positioned so the table's scroll box doesn't clip it; options load when it opens.
  */
 export function InlineEdit({ ticket, kind, current, children, onSaved }: {
-  ticket: string; kind: "stage" | "pod" | "part"; current?: string | null; children: React.ReactNode; onSaved: (s: SavedChange) => void;
+  ticket: string; kind: "stage" | "pod" | "part" | "owner"; current?: string | null; children: React.ReactNode; onSaved: (s: SavedChange) => void;
 }) {
   const [open, setOpen] = useState(false);
   // Where the fixed menu goes: below the cell, or above it when there isn't room — and never past the screen edge.
@@ -161,7 +175,8 @@ export function InlineEdit({ ticket, kind, current, children, onSaved }: {
   const [busy, setBusy] = useState(false);
   const btn = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
-  const opts = useTicketOptions(open ? ticket : null);
+  const opts = useTicketOptions(open && kind !== "owner" ? ticket : null);
+  const people = useDevrevUsers(open && kind === "owner");
   useEffect(() => {
     if (!open) return;
     const away = (e: MouseEvent) => { if (!panel.current?.contains(e.target as Node) && !btn.current?.contains(e.target as Node)) setOpen(false); };
@@ -190,23 +205,28 @@ export function InlineEdit({ ticket, kind, current, children, onSaved }: {
     });
     setQ(""); setOpen(true);
   }
-  async function pick(change: { stage?: string; pod?: string | null; part?: string }, shown: SavedChange) {
+  async function pick(change: { stage?: string; pod?: string | null; part?: string; owner?: string }, shown: SavedChange) {
     setBusy(true);
     const r = await fetch("/api/tickets/update", { method: "POST", body: JSON.stringify({ tickets: [ticket], ...change }) });
     const d = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
     setBusy(false); setOpen(false);
     if (d.error || d.failed?.length) return notify({ title: `${ticket} not updated`, message: d.error || d.failed[0].error, tone: "error" });
-    notify({ message: shown.closed ? `${ticket} ${change.stage === "resolved" ? "resolved" : "closed"}` : `${ticket}: ${kind} updated`, tone: "ok" });
+    notify({ message: shown.closed ? `${ticket} ${change.stage === "resolved" ? "resolved" : "closed"}` : kind === "owner" ? `${ticket} assigned to ${shown.owner}` : `${ticket}: ${kind} updated`, tone: "ok" });
     onSaved(shown);
   }
 
-  const items: { key: string; label: string; hint?: string; on: () => void }[] = !opts ? [] :
+  const items: { key: string; label: string; hint?: string; on: () => void }[] = kind === "owner" ? (!people ? [] : [
+      ...(people.me && people.users.find((u) => u.id === people.me)?.name !== current
+        ? [{ key: "__me", label: "Assign to me", hint: people.users.find((u) => u.id === people.me)?.name, on: () => { const u = people.users.find((x) => x.id === people.me)!; pick({ owner: u.id }, { owner: u.name }); } }] : []),
+      ...people.users.filter((u) => u.name !== current).map((u) => ({ key: u.id, label: u.name, hint: u.email, on: () => pick({ owner: u.id }, { owner: u.name }) })),
+    ]) : !opts ? [] :
     kind === "stage" ? opts.stages.map((s) => ({ key: s.name, label: stageLabel(s.name), hint: s.final ? "Closes the ticket" : undefined, on: () => pick({ stage: s.name }, { stage: s.name, closed: s.final }) }))
     : kind === "pod" ? [...opts.pods.filter((p) => p !== opts.pod).map((p) => ({ key: p, label: p, on: () => pick({ pod: p }, { pod: p }) })),
         ...(opts.pod ? [{ key: CLEAR_POD, label: "Clear Pod", on: () => pick({ pod: null }, { pod: null }) }] : [])]
     : opts.parts.filter((p) => p.id !== opts.part?.id).map((p) => ({ key: p.id, label: p.name, on: () => pick({ part: p.id }, { part: p.name }) }));
   const needle = q.trim().toLowerCase();
-  const shown = needle ? items.filter((i) => i.label.toLowerCase().includes(needle)) : items;
+  const matched = needle ? items.filter((i) => i.key !== "__me" && (i.label.toLowerCase().includes(needle) || i.hint?.toLowerCase().includes(needle))) : items;
+  const shown = kind === "owner" ? matched.slice(0, 60) : matched; // ~450 people: show the first matches, search narrows it
 
   return (
     <>
@@ -218,15 +238,15 @@ export function InlineEdit({ ticket, kind, current, children, onSaved }: {
       {open && pos && (
         <div ref={panel} style={{ left: pos.left, top: pos.top, bottom: pos.bottom }} className="fixed z-50 w-64 overflow-hidden rounded-xl border border-line bg-panel text-sm shadow-xl">
           <div className="whitespace-normal break-words border-b border-line px-3 py-2 text-xs text-muted">
-            {kind === "stage" ? "Move" : kind === "pod" ? "Set Pod for" : "Move part of"} <b className="font-mono text-fg">{ticket}</b>{current ? <> · now <b className="text-fg">{kind === "stage" ? stageLabel(current) : current}</b></> : null}
+            {kind === "stage" ? "Move" : kind === "pod" ? "Set Pod for" : kind === "owner" ? "Assign" : "Move part of"} <b className="font-mono text-fg">{ticket}</b>{current ? <> · now <b className="text-fg">{kind === "stage" ? stageLabel(current) : current}</b></> : kind === "owner" ? " · now unassigned" : null}
           </div>
-          {items.length > 8 && (
+          {(items.length > 8 || kind === "owner") && (
             <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…"
               className="block w-full border-b border-line bg-bg px-3 py-2 text-sm outline-none" />
           )}
           <ul className="overflow-auto py-1" style={{ maxHeight: pos.listMax }}>
-            {!opts && [0, 1, 2, 3].map((i) => <li key={i} className="px-3 py-1.5"><div className="skeleton h-4 w-full" /></li>)}
-            {opts && !shown.length && <li className="px-3 py-2 text-muted">{needle ? "No match" : "Nothing to change to"}</li>}
+            {(kind === "owner" ? !people : !opts) && [0, 1, 2, 3].map((i) => <li key={i} className="px-3 py-1.5"><div className="skeleton h-4 w-full" /></li>)}
+            {(kind === "owner" ? people : opts) && !shown.length && <li className="px-3 py-2 text-muted">{needle ? "No match" : "Nothing to change to"}</li>}
             {shown.map((it) => (
               <li key={it.key} onClick={busy ? undefined : it.on} className={`cursor-pointer px-3 py-1.5 hover:bg-accent-soft ${busy ? "opacity-50" : ""}`}>
                 {it.label}{it.hint && <span className="block text-xs text-muted">{it.hint}</span>}

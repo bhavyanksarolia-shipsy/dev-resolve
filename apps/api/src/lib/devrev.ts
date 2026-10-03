@@ -265,12 +265,13 @@ export async function podValues(sample: TicketSummary): Promise<string[]> {
 }
 
 /** Moves a ticket to another stage, sets its Pod (null clears it) and/or other custom fields (keys with their tnt__/ctype__ prefix). */
-export async function updateTicket(id: string, change: { stageId?: string; pod?: string | null; partId?: string; fields?: Record<string, unknown> }, subtype?: string) {
+export async function updateTicket(id: string, change: { stageId?: string; pod?: string | null; partId?: string; ownerId?: string; fields?: Record<string, unknown> }, subtype?: string) {
   const custom = { ...(change.fields ?? {}), ...(change.pod !== undefined && { tnt__pod: change.pod }) };
   const r = await call<{ work: TicketSummary }>("/works.update", {
     id, type: "ticket",
     ...(change.stageId && { stage: { stage: change.stageId } }),
     ...(change.partId && { applies_to_part: change.partId }),
+    ...(change.ownerId && { owned_by: { set: [change.ownerId] } }),
     // Custom fields must name the schemas they belong to: tnt__ = the org's tenant fields, ctype__ = the ticket's subtype.
     ...(Object.keys(custom).length && { custom_fields: custom, custom_schema_spec: { tenant_fragment: true, ...(subtype && { subtype }) } }),
   });
