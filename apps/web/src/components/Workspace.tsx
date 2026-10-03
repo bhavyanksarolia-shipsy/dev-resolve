@@ -69,11 +69,16 @@ export function Workspace({ ticketId }: { ticketId: string }) {
       setData(d);
       if (d.investigations[0]) setInvId((cur) => cur ?? d.investigations[0].id);
     });
-    fetch(`/api/tickets/${ticketId}?part=conversation`).then(async (r) => {
+    loadConversation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticketId, ticketReload]);
+  // fresh=true skips the server's cache (after posting a comment — DevRev may not bump the ticket's modified time).
+  function loadConversation(fresh = false) {
+    fetch(`/api/tickets/${ticketId}?part=conversation${fresh ? "&refresh=1" : ""}`, { cache: "no-store" }).then(async (r) => {
       const d = await r.json().catch(() => null);
       if (r.ok && d) setConv({ id: ticketId, timeline: d.timeline ?? [], attachments: d.attachments ?? [] });
     }).catch(() => {});
-  }, [ticketId, ticketReload]);
+  }
   const timeline = conv?.id === ticketId ? conv.timeline : null;
   const attachments = conv?.id === ticketId ? conv.attachments : [];
   const router = useRouter();
@@ -170,6 +175,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
     setBusy(false);
     if (!r.ok) return notify({ title: `Not posted${d.connection ? ` — ${d.connection}` : ""}`, message: `${d.tag ? `${d.tag}: ` : ""}${d.error}`, tone: "error" });
     notify({ message: `Posted to ${ticketId}'s internal discussion`, tone: "ok" });
+    loadConversation(true); // show the new comment in the conversation
     poll();
   }
 

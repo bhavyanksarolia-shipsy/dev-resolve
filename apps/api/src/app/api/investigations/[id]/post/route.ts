@@ -1,6 +1,7 @@
 import { q } from "@/lib/db";
 import { postInternalComment, DevrevError } from "@/lib/devrev";
 import { currentUser } from "@/lib/auth";
+import { forgetConversation } from "@/lib/conversation";
 
 /** Human-approved: post the (edited) RCA to the ticket's INTERNAL discussion and record it as a resolved case. */
 export async function POST(req: Request, ctx: RouteContext<"/api/investigations/[id]/post">) {
@@ -20,6 +21,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/investigations/
   let entry;
   try {
     entry = await postInternalComment(inv.ticket_id, body);
+    forgetConversation(inv.ticket_id); // the ticket page shows the new comment on its next load
   } catch (e) {
     const err = e as DevrevError;
     return Response.json({ error: err.message, tag: err.tag, connection: "devrev" }, { status: 502 });

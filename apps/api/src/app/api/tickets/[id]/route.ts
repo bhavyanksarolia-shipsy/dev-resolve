@@ -1,34 +1,13 @@
-import { getTicket, listTimeline, devrevUrl } from "@/lib/devrev";
+import { getTicket, devrevUrl } from "@/lib/devrev";
 import { apiError } from "@/lib/apiError";
 import { resolveDevrevAccount } from "@/lib/config";
-import { listAttachments, withEmailSenders } from "@/lib/attachments";
+import { conversation } from "@/lib/conversation";
 import { q } from "@/lib/db";
 
 /**
  * The ticket page. Fast part (ticket, routing, investigations) by default; ?part=conversation returns the
  * comments + attachments, which take DevRev several seconds — cached per ticket until DevRev's modified time changes.
  */
-type Conversation = { timeline: Awaited<ReturnType<typeof listTimeline>>; attachments: Awaited<ReturnType<typeof listAttachments>> };
-const conversations = new Map<string, { modified: string; at: number; value: Promise<Conversation> }>();
-const CONV_TTL_MS = 10 * 60 * 1000;
-
-async function loadConversation(ticketId: string): Promise<Conversation> {
-  const timeline = await listTimeline(ticketId).catch(() => []);
-  // Senders and attachments both read the attached emails — run together (one download each, see parseEmail).
-  const [, attachments] = await Promise.all([withEmailSenders(timeline).catch(() => timeline), listAttachments(timeline).catch(() => [])]);
-  return { timeline, attachments };
-}
-
-function conversation(ticketId: string, modified: string, force = false) {
-  const hit = conversations.get(ticketId);
-  if (!force && hit && hit.modified === modified && Date.now() - hit.at < CONV_TTL_MS) return hit.value;
-  const value = loadConversation(ticketId);
-  value.catch(() => conversations.delete(ticketId));
-  conversations.set(ticketId, { modified, at: Date.now(), value });
-  if (conversations.size > 300) conversations.delete(conversations.keys().next().value!);
-  return value;
-}
-
 export async function GET(req: Request, ctx: RouteContext<"/api/tickets/[id]">) {
   const { id } = await ctx.params;
   const sp = new URL(req.url).searchParams;
