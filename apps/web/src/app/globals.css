@@ -141,3 +141,8 @@ button:disabled { cursor: not-allowed; }
 ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
 ::-webkit-scrollbar-thumb { background: transparent; border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
 .is-scrolling::-webkit-scrollbar-thumb { background-color: color-mix(in srgb, var(--muted) 55%, transparent); }
+
+/* ── ticket page: slides up from the bottom when opened ── */
+@keyframes sheet-up { from { opacity: 0; transform: translateY(48px); } to { opacity: 1; transform: none; } }
+.ticket-sheet { animation: sheet-up .38s cubic-bezier(.2, .8, .2, 1) both; }
+@media (prefers-reduced-motion: reduce) { .ticket-sheet { animation: none; } }

@@ -198,6 +198,11 @@ export function Workspace({ ticketId }: { ticketId: string }) {
       <section className="min-w-0 lg:overflow-y-auto lg:pr-2">
         <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
           <span className="rounded-md bg-accent-soft px-2 py-0.5 font-mono font-semibold text-accent-strong">{t.display_id}</span>
+          <button type="button" onClick={close} title="Back (Esc)"
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-muted ring-1 ring-line transition hover:text-accent-strong hover:ring-accent">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M15 18 9 12l6-6" /></svg>
+            Back
+          </button>
           <span>{data.routing.kind === "account" ? data.routing.name : t.account?.display_name}</span>
           <span aria-hidden>·</span>
           <a href={data.devrev_url} target="_blank" rel="noreferrer" className="font-medium text-accent-strong hover:underline">Open in DevRev ↗</a>
