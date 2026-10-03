@@ -46,9 +46,8 @@ function Inbox() {
   const router = useRouter();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountsLoaded, setAccountsLoaded] = useState(false);
-  const firstActive = accounts.find((a) => a.status === "active" && a.client_active !== false)?.slug ?? "";
   const params = useSearchParams();
-  const account = params.get("account") || firstActive;
+  const account = params.get("account") || "all"; // all clients by default, like the dashboard
   // All of the account's open tickets are loaded once; page, sort and column filters live in the URL so opening a
   // ticket and pressing Back returns to exactly the same view.
   const page = Math.max(1, Number(params.get("page")) || 1);
