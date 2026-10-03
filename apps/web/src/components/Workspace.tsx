@@ -13,7 +13,7 @@ import { EmptyState } from "./EmptyState";
 interface Step { seq: number; kind: string; tool: string | null; input: Record<string, unknown> | null; output: string | null; created_at: string }
 interface Proposal { id: number; account_slug: string; file: string; content: string; rationale: string; source: string; status: string }
 interface Investigation {
-  id: number; status: string; error: string | null; draft_rca: string | null; final_rca: string | null;
+  id: number; status: string; error: string | null; finished_at?: string | null; started_by?: string | null; draft_rca: string | null; final_rca: string | null;
   confidence: string | null; category: string | null; cost_usd: string | null; num_turns: number | null;
   account_slug: string; posted_at: string | null;
   rca_version: number; posted_version: number; chat_running: boolean; session_id: string | null;
@@ -217,6 +217,7 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
   const running = inv?.status === "running";
   const currentPosted = !!inv?.posted_at && inv.posted_version >= inv.rca_version;
   const canChat = !!inv && !running && !!inv.draft_rca;
+  const cancelled = !!inv && inv.status === "failed" && /^Cancelled by /.test(inv.error ?? "");
 
   return (
     // Desktop: both columns fit the window and scroll on their own, so the page itself never scrolls.
@@ -281,7 +282,7 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
           )}
           {inv && (
             <span className="text-sm text-muted">
-              #{inv.id} · <b className={running ? "text-warn" : inv.status === "failed" ? "text-bad" : "text-ok"}>{inv.status.replace("_", " ")}</b>
+              #{inv.id} · <b className={running ? "text-warn" : cancelled ? "text-muted" : inv.status === "failed" ? "text-bad" : "text-ok"}>{cancelled ? "cancelled" : inv.status.replace("_", " ")}</b>
               {inv.confidence && <> · confidence {inv.confidence}</>}
               {inv.num_turns != null && <> · {inv.num_turns} turns</>}
             </span>
@@ -303,7 +304,7 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
             confidence={inv!.confidence} onSend={sendChat} onOpenRca={() => setMode("rca")} />
         ) : (<>
         <div className="min-h-0 flex-1 lg:overflow-y-auto lg:pr-2">
-        {inv?.error && <div className="mb-3 rounded-md border border-bad/40 bg-bad/5 px-3 py-2 text-sm text-bad">{inv.error}</div>}
+        {inv?.error && inv.status === "failed" && <StoppedCard inv={inv} checks={steps.filter((x) => x.kind === "tool_call").length} />}
         {connErrors.map((s) => (
           <div key={s.seq} className="mb-2 rounded-md border border-bad/40 bg-bad/5 px-3 py-2 text-sm">
             <b className="text-bad">{s.input?.tag === "VPN_REQUIRED" ? "Connect VPN" : s.input?.tag === "AUTH_FAILED" ? "Fix credentials" : "Not configured"}: {String(s.input?.connection)}</b>
@@ -602,6 +603,38 @@ function Collapsible({ title, hint, children, className = "" }: { title: string;
         {hint && <span className="text-sm text-muted">{hint}</span>}
       </button>
       {open && <div className="border-t border-line p-4">{children}</div>}
+    </div>
+  );
+}
+
+/** A run that ended without an RCA: cancelled (neutral) or failed (plain reason first, details on demand). */
+function StoppedCard({ inv, checks }: { inv: Investigation; checks: number }) {
+  const err = inv.error ?? "";
+  const cancelled = /^Cancelled by /.test(err);
+  const when = inv.finished_at ? new Date(inv.finished_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : null;
+  const done = checks ? ` It had run ${checks} check${checks === 1 ? "" : "s"} — see the investigation trail.` : "";
+  const reason = cancelled ? null
+    : /restarted/i.test(err) ? "The server restarted while this was running."
+    : /VPN_REQUIRED/i.test(err) ? "A system it needed was only reachable on the client VPN."
+    : /AUTH_FAILED|credential/i.test(err) ? "A connection's sign-in or credentials didn't work."
+    : /submit_rca/i.test(err) ? "The agent stopped before writing an RCA."
+    : /timeout|timed out/i.test(err) ? "It took too long and was stopped."
+    : "Something went wrong while investigating.";
+  return (
+    <div className={`mb-4 flex gap-3 rounded-xl border px-4 py-3 text-sm ${cancelled ? "border-line bg-panel" : "border-red-200 bg-red-50"}`}>
+      <span className={`mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full ${cancelled ? "bg-bg text-muted ring-1 ring-line" : "bg-white text-bad ring-1 ring-red-200"}`} aria-hidden>
+        {cancelled
+          ? <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+          : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><path d="M12 8v5M12 16.5v.5" /></svg>}
+      </span>
+      <div className="min-w-0">
+        <div className="font-semibold">{cancelled ? "Investigation stopped" : "Investigation didn't finish"}</div>
+        <p className="mt-0.5 text-muted">
+          {cancelled ? <>{err.replace(/^Cancelled by /, "Stopped by ")}{when ? ` on ${when}` : ""}. No RCA was written.{done}</> : <>{reason} No RCA was written.{done}</>}
+          {" "}Use <b className="text-fg">Try again</b> to start a fresh one.
+        </p>
+        {!cancelled && <details className="mt-1 text-xs text-muted"><summary className="cursor-pointer">Details</summary><p className="mt-1 break-words font-mono">{err}</p></details>}
+      </div>
     </div>
   );
 }

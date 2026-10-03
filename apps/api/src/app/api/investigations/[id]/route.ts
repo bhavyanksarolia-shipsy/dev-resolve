@@ -32,9 +32,11 @@ export async function GET(req: Request, ctx: RouteContext<"/api/investigations/[
   return Response.json({ investigation: inv, steps: full ? steps : summarize(steps), trail: full ? "full" : "summary", proposals: viewer?.isAdmin ? proposals : [], runs });
 }
 
-export async function DELETE(_req: Request, ctx: RouteContext<"/api/investigations/[id]">) {
+export async function DELETE(req: Request, ctx: RouteContext<"/api/investigations/[id]">) {
   const { id } = await ctx.params;
+  const who = (await sessionUser(req))?.name ?? "someone";
   cancelInvestigation(Number(id));
-  await q(`UPDATE investigations SET status='failed', error='Cancelled by user', finished_at=now() WHERE id=$1 AND status='running'`, [id]);
+  // "Cancelled by <name>" — the page shows this as a neutral "stopped" card, not an error.
+  await q(`UPDATE investigations SET status='failed', error=$2, finished_at=now() WHERE id=$1 AND status='running'`, [id, `Cancelled by ${who}`]);
   return Response.json({ ok: true });
 }
