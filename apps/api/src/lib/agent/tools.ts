@@ -9,6 +9,7 @@ import { ensureRepos } from "../codeSync";
 import { userToolEnv } from "../connector";
 import { q } from "../db";
 import { proposeKnowledge, similarCases } from "../knowledge";
+import { pastTickets } from "../pastTickets";
 
 const MAX_OUT = 15000;
 const clip = (s: string) => (s.length > MAX_OUT ? s.slice(0, MAX_OUT) + `\n…[truncated ${s.length - MAX_OUT} chars — narrow the query]` : s);
@@ -116,6 +117,19 @@ export function buildToolServer(opts: { investigationId: number; account: Accoun
     },
   );
 
+  const past = tool(
+    "past_tickets",
+    "Closed DevRev tickets of this client with a similar title (last 9 months) and HOW they were closed: resolution fields and the last " +
+      "comments (the real outcome is usually there — e.g. who confirmed what, 'nothing on Shipsy end', 'client-side config'). Call this FIRST.",
+    { title: z.string().describe("This ticket's title (or its key words)"), exclude: z.string().optional().describe("This ticket's display id, e.g. TKT-123") },
+    async ({ title, exclude }) => {
+      const rows = (await Promise.all(scope.map((a) => pastTickets(a.slug, a.devrev.account_ids, title, { exclude })))).flat()
+        .sort((x, y) => y.similarity - x.similarity).slice(0, 6);
+      if (!rows.length) return text("No closed tickets with a similar title for this client in the last 9 months.");
+      return text(JSON.stringify(rows, null, 1));
+    },
+  );
+
   const propose = tool(
     "propose_knowledge",
     "Add a durable learning to this account's knowledge base (saved straight away; admins can review it later). " +
@@ -178,6 +192,6 @@ export function buildToolServer(opts: { investigationId: number; account: Accoun
   return createSdkMcpServer({
     name: "devresolve",
     version: "0.1.0",
-    tools: [metabaseQuery, metabaseTables, codeSearch, codeRead, similar, propose, submit],
+    tools: [metabaseQuery, metabaseTables, codeSearch, codeRead, similar, past, propose, submit],
   });
 }

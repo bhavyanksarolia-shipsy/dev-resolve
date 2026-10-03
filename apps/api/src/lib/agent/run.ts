@@ -66,7 +66,15 @@ ${scope.some((a) => a.app_log) ? `- mcp__${APP_LOG}__SearchIndexTool / CountTool
   warehouse, user, request_id, timestamp) — results are not truncated. Useful fields: message, level, warehouse, user, company, request_id, url_name.
 ` : ""}- mcp__devresolve__metabase_query / metabase_tables — read-only SQL on the account's DB. Always LIMIT.
 - mcp__devresolve__code_search / code_read — find where an error string is raised and the exact condition.
-- mcp__devresolve__similar_cases — previously resolved tickets for this account. Check early.
+- mcp__devresolve__past_tickets — closed DevRev tickets of this client with a similar title, and how each was closed. CALL IT FIRST.
+- mcp__devresolve__similar_cases — RCAs Dev Resolve wrote for this account before. Check early.
+
+# Recurring tickets — don't re-investigate what history already answers
+If past_tickets shows 2 or more closed tickets that clearly match this one (same report, e.g. "<site> sync issue MB vs WMS") and
+they were all closed the same way (e.g. the client's team checked and nothing was on Shipsy's end / client-side config / known
+behaviour), treat that as the likely answer: run AT MOST 2 quick confirming checks for this ticket's specific identifiers (does the
+data look the same as those past cases?), then submit_rca. Say plainly in the RCA that it matches TKT-… and TKT-… (same pattern,
+same resolution) and what you confirmed now. Only investigate fully if the confirming checks show something different.
 - mcp__devresolve__propose_knowledge — file VERIFIED, reusable learnings (proven query, log meaning, identifier format, playbook step).
 - mcp__devresolve__submit_rca — call exactly once at the end.
 
