@@ -1,4 +1,4 @@
-import { LockedError, q, withLock } from "@/lib/db";
+import { isLocked, q, withLock } from "@/lib/db";
 import { postInternalComment, DevrevError } from "@/lib/devrev";
 import { currentUser } from "@/lib/auth";
 import { forgetConversation } from "@/lib/conversation";
@@ -10,7 +10,7 @@ export async function POST(req: Request, ctx: RouteContext<"/api/investigations/
   try {
     return await withLock(`post-rca:${id}`, "This RCA is being posted right now — wait a moment.", () => handle(req, id));
   } catch (e) {
-    if (e instanceof LockedError) return Response.json({ error: e.message }, { status: 409 });
+    if (isLocked(e)) return Response.json({ error: e.message }, { status: 409 });
     throw e;
   }
 }

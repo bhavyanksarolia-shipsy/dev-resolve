@@ -21,7 +21,11 @@ export async function q<T = Record<string, unknown>>(text: string, params: unkno
   return res.rows as T[];
 }
 
-export class LockedError extends Error {}
+export class LockedError extends Error {
+  name = "LockedError";
+}
+/** True for a lock refusal — checked by name, so it also works across module reloads (dev) and bundles. */
+export const isLocked = (e: unknown): e is LockedError => !!e && typeof e === "object" && (e as { name?: string }).name === "LockedError";
 /**
  * Runs fn while holding a Postgres advisory lock named `key` (works across requests and server instances).
  * If someone else holds it, throws LockedError(busyMessage) instead of waiting — callers answer 409.

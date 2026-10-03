@@ -1,4 +1,4 @@
-import { LockedError } from "@/lib/db";
+import { isLocked } from "@/lib/db";
 import { startInvestigation } from "@/lib/agent/run";
 import { currentUser } from "@/lib/auth";
 
@@ -9,7 +9,7 @@ export async function POST(req: Request) {
     const id = await startInvestigation(ticket, await currentUser(req));
     return Response.json({ id });
   } catch (e) {
-    return Response.json({ error: (e as Error).message }, { status: e instanceof LockedError ? 409 : 400 });
+    return Response.json({ error: (e as Error).message }, { status: isLocked(e) ? 409 : 400 });
   }
 }
 

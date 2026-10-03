@@ -177,10 +177,17 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
     });
     if (!ok) return;
     setBusy(true);
-    const r = await fetch(`/api/investigations/${inv.id}/post`, { method: "POST", body: JSON.stringify({ rca, rating: rating || null, again }) });
-    const d = await r.json();
-    setBusy(false);
-    if (!r.ok) return notify({ title: `Not posted${d.connection ? ` — ${d.connection}` : ""}`, message: `${d.tag ? `${d.tag}: ` : ""}${d.error}`, tone: "error" });
+    let r: Response | null = null, d: { error?: string; tag?: string; connection?: string } = {};
+    try {
+      r = await fetch(`/api/investigations/${inv.id}/post`, { method: "POST", body: JSON.stringify({ rca, rating: rating || null, again }) });
+      d = await r.json().catch(() => ({ error: `The server answered ${r!.status} — nothing was posted. Try again.` }));
+    } catch {
+      d = { error: "Couldn't reach the server — nothing was posted. Try again." };
+    } finally {
+      setBusy(false); // never leave the button stuck
+    }
+    if (!r?.ok && !d.error) d.error = "Not posted";
+    if (!r?.ok) return notify({ title: `Not posted${d.connection ? ` — ${d.connection}` : ""}`, message: `${d.tag ? `${d.tag}: ` : ""}${d.error}`, tone: "error" });
     notify({ message: `Posted to ${ticketId}'s internal discussion`, tone: "ok" });
     loadConversation(true); // show the new comment in the conversation
     poll();
