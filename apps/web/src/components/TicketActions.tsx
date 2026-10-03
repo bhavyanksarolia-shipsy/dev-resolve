@@ -7,7 +7,7 @@ interface Options {
   stage: { id: string | null; name: string | null }; pod: string | null; stages: StageOption[]; pods: string[];
   part: { id: string; name: string } | null; parts: { id: string; name: string }[];
 }
-interface UpdateResult { ok: boolean; updated: number; failed: { ticket: string; error?: string }[]; error?: string }
+interface UpdateResult { ok: boolean; updated: number; failed: { ticket: string; error?: string }[]; warnings?: { ticket: string; warning: string }[]; error?: string }
 
 export const stageLabel = (s: string | null | undefined) => {
   const t = (s || "").replace(/_/g, " ");
@@ -41,6 +41,7 @@ export async function updateTickets(tickets: string[], change: { stage?: string;
   if (!ok) return null;
   const r = await fetch("/api/tickets/update", { method: "POST", body: JSON.stringify({ tickets, ...change }) });
   const d: UpdateResult = await r.json().catch(() => ({ ok: false, updated: 0, failed: [], error: `HTTP ${r.status}` }));
+  if (d.warnings?.length) notify({ title: "Check in DevRev", message: d.warnings.slice(0, 4).map((w) => `${w.ticket}: ${w.warning}`).join(" · "), tone: "error" });
   if (d.error) notify({ title: "Not updated", message: d.error, tone: "error" });
   else if (d.failed.length) notify({
     title: `${d.updated} updated, ${d.failed.length} not`,
@@ -211,6 +212,7 @@ export function InlineEdit({ ticket, kind, current, children, onSaved }: {
     const d = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
     setBusy(false); setOpen(false);
     if (d.error || d.failed?.length) return notify({ title: `${ticket} not updated`, message: d.error || d.failed[0].error, tone: "error" });
+    if (d.warnings?.length) notify({ title: "Check in DevRev", message: `${ticket}: ${d.warnings[0].warning}`, tone: "error" });
     notify({ message: shown.closed ? `${ticket} ${change.stage === "resolved" ? "resolved" : "closed"}` : kind === "owner" ? `${ticket} assigned to ${shown.owner}` : `${ticket}: ${kind} updated`, tone: "ok" });
     onSaved(shown);
   }

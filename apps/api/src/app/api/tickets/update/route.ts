@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     return me;
   };
 
-  const results: { ticket: string; ok: boolean; stage?: string; pod?: string | null; error?: string }[] = [];
+  const results: { ticket: string; ok: boolean; warning?: string; stage?: string; pod?: string | null; error?: string }[] = [];
   const queue = [...tickets];
   async function worker() {
     for (let t = queue.shift(); t; t = queue.shift()) {
@@ -87,8 +87,16 @@ export async function POST(req: Request) {
           if (b.pod !== null && !(await podValues(cur)).includes(b.pod)) throw new Error(`"${b.pod}" isn't a Pod value in DevRev`);
           change.pod = b.pod;
         }
-        const w = await updateTicket(cur.id, change, cur.subtype);
-        results.push({ ticket: t, ok: true, stage: w.stage?.name, pod: typeof w.custom_fields?.tnt__pod === "string" ? w.custom_fields.tnt__pod : null });
+        let w = await updateTicket(cur.id, change, cur.subtype);
+        // Read back: make sure DevRev really kept the fields we set (and say which, if not).
+        let warning: string | undefined;
+        if (change.fields && Object.keys(change.fields).length) {
+          w = await getTicket(cur.id);
+          const defs = await resolveFields(cur);
+          const missing = Object.keys(change.fields).filter((k) => w.custom_fields?.[k] == null || w.custom_fields?.[k] === "");
+          if (missing.length) warning = `DevRev didn't keep: ${missing.map((k) => defs.find((d) => d.key === k)?.label ?? k).join(", ")}`;
+        }
+        results.push({ ticket: t, ok: true, warning, stage: w.stage?.name, pod: typeof w.custom_fields?.tnt__pod === "string" ? w.custom_fields.tnt__pod : null });
         await q(`INSERT INTO ticket_updates (ticket, changed_by, change, ok) VALUES ($1,$2,$3,true)`, [t, by, JSON.stringify({ stage: b.stage, pod: b.pod, part: b.part, owner: b.owner, fields: change.fields })]);
       } catch (e) {
         // DevRev answers with JSON ({"message","reason",…}) — show its reason, not the raw body.
@@ -102,5 +110,6 @@ export async function POST(req: Request) {
   }
   await Promise.all(Array.from({ length: Math.min(4, tickets.length) }, worker));
   const failed = results.filter((r) => !r.ok);
-  return Response.json({ ok: !failed.length, updated: results.length - failed.length, failed, results });
+  const warnings = results.filter((r) => r.warning).map((r) => ({ ticket: r.ticket, warning: r.warning! }));
+  return Response.json({ ok: !failed.length, updated: results.length - failed.length, failed, warnings, results });
 }

@@ -311,10 +311,12 @@ export interface ResolveField { key: string; label: string; type: "user" | "enum
 /** Fields the team fills when resolving a ticket (DevRev names, without prefix). Override with DEVREV_RESOLVE_FIELDS. */
 const RESOLVE_FIELDS = () => (process.env.DEVREV_RESOLVE_FIELDS || "assignee,friday_review,root_cause_and_resolution_details,resolution,resolved_by")
   .split(",").map((x) => x.trim()).filter(Boolean);
-let resolveCache: { at: number; fields: ResolveField[] } | null = null;
+const resolveCache = new Map<string, { at: number; fields: ResolveField[] }>(); // per ticket subtype
 /** The resolve-time fields with their labels, types and choices, read from the ticket's schema fragments. Cached 1 h. */
 export async function resolveFields(sample: TicketSummary): Promise<ResolveField[]> {
-  if (resolveCache && Date.now() - resolveCache.at < 60 * 60 * 1000) return resolveCache.fields;
+  const key = sample.subtype || "-";
+  const hit = resolveCache.get(key);
+  if (hit && Date.now() - hit.at < 60 * 60 * 1000) return hit.fields;
   const want = RESOLVE_FIELDS();
   const found = new Map<string, ResolveField>();
   for (const frag of sample.custom_schema_fragments || []) {
@@ -329,7 +331,7 @@ export async function resolveFields(sample: TicketSummary): Promise<ResolveField
     }
   }
   const fields = want.map((n) => found.get(n)).filter(Boolean) as ResolveField[];
-  resolveCache = { at: Date.now(), fields };
+  resolveCache.set(key, { at: Date.now(), fields });
   return fields;
 }
 
