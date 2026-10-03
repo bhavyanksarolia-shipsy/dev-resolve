@@ -151,6 +151,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
   async function start() {
     setBusy(true);
     const r = await fetch("/api/investigations", { method: "POST", body: JSON.stringify({ ticket: ticketId }) });
+    window.dispatchEvent(new Event("investigations-changed")); // header count
     const d = await r.json();
     setBusy(false);
     if (!r.ok) return setErr(d.error);

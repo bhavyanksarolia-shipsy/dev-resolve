@@ -212,6 +212,7 @@ function Inbox() {
   async function investigate(t: Ticket) {
     setStarting((s) => new Set(s).add(t.display_id));
     const r = await fetch("/api/investigations", { method: "POST", body: JSON.stringify({ ticket: t.display_id }) });
+    window.dispatchEvent(new Event("investigations-changed")); // header count
     const d = await r.json();
     setStarting((s) => { const n = new Set(s); n.delete(t.display_id); return n; });
     if (!r.ok) return notify({ title: `Couldn't start ${t.display_id}`, message: d.error, tone: "error" });

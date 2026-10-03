@@ -49,7 +49,10 @@ export function InvestigationNotifier() {
     };
     tick();
     const t = setInterval(tick, 15000);
-    return () => { live = false; clearTimeout(t0); clearInterval(t); };
+    // Pages announce "investigations-changed" when one starts / finishes, so the count updates at once.
+    const now = () => { void tick(); setTimeout(() => void tick(), 1500); };
+    window.addEventListener("investigations-changed", now);
+    return () => { live = false; clearTimeout(t0); clearInterval(t); window.removeEventListener("investigations-changed", now); };
   }, [router]);
 
   const iconBtn = "relative grid h-8 w-8 place-items-center rounded-full transition-colors";
