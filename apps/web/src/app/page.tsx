@@ -97,12 +97,11 @@ function Dashboard() {
             <Kpi label={`RCAs posted · ${range.label}`} value={d.dev_resolve.posted} sub={`${d.dev_resolve.investigations} investigations on ${d.dev_resolve.tickets} tickets`} />
           </div>
 
-          <ClientTable rows={d.by_client} rangeLabel={range.label}
-            link={(slug) => `/tickets?account=${slug}${podParam ? `&fpod=${encodeURIComponent(podParam)}` : ""}&cfrom=${range.from}&cto=${range.to}&clabel=${encodeURIComponent(range.label)}`} />
-
+          {/* Clients and the opened-vs-closed chart side by side, same height. */}
           <div className="grid gap-4 lg:grid-cols-3">
-            {/* Flow */}
-            <Panel title="Opened vs closed" hint={`${d.step > 1 ? "Per week" : "Per day"} · ${range.label}`} className="lg:col-span-3">
+            <ClientTable rows={d.by_client} rangeLabel={range.label}
+              link={(slug) => `/tickets?account=${slug}${podParam ? `&fpod=${encodeURIComponent(podParam)}` : ""}&cfrom=${range.from}&cto=${range.to}&clabel=${encodeURIComponent(range.label)}`} />
+            <Panel title="Opened vs closed" hint={`${d.step > 1 ? "Per week" : "Per day"} · ${range.label}`} className="flex flex-col lg:col-span-2">
               <FlowChart rows={d.flow.per_day} />
               {d.flow.partial && <p className="mt-2 text-xs text-warn">Very busy period — the chart shows the most recent 5,000 tickets; the totals above are exact.</p>}
             </Panel>
@@ -210,22 +209,31 @@ function Bars({ items, tone }: { items: { label: string; count: number; href?: s
 
 /** Opened (green) and closed (grey) per day as paired bars. */
 function FlowChart({ rows }: { rows: { day: string; opened: number; closed: number }[] }) {
+  // Fills its panel (the panel sits next to the client table and takes its height).
   const max = Math.max(1, ...rows.flatMap((r) => [r.opened, r.closed]));
   const label = (d: string) => new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  const few = rows.length <= 7; // short periods: normal-width bars, centred, with the numbers on top
   return (
-    <div>
-      <div className="flex h-40 items-end gap-[3px]">
+    <div className="flex min-h-56 flex-1 flex-col">
+      <div className={`flex min-h-40 flex-1 items-end ${few ? "justify-center gap-10" : "gap-[3px]"}`}>
         {rows.map((r) => (
-          <div key={r.day} className="group flex h-full flex-1 items-end gap-px" title={`${label(r.day)} · opened ${r.opened}, closed ${r.closed}`}>
-            <span className="flex-1 rounded-t bg-accent transition group-hover:opacity-80" style={{ height: `${(r.opened / max) * 100}%`, minHeight: r.opened ? 3 : 0 }} />
-            <span className="flex-1 rounded-t bg-muted/40 transition group-hover:opacity-80" style={{ height: `${(r.closed / max) * 100}%`, minHeight: r.closed ? 3 : 0 }} />
+          <div key={r.day} className={`group flex h-full flex-col ${few ? "w-24" : "flex-1"}`} title={`${label(r.day)} · opened ${r.opened}, closed ${r.closed}`}>
+            <div className="flex flex-1 items-end gap-px">
+              {([["opened", r.opened, "bg-accent"], ["closed", r.closed, "bg-muted/40"]] as const).map(([k, n, c]) => (
+                <div key={k} className="flex h-full flex-1 flex-col justify-end">
+                  {few && <span className="mb-1 text-center text-xs font-semibold tabular-nums">{n}</span>}
+                  <span className={`rounded-t ${c} transition group-hover:opacity-80`} style={{ height: `${(n / max) * (few ? 85 : 100)}%`, minHeight: n ? 3 : 0 }} />
+                </div>
+              ))}
+            </div>
+            {few && rows.length > 1 && <span className="mt-1 text-center text-xs text-muted">{label(r.day)}</span>}
           </div>
         ))}
       </div>
       <div className="mt-2 flex justify-between text-xs text-muted">
-        <span>{label(rows[0].day)}</span>
+        <span>{few && rows.length > 1 ? "" : label(rows[0].day)}</span>
         <span className="flex gap-4"><span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-accent" />opened</span><span><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-muted/40" />closed</span></span>
-        <span>{label(rows[rows.length - 1].day)}</span>
+        <span>{few && rows.length > 1 ? "" : rows.length > 1 ? label(rows[rows.length - 1].day) : ""}</span>
       </div>
     </div>
   );
@@ -428,12 +436,12 @@ function RangeCalendar({ initial, onApply, onCancel }: { initial: Range; onApply
 function ClientTable({ rows, rangeLabel, link }: { rows: Dash["by_client"]; rangeLabel: string; link: (slug: string) => string }) {
   const total = rows.reduce((n, r) => n + r.open, 0);
   return (
-    <section className="card overflow-hidden">
-      <div className="flex items-baseline gap-2 px-5 pt-4">
+    <section className="card flex max-h-[28rem] min-h-80 flex-col overflow-hidden">
+      <div className="flex flex-wrap items-baseline gap-x-2 px-5 pt-4">
         <h2 className="font-semibold">By client</h2>
         <span className="text-xs text-muted">Open tickets created {rangeLabel === "Today" || rangeLabel === "Yesterday" ? rangeLabel.toLowerCase() : `in ${rangeLabel.toLowerCase()}`} · click a client to see them</span>
       </div>
-      <div className="mt-3 max-h-[26rem] overflow-auto">
+      <div className="mt-3 min-h-0 flex-1 overflow-auto">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-head text-xs font-semibold uppercase tracking-wide text-head-fg">
             <tr><th className="px-5 py-2.5 text-left">Client</th><th className="px-5 py-2.5 text-right">Open tickets</th></tr>
