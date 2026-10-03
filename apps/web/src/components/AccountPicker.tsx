@@ -28,7 +28,8 @@ export function AccountPicker({ accounts, value, onChange }: { accounts: PickerA
     const live = (a: PickerAccount) => a.client_active !== false;
     const active = accounts.filter((a) => live(a) && a.status === "active" && match(a)).sort(byCount);
     const waiting = accounts.filter((a) => live(a) && a.status !== "active" && match(a)).sort(byCount);
-    const inactive = accounts.filter((a) => !live(a) && match(a)).sort(byCount);
+    // Inactive clients aren't offered (turn a client back on in Admin → Clients); the current one still shows if selected.
+    const inactive: PickerAccount[] = [];
     return { active, waiting, inactive, flat: [...active, ...waiting, ...inactive] };
   }, [accounts, query]);
 
