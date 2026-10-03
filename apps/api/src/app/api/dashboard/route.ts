@@ -89,11 +89,11 @@ export async function GET(req: Request) {
         },
       },
       // Totals are exact (DevRev counts); the chart covers what was fetched — `partial` if a list hit its cap.
-      // Per client: open tickets created in the selected period (Pod filter applied).
+      // Per client: open tickets now (Pod filter applied) — adds up to the Open tickets card.
       by_client: account.slugs.map((slug) => {
         const a = getAccount(slug)!;
         const mine = new Set(a.devrev.account_ids);
-        const n = open.filter((w) => w.account?.id && mine.has(w.account.id) && +new Date(w.created_date) >= +since && +new Date(w.created_date) <= +until).length;
+        const n = open.filter((w) => w.account?.id && mine.has(w.account.id)).length; // same tickets as the Open tickets card
         return { slug, name: a.name, open: n };
       }).filter((c) => c.open).sort((x, y) => y.open - x.open || x.name.localeCompare(y.name)),
       pod: podWanted ? [...podWanted] : null, pod_status: { stages, rows: podRows },

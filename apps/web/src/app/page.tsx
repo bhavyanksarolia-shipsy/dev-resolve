@@ -107,8 +107,8 @@ function Dashboard() {
 
           {/* Clients and the opened-vs-closed chart side by side, same height. */}
           <div className="grid gap-4 lg:grid-cols-3 [&>*]:min-w-0">
-            <ClientTable rows={d.by_client} rangeLabel={range.label}
-              link={(slug) => `/tickets?account=${slug}${podPick?.length ? `&fpod=${encodeURIComponent(podPick.join("|"))}` : ""}&cfrom=${range.from}&cto=${range.to}&clabel=${encodeURIComponent(range.label)}`} />
+            <ClientTable rows={d.by_client}
+              link={(slug) => `/tickets?account=${slug}${podPick?.length ? `&fpod=${encodeURIComponent(podPick.join("|"))}` : ""}`} />
             <Panel title="Opened vs closed" hint={`${d.step > 1 ? "Per week" : "Per day"} · ${range.label}`} className="flex flex-col lg:col-span-2">
               <FlowChart rows={d.flow.per_day} />
               {d.flow.partial && <p className="mt-2 text-xs text-warn">Very busy period — the chart shows the most recent 5,000 tickets; the totals above are exact.</p>}
@@ -441,13 +441,13 @@ function RangeCalendar({ initial, onApply, onCancel }: { initial: Range; onApply
 
 
 /** One row per client: open tickets created in the selected period (date and Pod filters apply). */
-function ClientTable({ rows, rangeLabel, link }: { rows: Dash["by_client"]; rangeLabel: string; link: (slug: string) => string }) {
+function ClientTable({ rows, link }: { rows: Dash["by_client"]; link: (slug: string) => string }) {
   const total = rows.reduce((n, r) => n + r.open, 0);
   return (
     <section className="card flex max-h-[28rem] min-h-80 min-w-0 flex-col overflow-hidden">
       <div className="flex flex-wrap items-baseline gap-x-2 px-5 pt-4">
         <h2 className="font-semibold">By client</h2>
-        <span className="text-xs text-muted">Open tickets created {rangeLabel === "Today" || rangeLabel === "Yesterday" ? rangeLabel.toLowerCase() : `in ${rangeLabel.toLowerCase()}`} · click a client to see them</span>
+        <span className="text-xs text-muted">Open tickets right now · click a client to see them</span>
       </div>
       <div className="mt-3 min-h-0 flex-1 overflow-auto">
         <table className="w-full text-sm">
@@ -461,7 +461,7 @@ function ClientTable({ rows, rangeLabel, link }: { rows: Dash["by_client"]; rang
                 <td className="px-5 py-2.5 text-right font-semibold tabular-nums"><Link href={link(r.slug)} className="hover:underline">{r.open}</Link></td>
               </tr>
             ))}
-            {!rows.length && <tr><td colSpan={2} className="px-5 py-6 text-center text-muted">No open tickets created in this period.</td></tr>}
+            {!rows.length && <tr><td colSpan={2} className="px-5 py-6 text-center text-muted">No open tickets.</td></tr>}
           </tbody>
           {rows.length > 1 && (
             <tfoot className="sticky bottom-0 bg-panel">
