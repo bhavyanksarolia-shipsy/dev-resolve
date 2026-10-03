@@ -149,7 +149,15 @@ function Inbox() {
     window.addEventListener("ticket-changed", on);
     return () => window.removeEventListener("ticket-changed", on);
   }, []);
-  const counts = fresh?.counts ?? (result?.key === account ? result.counts : undefined);
+  const rawCounts = fresh?.counts ?? (result?.key === account ? result.counts : undefined);
+  // DevRev's counts lag a few seconds behind a resolve; take out tickets closed here so the summary matches the table.
+  const closedHere = (fresh?.tickets ?? []).filter((t) => local[t.display_id]?.closed);
+  const counts = rawCounts && {
+    ...rawCounts,
+    account: { ...rawCounts.account,
+      total: Math.max(0, rawCounts.account.total - closedHere.length),
+      default_part: Math.max(0, rawCounts.account.default_part - closedHere.filter((t) => t.default_part).length) },
+  };
   const error = fresh?.error ?? null;
   const inactive = !!fresh?.inactive;
   const anyRunning = !inactive && !!tickets?.some((t) => t.investigation?.status === "running");
