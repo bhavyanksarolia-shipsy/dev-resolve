@@ -100,7 +100,7 @@ function Dashboard() {
           </div>
 
           {/* Clients and the opened-vs-closed chart side by side, same height. */}
-          <div className="grid gap-4 lg:grid-cols-3">
+          <div className="grid gap-4 lg:grid-cols-3 [&>*]:min-w-0">
             <ClientTable rows={d.by_client} rangeLabel={range.label}
               link={(slug) => `/tickets?account=${slug}${podPick?.length ? `&fpod=${encodeURIComponent(podPick.join("|"))}` : ""}&cfrom=${range.from}&cto=${range.to}&clabel=${encodeURIComponent(range.label)}`} />
             <Panel title="Opened vs closed" hint={`${d.step > 1 ? "Per week" : "Per day"} · ${range.label}`} className="flex flex-col lg:col-span-2">
@@ -109,7 +109,7 @@ function Dashboard() {
             </Panel>
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-3">
+          <div className="grid gap-4 lg:grid-cols-3 [&>*]:min-w-0">
             <Panel title="Age of open tickets">
               <Bars items={d.open.by_age.map((a) => ({ label: a.label, count: a.count, href: t(`&age=${a.min}-${a.max ?? ""}&agelabel=${encodeURIComponent(a.label)}`) }))} tone={(i) => (i >= 3 ? "bg-warn" : "bg-accent")} />
             </Panel>
@@ -121,7 +121,7 @@ function Dashboard() {
             </Panel>
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-3">
+          <div className="grid gap-4 lg:grid-cols-3 [&>*]:min-w-0">
             <Panel title="Workload" hint="Open tickets per person">
               <Bars items={d.open.by_owner.map((o) => ({ label: o.value || "Unassigned", count: o.count, href: t(`&fowner=${encodeURIComponent(o.value || "-")}`), muted: !o.value }))} />
             </Panel>
@@ -130,7 +130,7 @@ function Dashboard() {
             </Panel>
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-3">
+          <div className="grid gap-4 lg:grid-cols-3 [&>*]:min-w-0">
             <Panel title="Dev Resolve" hint={`Last ${range.label}`}>
               <dl className="grid grid-cols-2 gap-3 text-sm">
                 <Stat k="Investigations" v={d.dev_resolve.investigations} />
@@ -180,7 +180,7 @@ function Kpi({ label, value, sub, href, tone }: { label: string; value: number; 
 
 function Panel({ title, hint, className = "", children }: { title: string; hint?: string; className?: string; children: React.ReactNode }) {
   return (
-    <section className={`card p-5 ${className}`}>
+    <section className={`card min-w-0 p-5 ${className}`}>
       <div className="mb-3 flex items-baseline gap-2"><h2 className="font-semibold">{title}</h2>{hint && <span className="text-xs text-muted">{hint}</span>}</div>
       {children}
     </section>
@@ -266,8 +266,8 @@ function Skeleton() {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">{[0, 1, 2, 3].map((i) => <div key={i} className="skeleton h-24 rounded-2xl" />)}</div>
-      <div className="grid gap-4 lg:grid-cols-3"><div className="skeleton h-56 rounded-2xl" /><div className="skeleton h-56 rounded-2xl lg:col-span-2" /></div>
-      <div className="grid gap-4 lg:grid-cols-3">{[0, 1, 2].map((i) => <div key={i} className="skeleton h-48 rounded-2xl" />)}</div>
+      <div className="grid gap-4 lg:grid-cols-3 [&>*]:min-w-0"><div className="skeleton h-56 rounded-2xl" /><div className="skeleton h-56 rounded-2xl lg:col-span-2" /></div>
+      <div className="grid gap-4 lg:grid-cols-3 [&>*]:min-w-0">{[0, 1, 2].map((i) => <div key={i} className="skeleton h-48 rounded-2xl" />)}</div>
     </div>
   );
 }
@@ -438,7 +438,7 @@ function RangeCalendar({ initial, onApply, onCancel }: { initial: Range; onApply
 function ClientTable({ rows, rangeLabel, link }: { rows: Dash["by_client"]; rangeLabel: string; link: (slug: string) => string }) {
   const total = rows.reduce((n, r) => n + r.open, 0);
   return (
-    <section className="card flex max-h-[28rem] min-h-80 flex-col overflow-hidden">
+    <section className="card flex max-h-[28rem] min-h-80 min-w-0 flex-col overflow-hidden">
       <div className="flex flex-wrap items-baseline gap-x-2 px-5 pt-4">
         <h2 className="font-semibold">By client</h2>
         <span className="text-xs text-muted">Open tickets created {rangeLabel === "Today" || rangeLabel === "Yesterday" ? rangeLabel.toLowerCase() : `in ${rangeLabel.toLowerCase()}`} · click a client to see them</span>

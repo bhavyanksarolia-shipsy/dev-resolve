@@ -40,13 +40,14 @@ export function AppHeader() {
   if (pathname === "/login") return null; // the login page is full-screen with its own branding
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-panel/85 backdrop-blur">
-      <div className="flex w-full flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
+      <div className="flex w-full flex-wrap items-center gap-x-6 gap-y-2 px-4 py-2.5 sm:px-6 sm:py-3">
         <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
           <span className="grid h-7 w-7 place-items-center rounded-lg bg-accent text-sm text-white">DR</span>
           Dev Resolve
         </Link>
         {me && (
-          <nav className="flex gap-1 text-sm">
+          // Phones: the tabs get their own full-width, side-scrolling row under the logo + controls.
+          <nav className="order-last -mx-1 flex w-full gap-1 overflow-x-auto text-sm md:order-none md:mx-0 md:w-auto [&>a]:shrink-0">
             <Link href="/" className={`${link} ${pathname === "/" ? "bg-accent-soft text-accent-strong" : ""}`}>Dashboard</Link>
             <Link href="/tickets" className={`${link} ${pathname.startsWith("/tickets") ? "bg-accent-soft text-accent-strong" : ""}`}>Tickets</Link>
             <Link href="/knowledge" className={link}>Knowledge</Link>
@@ -55,7 +56,7 @@ export function AppHeader() {
           </nav>
         )}
         {me && (
-          <div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1">
+          <div className="ml-auto flex items-center gap-x-3 sm:gap-x-4">
             <PodScopePicker />
             <InvestigationNotifier />
             <SignOut user={me.user} />
