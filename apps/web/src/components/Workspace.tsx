@@ -77,7 +77,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
   const timeline = conv?.id === ticketId ? conv.timeline : null;
   const attachments = conv?.id === ticketId ? conv.attachments : [];
   const router = useRouter();
-  // ✕: back to where you came from (inbox / dashboard, with its filters); the inbox if the ticket was opened directly.
+  // Back (and Esc): to where you came from (inbox / dashboard, with its filters); the inbox if the ticket was opened directly.
   const close = () => {
     const fromApp = typeof document !== "undefined" && document.referrer.startsWith(window.location.origin);
     if (fromApp && window.history.length > 1) router.back(); else router.push("/tickets");
@@ -190,19 +190,15 @@ export function Workspace({ ticketId }: { ticketId: string }) {
   return (
     // Desktop: both columns fit the window and scroll on their own, so the page itself never scrolls.
     <div className="relative grid gap-6 lg:h-[calc(100dvh-7.5rem)] lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-      <button type="button" onClick={close} title="Close (Esc)" aria-label="Close this ticket"
-        className="absolute -top-1 right-0 z-20 grid h-9 w-9 place-items-center rounded-full border border-line bg-panel text-muted shadow-sm transition hover:border-accent hover:text-fg">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden><path d="M18 6 6 18M6 6l12 12" /></svg>
-      </button>
       {/* Left: ticket */}
       <section className="min-w-0 lg:overflow-y-auto lg:pr-2">
         <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-          <span className="rounded-md bg-accent-soft px-2 py-0.5 font-mono font-semibold text-accent-strong">{t.display_id}</span>
           <button type="button" onClick={close} title="Back (Esc)"
-            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-muted ring-1 ring-line transition hover:text-accent-strong hover:ring-accent">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M15 18 9 12l6-6" /></svg>
+            className="inline-flex items-center gap-1 rounded-md bg-bad px-2 py-0.5 font-semibold text-white shadow-sm transition hover:opacity-90">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M15 18 9 12l6-6" /></svg>
             Back
           </button>
+          <span className="rounded-md bg-accent-soft px-2 py-0.5 font-mono font-semibold text-accent-strong">{t.display_id}</span>
           <span>{data.routing.kind === "account" ? data.routing.name : t.account?.display_name}</span>
           <span aria-hidden>·</span>
           <a href={data.devrev_url} target="_blank" rel="noreferrer" className="font-medium text-accent-strong hover:underline">Open in DevRev ↗</a>
@@ -244,7 +240,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
         </section>
       ) : (
       <section className="flex min-w-0 flex-col lg:min-h-0">
-        <div className="mb-3 flex flex-wrap items-center gap-3 pr-12">
+        <div className="mb-3 flex flex-wrap items-center gap-3">
           {/* Follow-ups go through Chat (same investigation, keeps its findings); a fresh run is only for a first or failed one. */}
           {(!inv || inv.status === "failed") && (
             <button onClick={start} disabled={busy || running || data.routing.kind === "unmapped" || data.routing.kind === "ignored"}
