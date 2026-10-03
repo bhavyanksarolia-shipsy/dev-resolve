@@ -293,7 +293,6 @@ function Inbox() {
             <button onClick={() => setView({ age: null, agelabel: null })} aria-label="Remove the age filter" className="hover:text-fg">✕</button>
           </span>
         )}
-        <Link href={`/?account=${account}`} className="ml-auto text-accent-strong hover:underline">Dashboard →</Link>
       </div>
       <HealthBanner account={account === "all" ? undefined : account} compact />
 

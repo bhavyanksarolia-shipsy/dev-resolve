@@ -47,6 +47,7 @@ export function AppHeader() {
         </Link>
         {me && (
           <nav className="flex gap-1 text-sm">
+            <Link href="/" className={`${link} ${pathname === "/" ? "bg-accent-soft text-accent-strong" : ""}`}>Dashboard</Link>
             <Link href="/tickets" className={`${link} ${pathname.startsWith("/tickets") ? "bg-accent-soft text-accent-strong" : ""}`}>Tickets</Link>
             <Link href="/knowledge" className={link}>Knowledge</Link>
             {me.connectorMode && <Link href="/connector" className={link}>Connector</Link>}
