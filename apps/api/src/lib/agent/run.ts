@@ -4,7 +4,7 @@ import path from "node:path";
 import { query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { Account, ROOT, getAccount, projectForLogType, resolveDevrevAccount } from "../config";
 import { userToolEnv } from "../connector";
-import { q } from "../db";
+import { LockedError, q } from "../db";
 import { getTicket, listTimeline } from "../devrev";
 import { accountKnowledge } from "../knowledge";
 import { agentAttachmentBlocks, listAttachments, uploadedFileBlocks, withEmailSenders } from "../attachments";
@@ -173,11 +173,16 @@ function resolveScope(accountId: string | undefined, displayId: string, accountN
 export async function startInvestigation(ticketRef: string, startedBy = "unknown"): Promise<number> {
   const ticket = await getTicket(ticketRef);
   const { account, candidates } = resolveScope(ticket.account?.id, ticket.display_id, ticket.account?.display_name);
-  const [row] = await q<{ id: number }>(
+  // The unique index investigations_one_running_per_ticket makes this the lock: a second start fails here.
+  const row = await q<{ id: number }>(
     `INSERT INTO investigations (ticket_id, ticket_display, ticket_title, account_slug, status, candidate_slugs, started_by)
      VALUES ($1,$2,$3,$4,'running',$5,$6) RETURNING id`,
     [ticket.id, ticket.display_id, ticket.title, account.slug, candidates.map((c) => c.slug), startedBy],
-  );
+  ).then((r) => r[0]).catch(async (e: { code?: string }) => {
+    if (e.code !== "23505") throw e;
+    const [cur] = await q<{ started_by: string | null }>(`SELECT started_by FROM investigations WHERE ticket_display=$1 AND status='running'`, [ticket.display_id]);
+    throw new LockedError(`${ticket.display_id} is already being investigated${cur?.started_by ? ` (started by ${cur.started_by})` : ""}`);
+  });
   void runAgent(row.id, ticket, account, candidates, startedBy).catch(async (e) => {
     await q(`UPDATE investigations SET status='failed', error=$2, finished_at=now() WHERE id=$1`, [row.id, String(e?.message || e)]);
   });
@@ -253,13 +258,15 @@ export async function sendChatMessage(id: number, text: string, by = "unknown", 
     status: string; session_id: string | null; chat_running: boolean; draft_rca: string | null;
   }>(`SELECT * FROM investigations WHERE id=$1`, [id]);
   if (!inv) throw new Error("investigation not found");
-  if (inv.status === "running" || inv.chat_running) throw new Error("The agent is still working on this ticket — wait for it to finish.");
+  if (inv.status === "running" || inv.chat_running) throw new LockedError("The agent is still working on this ticket — wait for it to finish.");
   const account = getAccount(inv.account_slug);
   if (!account) throw new Error(`account ${inv.account_slug} is no longer in config`);
   const candidates = (inv.candidate_slugs || []).map((s) => getAccount(s)).filter(Boolean) as Account[];
 
   const [{ next }] = await q<{ next: number }>(`SELECT COALESCE(max(seq), -1) + 1 AS next FROM investigation_steps WHERE investigation_id=$1`, [id]);
-  await q(`UPDATE investigations SET chat_running=true WHERE id=$1`, [id]);
+  // Claim the chat in one step (two messages at once can't both start the agent).
+  const claimed = await q(`UPDATE investigations SET chat_running=true WHERE id=$1 AND status <> 'running' AND NOT chat_running RETURNING id`, [id]);
+  if (!claimed.length) throw new LockedError("The agent is still working on this ticket — wait for it to finish.");
   await step(id, next, "user_message", null, { by, files: files.map(({ id, name, type, size }) => ({ id, name, type, size })) }, text);
   const fileBlocks = files.length ? await uploadedFileBlocks(files) : [];
   // Replies (and their attachments) added to the ticket since the agent last looked: the investigation read the

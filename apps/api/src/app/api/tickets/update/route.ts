@@ -1,6 +1,6 @@
 import { devUsers, getTicket, partChoices, podValues, resolveFields, stageMoves, updateTicket } from "@/lib/devrev";
 import { currentUser } from "@/lib/auth";
-import { q } from "@/lib/db";
+import { q, withLock } from "@/lib/db";
 import { sessionUser } from "@/lib/auth";
 
 // Resolving: DevRev wants these filled. Anything already on the ticket is kept; empty ones get these defaults.
@@ -35,7 +35,10 @@ export async function POST(req: Request) {
   async function worker() {
     for (let t = queue.shift(); t; t = queue.shift()) {
       const change: { stageId?: string; pod?: string | null; partId?: string; ownerId?: string; fields?: Record<string, unknown> } = {};
-      try {
+      const tk = t;
+      // One update at a time per ticket (two people changing it together, or a double click).
+      try { await withLock(`ticket-update:${tk}`, `${tk} is being updated by someone else — try again in a moment`, async () => {
+        const t = tk;
         const cur = await getTicket(t);
         const want = { ...(b.fields ?? {}), ...(b.perTicket?.[t] ?? {}) };
         if (Object.keys(want).length) {
@@ -98,7 +101,7 @@ export async function POST(req: Request) {
         }
         results.push({ ticket: t, ok: true, warning, stage: w.stage?.name, pod: typeof w.custom_fields?.tnt__pod === "string" ? w.custom_fields.tnt__pod : null });
         await q(`INSERT INTO ticket_updates (ticket, changed_by, change, ok) VALUES ($1,$2,$3,true)`, [t, by, JSON.stringify({ stage: b.stage, pod: b.pod, part: b.part, owner: b.owner, fields: change.fields })]);
-      } catch (e) {
+      }); } catch (e) {
         // DevRev answers with JSON ({"message","reason",…}) — show its reason, not the raw body.
         const raw = (e as Error).message.replace(/^DevRev \/works\.update HTTP \d+: /, "");
         let error = raw;

@@ -20,3 +20,23 @@ export async function q<T = Record<string, unknown>>(text: string, params: unkno
   const res = await getPool().query(text, params);
   return res.rows as T[];
 }
+
+export class LockedError extends Error {}
+/**
+ * Runs fn while holding a Postgres advisory lock named `key` (works across requests and server instances).
+ * If someone else holds it, throws LockedError(busyMessage) instead of waiting — callers answer 409.
+ */
+export async function withLock<T>(key: string, busyMessage: string, fn: () => Promise<T>): Promise<T> {
+  const client = await getPool().connect();
+  try {
+    const [{ ok }] = (await client.query<{ ok: boolean }>(`SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS ok`, [key])).rows;
+    if (!ok) throw new LockedError(busyMessage);
+    try {
+      return await fn();
+    } finally {
+      await client.query(`SELECT pg_advisory_unlock(hashtextextended($1, 0))`, [key]).catch(() => {});
+    }
+  } finally {
+    client.release();
+  }
+}

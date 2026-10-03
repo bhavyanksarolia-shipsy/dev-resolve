@@ -1,11 +1,21 @@
-import { q } from "@/lib/db";
+import { LockedError, q, withLock } from "@/lib/db";
 import { postInternalComment, DevrevError } from "@/lib/devrev";
 import { currentUser } from "@/lib/auth";
 import { forgetConversation } from "@/lib/conversation";
 
 /** Human-approved: post the (edited) RCA to the ticket's INTERNAL discussion and record it as a resolved case. */
+/** One post at a time per investigation: a double click or a second reviewer gets "already posting", not a duplicate comment. */
 export async function POST(req: Request, ctx: RouteContext<"/api/investigations/[id]/post">) {
   const { id } = await ctx.params;
+  try {
+    return await withLock(`post-rca:${id}`, "This RCA is being posted right now — wait a moment.", () => handle(req, id));
+  } catch (e) {
+    if (e instanceof LockedError) return Response.json({ error: e.message }, { status: 409 });
+    throw e;
+  }
+}
+
+async function handle(req: Request, id: string) {
   const { rca, rating, again } = (await req.json()) as { rca?: string; rating?: number; again?: boolean };
   if (!rca?.trim()) return Response.json({ error: "rca is required" }, { status: 400 });
   const [inv] = await q<{ ticket_id: string; ticket_display: string; ticket_title: string; account_slug: string; category: string; case_draft: Record<string, unknown> | null; posted_at: string | null; draft_rca: string | null; final_rca: string | null; rca_version: number; posted_version: number }>(
