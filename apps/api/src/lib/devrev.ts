@@ -393,3 +393,10 @@ export async function partChoices(): Promise<PartChoice[]> {
   partChoiceCache = { at: Date.now(), parts: out };
   return out;
 }
+
+/** All Pod values (from any ticket's schema). */
+export async function allPodValues(): Promise<string[]> {
+  if (podField && Date.now() - podField.at < 60 * 60 * 1000) return podField.values;
+  const r = await call<{ works: TicketSummary[] }>("/works.list", { type: ["ticket"], limit: 1 });
+  return r.works[0] ? podValues(r.works[0]) : [];
+}

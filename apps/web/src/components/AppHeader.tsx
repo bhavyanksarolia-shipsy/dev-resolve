@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { InvestigationNotifier } from "@/components/InvestigationNotifier";
 import { SignOut } from "@/components/SignOut";
+import { PodScopePicker } from "@/components/PodScopePicker";
 
 interface Me { user: string; isAdmin: boolean; connectorMode: boolean }
 
@@ -54,6 +55,7 @@ export function AppHeader() {
         )}
         {me && (
           <div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-1">
+            <PodScopePicker />
             <InvestigationNotifier />
             <SignOut user={me.user} />
           </div>

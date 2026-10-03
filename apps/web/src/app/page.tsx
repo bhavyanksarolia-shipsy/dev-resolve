@@ -4,7 +4,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AccountPicker, withAllClients, type PickerAccount } from "@/components/AccountPicker";
 import { HealthBanner } from "@/components/HealthBanner";
-import { PodPicker } from "@/components/PodPicker";
+import { usePodScope } from "@/components/podScope";
 
 interface Count { value: string; count: number }
 interface Brief { display_id: string; title: string; created: string; closed: string | null; stage: string; owner: string | null; pod: string | null }
@@ -44,8 +44,9 @@ function Dashboard() {
   }, []);
   const account = params.get("account") || "all"; // all clients by default; narrow down in the picker
   const range = resolveRange(params.get("range"), params.get("from"), params.get("to"));
-  const podParam = params.get("pod"); // null = all Pods; "A|B" = those Pods ("-" = not set)
-  const podSel = podParam ? podParam.split("|") : null;
+  // Header "My Pods" scope: those Pods + tickets with no Pod ("-"). Empty = every Pod.
+  const scope = usePodScope();
+  const podParam = scope.length ? [...scope, "-"].join("|") : null;
   const go = (patch: Record<string, string | null>) => {
     const sp = new URLSearchParams(params.toString());
     for (const [k, v] of Object.entries(patch)) { if (v == null) sp.delete(k); else sp.set(k, v); }
@@ -64,9 +65,7 @@ function Dashboard() {
   }, [key]);
   const d = data?.key === key ? data.d : null;
   // Tickets table link with filters (the dashboard's Pod filter carries over unless the link sets its own).
-  const t = (q: string) => `/tickets?account=${account}${podParam != null && !q.includes("fpod=") ? `&fpod=${encodeURIComponent(podParam)}` : ""}${q}`;
-  // Pod choices: every Pod with open tickets (the server sends all of them even when one Pod is selected).
-  const podChoices = (d?.pod_status?.rows ?? []).filter((r) => r.open).map((r) => ({ value: r.pod, count: r.open }));
+  const t = (q: string) => `/tickets?account=${account}${q}`; // the Tickets page applies the same header Pod scope
 
   if (loaded && !accounts.length) {
     return <div className="card p-6 text-sm text-muted">No clients on this server yet — an admin adds them in <Link href="/admin" className="text-accent-strong underline">Admin</Link>.</div>;
@@ -75,7 +74,6 @@ function Dashboard() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-end gap-3">
         <AccountPicker accounts={withAllClients(accounts)} value={account} onChange={(slug) => go({ account: slug })} />
-        <PodPicker value={podSel} choices={podChoices} onChange={(v) => go({ pod: v && v.length ? v.join("|") : null })} />
         <DateRangePicker range={range} onChange={(r) => go(r.key === "custom" ? { range: "custom", from: r.from, to: r.to } : { range: r.key, from: null, to: null })} />
         <Link href={t("")} className="ml-auto rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-accent-strong">Open tickets →</Link>
       </div>
@@ -100,7 +98,7 @@ function Dashboard() {
           {/* Clients and the opened-vs-closed chart side by side, same height. */}
           <div className="grid gap-4 lg:grid-cols-3">
             <ClientTable rows={d.by_client} rangeLabel={range.label}
-              link={(slug) => `/tickets?account=${slug}${podParam ? `&fpod=${encodeURIComponent(podParam)}` : ""}&cfrom=${range.from}&cto=${range.to}&clabel=${encodeURIComponent(range.label)}`} />
+              link={(slug) => `/tickets?account=${slug}&cfrom=${range.from}&cto=${range.to}&clabel=${encodeURIComponent(range.label)}`} />
             <Panel title="Opened vs closed" hint={`${d.step > 1 ? "Per week" : "Per day"} · ${range.label}`} className="flex flex-col lg:col-span-2">
               <FlowChart rows={d.flow.per_day} />
               {d.flow.partial && <p className="mt-2 text-xs text-warn">Very busy period — the chart shows the most recent 5,000 tickets; the totals above are exact.</p>}

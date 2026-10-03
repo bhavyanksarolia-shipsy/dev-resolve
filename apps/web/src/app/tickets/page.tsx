@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { BulkBar, InlineEdit, type SavedChange } from "@/components/TicketActions";
 import { EmptyState } from "@/components/EmptyState";
 import { TicketSheet } from "@/components/TicketSheet";
+import { inPodScope, usePodScope } from "@/components/podScope";
 import { useRouter, useSearchParams } from "next/navigation";
 import { HealthBanner } from "@/components/HealthBanner";
 import { AccountPicker, withAllClients, type PickerAccount } from "@/components/AccountPicker";
@@ -142,11 +143,12 @@ function Inbox() {
   const fetching = !result || result.key !== key || result.tick !== tick;
   // Changes made here show at once: closed tickets drop out, edited rows update (DevRev's list can lag a few seconds).
   const [local, setLocal] = useState<Record<string, SavedChange>>({});
+  const scope = usePodScope(); // header "My Pods" (tickets with no Pod always stay)
   const tickets = useMemo(() => (fresh?.tickets ?? null)?.filter((t) => !local[t.display_id]?.closed).map((t) => {
     const c = local[t.display_id];
     if (!c) return t;
     return { ...t, ...(c.stage && { stage: c.stage, stage_name: c.stage }), ...(c.pod !== undefined && { pod: c.pod }), ...(c.part && { part: c.part, default_part: false }), ...(c.owner && { owner: c.owner }) };
-  }) ?? null, [fresh, local]);
+  }).filter((t) => inPodScope(scope, t.pod)) ?? null, [fresh, local, scope]);
   const saved = (id: string) => (c: SavedChange) => { setLocal((m) => ({ ...m, [id]: { ...m[id], ...c } })); refresh(); window.dispatchEvent(new Event("tickets-refreshed")); };
   // Changes made in the ticket sheet (opened over this table) arrive as "ticket-changed".
   useEffect(() => {
