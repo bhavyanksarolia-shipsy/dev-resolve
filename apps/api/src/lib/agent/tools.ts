@@ -139,7 +139,7 @@ export function buildToolServer(opts: { investigationId: number; account: Accoun
       file: z.string().describe("playbook.md | schema.md | log-patterns.md | glossary.md | queries/<snake_name>.sql"),
       content: z.string().describe("Markdown (or SQL with a header comment) to append"),
       rationale: z.string().describe("What in this investigation proved it"),
-      scope: z.enum(["account", "shared"]).optional().describe("Default 'account'. 'shared' only for facts true for every WMS tenant"),
+      scope: z.enum(["account", "shared"]).optional().describe("Default 'account'. 'shared' only for facts true for every client"),
     },
     async ({ file, content, rationale, scope: s }) => {
       const id = await proposeKnowledge({ investigationId, accountSlug: s === "shared" ? "_shared" : account.slug, file, content, rationale });

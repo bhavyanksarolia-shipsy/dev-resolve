@@ -8,7 +8,7 @@ const DEFAULTS: Record<string, string> = { friday_review: "N/A", resolution: "Ot
 const blank = (v: unknown) => v == null || (typeof v === "string" && !v.trim());
 
 /**
- * Change Stage and/or Pod on one or many tickets in DevRev: { tickets: ["TKT-1", …], stage?: "<stage name>", pod?: "WMS" | null }.
+ * Change Stage and/or Pod on one or many tickets in DevRev: { tickets: ["TKT-1", …], stage?: "<stage name>", pod?: "<pod name>" | null }.
  * The stage is given by name and resolved per ticket, because which moves are allowed depends on each ticket's current stage.
  */
 export async function POST(req: Request) {
@@ -83,7 +83,7 @@ export async function POST(req: Request) {
           change.ownerId = b.owner;
         }
         if (b.part) {
-          if (!(await partChoices()).some((p) => p.id === b.part)) throw new Error("that part isn't under the WMS or TMS product");
+          if (!(await partChoices()).some((p) => p.id === b.part)) throw new Error("that part isn't in DevRev's product list");
           change.partId = b.part;
         }
         if (b.pod !== undefined) {

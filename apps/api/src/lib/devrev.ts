@@ -49,7 +49,7 @@ export interface TicketSummary {
 }
 
 /*
- * Ticket scope mirrors DevRev's WMS "Support" view (config/projects.json → devrev_view):
+ * Ticket scope mirrors DevRev's "Support" view (config/projects.json → devrev_view):
  * subtype Support + support-workflow stages only (no resolved/closed, no backlog / project-style stages).
  * Resolved tickets and Project tickets will get their own endpoints later.
  */
@@ -371,17 +371,14 @@ export const openTickets = (accountIds: string[]) => listAllWorks({ ...viewBase(
 
 export interface PartChoice { id: string; name: string; type: string; product: string }
 let partChoiceCache: { at: number; parts: PartChoice[] } | null = null;
-/**
- * Parts a ticket can be moved to: the WMS and TMS products and everything under them (the default TMS part's
- * product). Cached 1 h. Used by the Part pickers; the WMS-view counts still use wmsPartList.
- */
+/** Parts a ticket can be moved to: every DevRev product and everything under it. Cached 1 h (Part pickers). */
 export async function partChoices(): Promise<PartChoice[]> {
   if (partChoiceCache && Date.now() - partChoiceCache.at < 60 * 60 * 1000) return partChoiceCache.parts;
-  const v = getDevrevView();
-  const roots = [...new Set([v.wms_product_id, v.default_part_id].filter(Boolean))];
+  const products = await call<{ parts: { id: string; name: string; type: string }[] }>("/parts.list", { type: ["product"], limit: 100 }).then((r) => r.parts).catch(() => []);
+  const roots = products.map((p) => p.id);
   const out: PartChoice[] = [];
   for (const root of roots) {
-    const top = await call<{ part: { id: string; name: string; type: string } }>(`/parts.get?id=${encodeURIComponent(root)}`).then((r) => r.part).catch(() => null);
+    const top = products.find((p) => p.id === root) ?? null;
     if (!top) continue;
     out.push({ id: top.id, name: top.name, type: top.type, product: top.name });
     let cursor: string | undefined;

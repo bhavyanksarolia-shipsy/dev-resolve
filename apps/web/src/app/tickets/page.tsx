@@ -154,15 +154,7 @@ function Inbox() {
     window.addEventListener("ticket-changed", on);
     return () => window.removeEventListener("ticket-changed", on);
   }, []);
-  const rawCounts = fresh?.counts ?? (result?.key === account ? result.counts : undefined);
-  // DevRev's counts lag a few seconds behind a resolve; take out tickets closed here so the summary matches the table.
-  const closedHere = (fresh?.tickets ?? []).filter((t) => local[t.display_id]?.closed);
-  const counts = rawCounts && {
-    ...rawCounts,
-    account: { ...rawCounts.account,
-      total: Math.max(0, rawCounts.account.total - closedHere.length),
-      default_part: Math.max(0, rawCounts.account.default_part - closedHere.filter((t) => t.default_part).length) },
-  };
+
   const error = fresh?.error ?? null;
   const inactive = !!fresh?.inactive;
   const anyRunning = !inactive && !!tickets?.some((t) => t.investigation?.status === "running");
@@ -279,14 +271,14 @@ function Inbox() {
         </form>
       </div>
 
-      {/* The numbers live on the Dashboard; here just one line for context. */}
+      {/* Only the active filter chips (from the dashboard) and the Dashboard link — counts live on the Dashboard. */}
       <div className="-mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
-        {counts ? <>
-          <span><b className="text-fg tabular-nums">{counts.account.total}</b> open</span>
-          {counts.account.default_part > 0 && <><span aria-hidden>·</span>
-            <button onClick={() => setView({ part: onlyDefaultPart ? null : "default" })} title="Still on the default TMS part — not in DevRev's WMS view until triaged"
-              className={`font-medium hover:underline ${onlyDefaultPart ? "text-accent-strong" : "text-warn"}`}>{counts.account.default_part} on TMS (default){onlyDefaultPart ? " ✓" : ""}</button></>}
-        </> : !error && !inactive ? <span className="skeleton inline-block h-4 w-64" /> : null}
+        {onlyDefaultPart && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent-strong">
+            On DevRev&apos;s default part
+            <button onClick={() => setView({ part: null })} aria-label="Remove the default-part filter" className="hover:text-fg">✕</button>
+          </span>
+        )}
         {created && (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent-strong">
             Created {created.label === "Today" || created.label === "Yesterday" ? created.label.toLowerCase() : `in ${created.label.toLowerCase()}`}

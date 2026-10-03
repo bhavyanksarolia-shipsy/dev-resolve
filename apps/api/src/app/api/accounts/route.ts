@@ -1,7 +1,7 @@
 import { getAccounts } from "@/lib/config";
 import { countsByAccount, DevrevError } from "@/lib/devrev";
 
-/** Accounts from config + live counts (DevRev WMS Support view rules — see config devrev_view). */
+/** Accounts from config + live counts (DevRev Support view rules — see config devrev_view). */
 export async function GET(req: Request) {
   const force = new URL(req.url).searchParams.get("refresh") === "1";
   const accounts = getAccounts();

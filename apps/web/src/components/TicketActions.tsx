@@ -235,7 +235,7 @@ export function InlineEdit({ ticket, kind, current, children, onSaved }: {
     : opts.parts.filter((p) => p.id !== opts.part?.id).map((p) => ({ key: p.id, label: p.name, hint: [p.product, p.type].filter(Boolean).join(" · "), on: () => pick({ part: p.id }, { part: p.name }) }));
   const needle = q.trim().toLowerCase();
   const matched = needle ? items.filter((i) => i.key !== "__me" && (i.label.toLowerCase().includes(needle) || i.hint?.toLowerCase().includes(needle))) : items;
-  // Long lists (≈450 people, ≈600 WMS + TMS parts): show the first matches; typing narrows it (also by product, e.g. "tms").
+  // Long lists (≈450 people, hundreds of parts): show the first matches; typing narrows it (also by product name).
   const shown = kind === "owner" || kind === "part" ? matched.slice(0, 80) : matched;
 
   return (

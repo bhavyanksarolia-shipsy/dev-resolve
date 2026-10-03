@@ -49,7 +49,7 @@ export default function KnowledgePage() {
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-head text-left text-xs font-semibold uppercase tracking-wide text-head-fg">
-              <tr><th className="px-4 py-3">Account</th><th className="px-4 py-3">Connections</th><th className="px-4 py-3">Last WMS ticket</th><th className="px-4 py-3 text-right">Learnings</th><th className="px-4 py-3 text-right">Saved queries</th><th className="px-4 py-3 text-right">Resolved cases</th></tr>
+              <tr><th className="px-4 py-3">Account</th><th className="px-4 py-3">Connections</th><th className="px-4 py-3">Last ticket</th><th className="px-4 py-3 text-right">Learnings</th><th className="px-4 py-3 text-right">Saved queries</th><th className="px-4 py-3 text-right">Resolved cases</th></tr>
             </thead>
             <tbody>
               {rows.map((r) => (

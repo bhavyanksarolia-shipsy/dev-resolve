@@ -83,7 +83,7 @@ export function resultSummary(tool: string | null, output: string | null): { sum
 /** Knowledge-base file → plain name. */
 export function fileLabel(file: string) {
   if (file.startsWith("queries/")) return "Saved query";
-  return ({ "playbook.md": "Playbook", "glossary.md": "Glossary", "log-patterns.md": "Log patterns", "schema.md": "Schema notes", "wms-flows.md": "WMS-wide notes" } as Record<string, string>)[file] ?? "Knowledge base";
+  return ({ "playbook.md": "Playbook", "glossary.md": "Glossary", "log-patterns.md": "Log patterns", "schema.md": "Schema notes", "wms-flows.md": "Shared notes" } as Record<string, string>)[file] ?? "Knowledge base";
 }
 
 export function scopeLabel(slug: string) {
