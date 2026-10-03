@@ -1,4 +1,4 @@
-import { devUsers, getTicket, podValues, resolveFields, stageMoves, updateTicket, wmsPartList } from "@/lib/devrev";
+import { devUsers, getTicket, partChoices, podValues, resolveFields, stageMoves, updateTicket } from "@/lib/devrev";
 import { currentUser } from "@/lib/auth";
 import { q } from "@/lib/db";
 import { sessionUser } from "@/lib/auth";
@@ -80,7 +80,7 @@ export async function POST(req: Request) {
           change.ownerId = b.owner;
         }
         if (b.part) {
-          if (!(await wmsPartList()).some((p) => p.id === b.part)) throw new Error("that part isn't under the WMS product");
+          if (!(await partChoices()).some((p) => p.id === b.part)) throw new Error("that part isn't under the WMS or TMS product");
           change.partId = b.part;
         }
         if (b.pod !== undefined) {

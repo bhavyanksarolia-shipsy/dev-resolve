@@ -368,3 +368,31 @@ export const ticketsClosedSince = (accountIds: string[], after: string, before?:
 
 /** Every open ticket in the support view for these accounts (what the Tickets table shows). */
 export const openTickets = (accountIds: string[]) => listAllWorks({ ...viewBase(accountIds), sort_by: ["created_date:desc"] });
+
+export interface PartChoice { id: string; name: string; type: string; product: string }
+let partChoiceCache: { at: number; parts: PartChoice[] } | null = null;
+/**
+ * Parts a ticket can be moved to: the WMS and TMS products and everything under them (the default TMS part's
+ * product). Cached 1 h. Used by the Part pickers; the WMS-view counts still use wmsPartList.
+ */
+export async function partChoices(): Promise<PartChoice[]> {
+  if (partChoiceCache && Date.now() - partChoiceCache.at < 60 * 60 * 1000) return partChoiceCache.parts;
+  const v = getDevrevView();
+  const roots = [...new Set([v.wms_product_id, v.default_part_id].filter(Boolean))];
+  const out: PartChoice[] = [];
+  for (const root of roots) {
+    const top = await call<{ part: { id: string; name: string; type: string } }>(`/parts.get?id=${encodeURIComponent(root)}`).then((r) => r.part).catch(() => null);
+    if (!top) continue;
+    out.push({ id: top.id, name: top.name, type: top.type, product: top.name });
+    let cursor: string | undefined;
+    for (let i = 0; i < 30; i++) {
+      const r = await call<{ parts: { id: string; name: string; type: string }[]; next_cursor?: string }>("/parts.list",
+        { parent_part: { parts: [root] }, limit: 100, ...(cursor && { cursor }) });
+      out.push(...r.parts.map((p) => ({ id: p.id, name: p.name, type: p.type, product: top.name })));
+      cursor = r.next_cursor;
+      if (!cursor) break;
+    }
+  }
+  partChoiceCache = { at: Date.now(), parts: out };
+  return out;
+}

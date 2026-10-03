@@ -5,7 +5,7 @@ import { confirmDialog, notify } from "./Dialog";
 export interface StageOption { id: string; name: string; final: boolean }
 interface Options {
   stage: { id: string | null; name: string | null }; pod: string | null; stages: StageOption[]; pods: string[];
-  part: { id: string; name: string } | null; parts: { id: string; name: string }[];
+  part: { id: string; name: string } | null; parts: { id: string; name: string; type?: string; product?: string }[];
 }
 interface UpdateResult { ok: boolean; updated: number; failed: { ticket: string; error?: string }[]; warnings?: { ticket: string; warning: string }[]; error?: string }
 
@@ -97,7 +97,14 @@ export function TicketControls({ ticket, onChanged }: { ticket: string; onChange
     setBusy(true);
     const d = await updateTickets([ticket], change);
     setBusy(false);
-    if (d?.updated) { setReload((n) => n + 1); onChanged(); }
+    if (d?.updated) {
+      setReload((n) => n + 1); onChanged();
+      // Tell the Tickets table (still open behind the ticket sheet) so it updates / drops the row.
+      const final = !!change.stage && !!opts?.stages.find((x) => x.name === change.stage)?.final;
+      window.dispatchEvent(new CustomEvent<{ id: string; change: SavedChange }>("ticket-changed", {
+        detail: { id: ticket, change: { ...(change.stage && { stage: change.stage, closed: final }), ...(change.pod !== undefined && { pod: change.pod }) } },
+      }));
+    }
   }
   if (!opts) return <div className="flex gap-2"><div className="skeleton h-7 w-28 rounded-full" /><div className="skeleton h-7 w-28 rounded-full" /></div>;
   const canResolve = opts.stages.some((s) => s.name === "resolved");
@@ -225,10 +232,11 @@ export function InlineEdit({ ticket, kind, current, children, onSaved }: {
     kind === "stage" ? opts.stages.map((s) => ({ key: s.name, label: stageLabel(s.name), hint: s.final ? "Closes the ticket" : undefined, on: () => pick({ stage: s.name }, { stage: s.name, closed: s.final }) }))
     : kind === "pod" ? [...opts.pods.filter((p) => p !== opts.pod).map((p) => ({ key: p, label: p, on: () => pick({ pod: p }, { pod: p }) })),
         ...(opts.pod ? [{ key: CLEAR_POD, label: "Clear Pod", on: () => pick({ pod: null }, { pod: null }) }] : [])]
-    : opts.parts.filter((p) => p.id !== opts.part?.id).map((p) => ({ key: p.id, label: p.name, on: () => pick({ part: p.id }, { part: p.name }) }));
+    : opts.parts.filter((p) => p.id !== opts.part?.id).map((p) => ({ key: p.id, label: p.name, hint: [p.product, p.type].filter(Boolean).join(" · "), on: () => pick({ part: p.id }, { part: p.name }) }));
   const needle = q.trim().toLowerCase();
   const matched = needle ? items.filter((i) => i.key !== "__me" && (i.label.toLowerCase().includes(needle) || i.hint?.toLowerCase().includes(needle))) : items;
-  const shown = kind === "owner" ? matched.slice(0, 60) : matched; // ~450 people: show the first matches, search narrows it
+  // Long lists (≈450 people, ≈600 WMS + TMS parts): show the first matches; typing narrows it (also by product, e.g. "tms").
+  const shown = kind === "owner" || kind === "part" ? matched.slice(0, 80) : matched;
 
   return (
     <>

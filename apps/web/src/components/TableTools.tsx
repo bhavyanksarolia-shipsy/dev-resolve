@@ -29,7 +29,8 @@ export function ColumnMenu({ label, values, selected, text, sort, onSort, onSele
     if (!open) return;
     const away = (e: MouseEvent) => { if (!panel.current?.contains(e.target as Node) && !btn.current?.contains(e.target as Node)) setOpen(false); };
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
-    const move = () => setOpen(false);
+    // Page scroll closes the menu (it would drift off its column); scrolling the menu's own list doesn't.
+    const move = (e: Event) => { if (!(e.target instanceof Node && panel.current?.contains(e.target))) setOpen(false); };
     document.addEventListener("mousedown", away); document.addEventListener("keydown", key); window.addEventListener("scroll", move, true);
     return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", key); window.removeEventListener("scroll", move, true); };
   }, [open]);

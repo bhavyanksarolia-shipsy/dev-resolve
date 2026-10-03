@@ -8,6 +8,7 @@ import { confirmDialog, notify } from "@/components/Dialog";
 import { InvestigationProgress } from "./InvestigationProgress";
 import { ChatPanel } from "./ChatPanel";
 import { TicketControls } from "./TicketActions";
+import { EmptyState } from "./EmptyState";
 
 interface Step { seq: number; kind: string; tool: string | null; input: Record<string, unknown> | null; output: string | null; created_at: string }
 interface Proposal { id: number; account_slug: string; file: string; content: string; rationale: string; source: string; status: string }
@@ -42,9 +43,10 @@ interface Attachment {
 const kb = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
 
-export function Workspace({ ticketId }: { ticketId: string }) {
+export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: () => void }) {
   const [data, setData] = useState<TicketData | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  // notFound: DevRev says the id doesn't exist (typo / deleted) — shown as a friendly page, not a raw error.
+  const [err, setErr] = useState<{ notFound: boolean; message: string } | null>(null);
   const [ticketReload, setTicketReload] = useState(0);
   const [invId, setInvId] = useState<number | null>(null);
   const [inv, setInv] = useState<Investigation | null>(null);
@@ -65,7 +67,10 @@ export function Workspace({ ticketId }: { ticketId: string }) {
   useEffect(() => {
     fetch(`/api/tickets/${ticketId}`).then(async (r) => {
       const d = await r.json();
-      if (!r.ok) return setErr(`${d.tag ?? "Error"} (${d.connection ?? "?"}): ${d.error}`);
+      if (!r.ok) {
+        const msg = String(d.error ?? `HTTP ${r.status}`);
+        return setErr({ notFound: r.status === 404 || /HTTP 40[04]|invalid_id|not_found/i.test(msg), message: `${d.tag ?? "Error"} (${d.connection ?? "?"}): ${msg}` });
+      }
       setData(d);
       if (d.investigations[0]) setInvId((cur) => cur ?? d.investigations[0].id);
     });
@@ -84,6 +89,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
   const router = useRouter();
   // Back (and Esc): to where you came from (inbox / dashboard, with its filters); the inbox if the ticket was opened directly.
   const close = () => {
+    if (onClose) return onClose(); // shown as a sheet over the table
     const fromApp = typeof document !== "undefined" && document.referrer.startsWith(window.location.origin);
     if (fromApp && window.history.length > 1) router.back(); else router.push("/tickets");
   };
@@ -154,7 +160,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
     window.dispatchEvent(new Event("investigations-changed")); // header count
     const d = await r.json();
     setBusy(false);
-    if (!r.ok) return setErr(d.error);
+    if (!r.ok) return notify({ title: "Investigation not started", message: d.error, tone: "error" });
     setRca("");
     setInvId(d.id);
   }
@@ -186,7 +192,25 @@ export function Workspace({ ticketId }: { ticketId: string }) {
     poll();
   }
 
-  if (err) return <div className="rounded-md border border-bad/40 bg-bad/5 px-3 py-2 text-sm text-bad">{err}</div>;
+  if (err) {
+    const back = (
+      <button type="button" onClick={close} className="inline-flex items-center gap-1.5 rounded-lg bg-bad px-4 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M15 18 9 12l6-6" /></svg>
+        Back
+      </button>
+    );
+    return err.notFound
+      ? <EmptyState title={`We couldn't find ${ticketId}`} text="DevRev has no ticket with this number. Check it for a typo — e.g. TKT-114620." action={back} />
+      : (
+        <EmptyState title={`${ticketId} didn't load`} text="DevRev didn't answer as expected — usually a hiccup; try again in a moment."
+          action={<div className="space-y-3">
+            <div className="flex justify-center gap-2">{back}
+              <button type="button" onClick={() => { setErr(null); setTicketReload((n) => n + 1); }} className="rounded-lg border border-line bg-panel px-4 py-2 text-sm font-medium hover:border-accent">Try again</button>
+            </div>
+            <details className="mx-auto max-w-md text-left text-xs text-muted"><summary className="cursor-pointer text-center">Details</summary><p className="mt-1 break-words font-mono">{err.message}</p></details>
+          </div>} />
+      );
+  }
   if (!data) return <WorkspaceSkeleton />;
   const t = data.ticket;
   const connErrors = steps.filter((s) => s.kind === "connection_error");
@@ -196,7 +220,7 @@ export function Workspace({ ticketId }: { ticketId: string }) {
 
   return (
     // Desktop: both columns fit the window and scroll on their own, so the page itself never scrolls.
-    <div className="relative grid gap-6 lg:h-[calc(100dvh-7.5rem)] lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+    <div className={`relative grid gap-6 ${onClose ? "lg:h-[calc(100dvh-6.5rem)]" : "lg:h-[calc(100dvh-7.5rem)]"} lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]`}>
       {/* Left: ticket */}
       <section className="min-w-0 lg:overflow-y-auto lg:pr-2">
         <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">

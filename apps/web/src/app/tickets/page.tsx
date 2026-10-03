@@ -2,6 +2,8 @@
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { BulkBar, InlineEdit, type SavedChange } from "@/components/TicketActions";
+import { EmptyState } from "@/components/EmptyState";
+import { TicketSheet } from "@/components/TicketSheet";
 import { useRouter, useSearchParams } from "next/navigation";
 import { HealthBanner } from "@/components/HealthBanner";
 import { AccountPicker, withAllClients, type PickerAccount } from "@/components/AccountPicker";
@@ -79,6 +81,20 @@ function Inbox() {
   const refreshing = useRef(false);
   const [starting, setStarting] = useState<Set<string>>(new Set());
   const [picked, setPicked] = useState<Set<string>>(new Set()); // tickets ticked for a bulk resolve
+  // Opening a ticket from the table: a sheet slides up over it (the table stays as it is). The address bar shows
+  // /tickets/TKT-… (keeping this page's filters in the query) and the browser's Back closes the sheet.
+  const [sheet, setSheet] = useState<string | null>(null);
+  const openSheet = (e: React.MouseEvent, id: string) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return; // new tab / window: normal link
+    e.preventDefault();
+    window.history.pushState({ sheet: id }, "", `/tickets/${id}${window.location.search}`);
+    setSheet(id);
+  };
+  useEffect(() => {
+    const onPop = () => setSheet(/^\/tickets\/[^/]+$/.test(window.location.pathname) ? decodeURIComponent(window.location.pathname.split("/").pop()!) : null);
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   // Hovering a row warms the server's cache for that ticket, so opening it is quick.
   const warmed = useRef(new Set<string>());
   const warm = (id: string) => {
@@ -127,6 +143,12 @@ function Inbox() {
     return { ...t, ...(c.stage && { stage: c.stage, stage_name: c.stage }), ...(c.pod !== undefined && { pod: c.pod }), ...(c.part && { part: c.part, default_part: false }), ...(c.owner && { owner: c.owner }) };
   }) ?? null, [fresh, local]);
   const saved = (id: string) => (c: SavedChange) => { setLocal((m) => ({ ...m, [id]: { ...m[id], ...c } })); refresh(); };
+  // Changes made in the ticket sheet (opened over this table) arrive as "ticket-changed".
+  useEffect(() => {
+    const on = (e: Event) => { const { id, change } = (e as CustomEvent<{ id: string; change: SavedChange }>).detail; setLocal((m) => ({ ...m, [id]: { ...m[id], ...change } })); };
+    window.addEventListener("ticket-changed", on);
+    return () => window.removeEventListener("ticket-changed", on);
+  }, []);
   const counts = fresh?.counts ?? (result?.key === account ? result.counts : undefined);
   const error = fresh?.error ?? null;
   const inactive = !!fresh?.inactive;
@@ -336,7 +358,7 @@ function Inbox() {
                           onChange={(e) => setPicked((p) => { const n = new Set(p); if (e.target.checked) n.add(t.display_id); else n.delete(t.display_id); return n; })} />
                       </td>
                       <td className="whitespace-nowrap px-5 py-3 font-mono">
-                        <Link className="font-medium text-accent-strong hover:underline" href={`/tickets/${t.display_id}`}>{t.display_id}</Link>
+                        <Link className="font-medium text-accent-strong hover:underline" href={`/tickets/${t.display_id}`} onClick={(e) => openSheet(e, t.display_id)}>{t.display_id}</Link>
                         <a href={t.devrev_url} target="_blank" rel="noreferrer" title="Open in DevRev" aria-label={`Open ${t.display_id} in DevRev`} className="ml-1.5 text-xs text-muted hover:text-accent">↗</a>
                         {marked.has(t.display_id) && <span className="ml-2 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-semibold uppercase text-white">new</span>}
                       </td>
@@ -370,7 +392,7 @@ function Inbox() {
                       <td className="whitespace-nowrap px-5 py-3">
                         <div className="flex items-center gap-2">
                           {inv && (
-                            <Link href={`/tickets/${t.display_id}`} className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 hover:underline ${STATUS_STYLE[inv.status] ?? "text-muted ring-line"}`}>
+                            <Link href={`/tickets/${t.display_id}`} onClick={(e) => openSheet(e, t.display_id)} className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 hover:underline ${STATUS_STYLE[inv.status] ?? "text-muted ring-line"}`}>
                               {STATUS_LABEL[inv.status] ?? inv.status}{inv.confidence ? ` · ${inv.confidence}` : ""}
                             </Link>
                           )}
@@ -388,10 +410,12 @@ function Inbox() {
                     </tr>
                   );
                 })}
-                {tickets && !tickets.length && <tr><td colSpan={9} className="px-5 py-10 text-center text-muted">No open Support tickets for this account.</td></tr>}
+                {tickets && !tickets.length && <tr><td colSpan={9}><EmptyState title="All clear" text="No open Support tickets for this account." /></td></tr>}
                 {tickets && tickets.length > 0 && !view.length && (
-                  <tr><td colSpan={9} className="px-5 py-10 text-center text-muted">No tickets match these filters.{" "}
-                    <button className="text-accent-strong underline" onClick={() => setView(clearAll)}>Clear filters</button></td></tr>
+                  <tr><td colSpan={9}>
+                    <EmptyState title="No tickets match these filters" text="We looked through every open ticket — none fit what's ticked right now."
+                      action={<button className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-accent-strong" onClick={() => setView(clearAll)}>Clear filters</button>} />
+                  </td></tr>
                 )}
               </tbody>
             </table>
@@ -405,6 +429,7 @@ function Inbox() {
           <button className="font-medium text-accent-strong underline" onClick={() => setPicked(new Set(view.map((t) => t.display_id)))}>select all {view.length} matching</button>
         </p>
       )}
+      {sheet && <TicketSheet key={sheet} ticketId={sheet} onClosed={() => window.history.back()} />}
       {picked.size > 0 && (
         <BulkBar selected={[...picked]} onClear={() => setPicked(new Set())}
           onDone={(done) => { setLocal((m) => ({ ...m, ...Object.fromEntries(done.map((id) => [id, { closed: true }])) })); setPicked(new Set()); refresh(); }} />
