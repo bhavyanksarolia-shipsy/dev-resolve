@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { BulkBar, InlineEdit } from "@/components/TicketActions";
+import { PodPicker } from "@/components/PodPicker";
 import { useRouter, useSearchParams } from "next/navigation";
 import { HealthBanner } from "@/components/HealthBanner";
 import { AccountPicker, withAllClients, type PickerAccount } from "@/components/AccountPicker";
@@ -221,6 +222,10 @@ function Inbox() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-end gap-3">
         <AccountPicker accounts={withAllClients(accounts)} value={account} onChange={setAccount} />
+        {/* Same filter as the Pod column menu (fpod in the URL). Pods follow the ticket, not the client account. */}
+        <PodPicker value={filters.pod ? filters.pod.map((v) => v || "-") : null}
+          choices={distinct("pod").filter((c) => c.count || filters.pod?.includes(c.value)).map((c) => ({ value: c.value, count: c.count }))}
+          onChange={(v) => setView({ fpod: v && v.length ? v.join("|") : null })} />
         <form className="ml-auto flex gap-2" onSubmit={(e) => { e.preventDefault(); if (manual.trim()) router.push(`/tickets/${manual.trim().toUpperCase()}`); }}>
           <input value={manual} onChange={(e) => setManual(e.target.value)} placeholder="Open TKT-…"
             className="w-44 rounded-lg border border-line bg-panel px-3 py-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft" />
