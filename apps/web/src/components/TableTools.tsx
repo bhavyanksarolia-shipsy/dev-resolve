@@ -91,45 +91,31 @@ export function ColumnMenu({ label, values, selected, text, sort, onSort, onSele
   );
 }
 
-/** Footer pager: "51–75 of 129", rows-per-page, and a compact page strip with arrow buttons. */
+/** Footer pager, right-aligned and small: "Rows 25 ▾ · 51–75 of 129 · ‹ ›". */
 export function Pager({ where, from, to, total, all, page, pages, onPage, disabled, size, onSize }: {
   where: "top" | "bottom"; from: number; to: number; total: number; all: number; page: number; pages: number; onPage: (n: number) => void; disabled?: boolean;
   size?: number; onSize?: (n: number) => void;
 }) {
-  const nums: (number | "…")[] = [];
-  for (let i = 1; i <= pages; i++) {
-    if (i === 1 || i === pages || Math.abs(i - page) <= 1) nums.push(i);
-    else if (nums[nums.length - 1] !== "…") nums.push("…");
-  }
   const go = (n: number) => { onPage(n); if (where === "bottom") { window.scrollTo({ top: 0, behavior: "smooth" }); document.querySelector("[data-scroll-table]")?.scrollTo({ top: 0, behavior: "smooth" }); } };
-  const cell = "grid h-8 min-w-8 place-items-center rounded-md px-2 text-sm tabular-nums transition focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
   const arrow = (dir: -1 | 1) => (
-    <button type="button" aria-label={dir < 0 ? "Previous page" : "Next page"} disabled={disabled || (dir < 0 ? page <= 1 : page >= pages)} onClick={() => go(page + dir)}
-      className={`${cell} text-muted hover:bg-accent-soft hover:text-accent-strong disabled:pointer-events-none disabled:opacity-30`}>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={dir < 0 ? "m15 18-6-6 6-6" : "m9 18 6-6-6-6"} /></svg>
+    <button type="button" aria-label={dir < 0 ? "Previous page" : "Next page"} title={dir < 0 ? "Previous page" : "Next page"}
+      disabled={disabled || (dir < 0 ? page <= 1 : page >= pages)} onClick={() => go(page + dir)}
+      className="grid h-7 w-7 place-items-center rounded-md text-muted transition hover:bg-accent-soft hover:text-accent-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:pointer-events-none disabled:opacity-30">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={dir < 0 ? "m15 18-6-6 6-6" : "m9 18 6-6-6-6"} /></svg>
     </button>
   );
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-      <span className="text-muted">
-        {total ? <><b className="font-semibold text-fg tabular-nums">{from}–{to}</b> of <b className="font-semibold text-fg tabular-nums">{total}</b></> : "No tickets"}
-        {total !== all && <span className="text-xs"> · filtered from {all}</span>}
-      </span>
+    <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2 text-xs text-muted">
       {onSize && size && total > 10 && (
-        <label className="flex items-center gap-1.5 text-xs text-muted">Rows
-          <span className="w-20"><Select up value={String(size)} onChange={(v) => onSize(Number(v))} options={[25, 50, 100].map((n) => ({ value: String(n), label: String(n) }))} /></span>
+        <label className="flex items-center gap-1.5">Rows
+          <span className="w-[4.5rem] [&_button]:py-1 [&_button]:text-xs"><Select up value={String(size)} onChange={(v) => onSize(Number(v))} options={[25, 50, 100].map((n) => ({ value: String(n), label: String(n) }))} /></span>
         </label>
       )}
-      {pages > 1 && (
-        <nav aria-label="Pages" className="ml-auto flex items-center gap-0.5 rounded-lg border border-line bg-panel p-0.5 shadow-sm">
-          {arrow(-1)}
-          {nums.map((n, i) => n === "…"
-            ? <span key={`e${i}`} className="grid h-8 w-6 place-items-center text-muted">…</span>
-            : <button key={n} type="button" disabled={disabled} onClick={() => go(n)} aria-current={n === page ? "page" : undefined}
-                className={`${cell} ${n === page ? "bg-accent font-semibold text-white shadow-sm" : "text-fg hover:bg-accent-soft hover:text-accent-strong"}`}>{n}</button>)}
-          {arrow(1)}
-        </nav>
-      )}
+      <span>
+        {total ? <><b className="font-semibold text-fg tabular-nums">{from}–{to}</b> of <b className="font-semibold text-fg tabular-nums">{total}</b></> : "No tickets"}
+        {total !== all && <> · filtered from {all}</>}
+      </span>
+      {pages > 1 && <nav aria-label="Pages" className="flex items-center">{arrow(-1)}{arrow(1)}</nav>}
     </div>
   );
 }

@@ -426,7 +426,7 @@ function Inbox() {
             </table>
           </div>
         )}
-        {!error && tickets && tickets.length > 0 && <div className="border-t border-line px-5 py-3">{pager("bottom")}</div>}
+        {!error && tickets && tickets.length > 0 && <div className="border-t border-line px-5 py-2">{pager("bottom")}</div>}
       </section>
       {picked.size > 0 && rows.length > 0 && rows.every((t) => picked.has(t.display_id)) && view.length > picked.size && (
         <p className="mt-2 text-center text-sm text-muted">
