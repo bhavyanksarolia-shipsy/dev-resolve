@@ -157,3 +157,6 @@ button:disabled { cursor: not-allowed; }
 .sheet-fade-in { animation: sheet-fade-in .3s ease-out both; }
 .sheet-fade-out { animation: sheet-fade-out .26s ease-in both; }
 @media (prefers-reduced-motion: reduce) { .sheet-up, .sheet-down, .sheet-fade-in, .sheet-fade-out { animation: none; } }
+/* The page's own scrollbar sits outside the layout: paint its strip in the page colour so it doesn't read as a white gap. */
+html { background: var(--bg); }
+html::-webkit-scrollbar, html::-webkit-scrollbar-track, html::-webkit-scrollbar-corner { background-color: var(--bg); }
