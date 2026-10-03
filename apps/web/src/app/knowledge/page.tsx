@@ -1,4 +1,5 @@
 "use client";
+import { EmptyState } from "@/components/EmptyState";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { fileLabel, hidePaths, scopeLabel } from "@/components/labels";
@@ -16,11 +17,12 @@ export default function KnowledgePage() {
   const load = useCallback(() => {
     fetch("/api/knowledge", { cache: "no-store" }).then(async (r) => {
       const d = await r.json();
-      if (r.ok) setData(d); else setError(d.error || `HTTP ${r.status}`);
+      if (r.ok) setData(d); else setError(r.status === 403 ? "admins" : d.error || `HTTP ${r.status}`);
     }).catch((e) => setError(String(e)));
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  if (error === "admins") return <EmptyState title="Admins only" text="The knowledge base is managed by Dev Resolve admins." />;
   if (error) return <p className="text-sm text-bad">{error}</p>;
   if (!data) return <div className="space-y-3"><div className="skeleton h-8 w-64" /><div className="skeleton h-64 w-full rounded-xl" /></div>;
   const { pending } = data;

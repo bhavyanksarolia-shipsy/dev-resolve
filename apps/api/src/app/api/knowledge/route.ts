@@ -4,9 +4,13 @@ import { ROOT, getAccounts } from "@/lib/config";
 import { q } from "@/lib/db";
 import { apiError } from "@/lib/apiError";
 import { sessionUser } from "@/lib/auth";
+import { requireAdmin } from "@/lib/adminGuard";
 
 /** Knowledge page data: pending proposals + per-account learnings / saved queries / resolved cases. */
+/** Admins only (members don't see knowledge or proposals). */
 export async function GET(req: Request) {
+  const g = await requireAdmin(req);
+  if (g.error) return g.error;
   try {
     const [pending, stats] = await Promise.all([
       q<{ id: number; account_slug: string; file: string; rationale: string; ticket_display: string; source: string }>(

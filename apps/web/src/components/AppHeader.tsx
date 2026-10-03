@@ -50,7 +50,7 @@ export function AppHeader() {
           <nav className="order-last -mx-1 flex w-full gap-1 overflow-x-auto text-sm md:order-none md:mx-0 md:w-auto [&>a]:shrink-0">
             <Link href="/" className={`${link} ${pathname === "/" ? "bg-accent-soft text-accent-strong" : ""}`}>Dashboard</Link>
             <Link href="/tickets" className={`${link} ${pathname.startsWith("/tickets") ? "bg-accent-soft text-accent-strong" : ""}`}>Tickets</Link>
-            <Link href="/knowledge" className={`${link} ${pathname.startsWith("/knowledge") ? "bg-accent-soft text-accent-strong" : ""}`}>Knowledge</Link>
+            {me.isAdmin && <Link href="/knowledge" className={`${link} ${pathname.startsWith("/knowledge") ? "bg-accent-soft text-accent-strong" : ""}`}>Knowledge</Link>}
             <Link href="/connector" className={`${link} ${pathname === "/connector" ? "bg-accent-soft text-accent-strong" : ""}`}>Connector</Link>
             {me.isAdmin && <Link href="/admin" className={`${link} ${pathname.startsWith("/admin") ? "bg-accent-soft text-accent-strong" : ""}`}>Admin</Link>}
           </nav>
