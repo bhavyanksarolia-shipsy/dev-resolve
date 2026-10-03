@@ -207,7 +207,7 @@ function Inbox() {
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tickets, sort, params]);
-  const PAGE = 25;
+  const PAGE = [25, 50, 100].includes(Number(params.get("size"))) ? Number(params.get("size")) : 25; // rows per page (URL)
   const pages = Math.max(1, Math.ceil(view.length / PAGE));
   const pageNow = Math.min(page, pages);
   const rows = view.slice((pageNow - 1) * PAGE, pageNow * PAGE);
@@ -237,7 +237,7 @@ function Inbox() {
   );
   const pager = (where: "top" | "bottom") => (
     <Pager where={where} from={view.length ? (pageNow - 1) * PAGE + 1 : 0} to={Math.min(pageNow * PAGE, view.length)} total={view.length}
-      all={tickets?.length ?? 0} page={pageNow} pages={pages} onPage={goto} disabled={fetching && !tickets} />
+      all={tickets?.length ?? 0} page={pageNow} pages={pages} onPage={goto} size={PAGE} onSize={(n) => setView({ size: n === 25 ? null : String(n) })} disabled={fetching && !tickets} />
   );
 
   async function investigate(t: Ticket) {

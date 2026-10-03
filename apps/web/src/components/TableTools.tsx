@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Select } from "./admin/ui";
 
 /**
  * Column header menu: sort A→Z / Z→A, filter by typing, and pick values (with counts). Rendered as a fixed-position
@@ -90,9 +91,10 @@ export function ColumnMenu({ label, values, selected, text, sort, onSort, onSele
   );
 }
 
-/** "Showing 26–50 of 52" + page buttons — used above and below the table. */
-export function Pager({ where, from, to, total, all, page, pages, onPage, disabled }: {
+/** Footer pager: "51–75 of 129", rows-per-page, and a compact page strip with arrow buttons. */
+export function Pager({ where, from, to, total, all, page, pages, onPage, disabled, size, onSize }: {
   where: "top" | "bottom"; from: number; to: number; total: number; all: number; page: number; pages: number; onPage: (n: number) => void; disabled?: boolean;
+  size?: number; onSize?: (n: number) => void;
 }) {
   const nums: (number | "…")[] = [];
   for (let i = 1; i <= pages; i++) {
@@ -100,18 +102,33 @@ export function Pager({ where, from, to, total, all, page, pages, onPage, disabl
     else if (nums[nums.length - 1] !== "…") nums.push("…");
   }
   const go = (n: number) => { onPage(n); if (where === "bottom") { window.scrollTo({ top: 0, behavior: "smooth" }); document.querySelector("[data-scroll-table]")?.scrollTo({ top: 0, behavior: "smooth" }); } };
-  const b = "min-w-8 rounded-lg border px-2.5 py-1.5 text-sm disabled:opacity-40";
+  const cell = "grid h-8 min-w-8 place-items-center rounded-md px-2 text-sm tabular-nums transition focus:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+  const arrow = (dir: -1 | 1) => (
+    <button type="button" aria-label={dir < 0 ? "Previous page" : "Next page"} disabled={disabled || (dir < 0 ? page <= 1 : page >= pages)} onClick={() => go(page + dir)}
+      className={`${cell} text-muted hover:bg-accent-soft hover:text-accent-strong disabled:pointer-events-none disabled:opacity-30`}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={dir < 0 ? "m15 18-6-6 6-6" : "m9 18 6-6-6-6"} /></svg>
+    </button>
+  );
   return (
-    <div className="flex flex-wrap items-center gap-2 text-sm">
-      <span className="text-xs text-muted">{total ? `Showing ${from}–${to} of ${total}` : "No tickets"}{total !== all ? ` (filtered from ${all})` : ""}</span>
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+      <span className="text-muted">
+        {total ? <><b className="font-semibold text-fg tabular-nums">{from}–{to}</b> of <b className="font-semibold text-fg tabular-nums">{total}</b></> : "No tickets"}
+        {total !== all && <span className="text-xs"> · filtered from {all}</span>}
+      </span>
+      {onSize && size && total > 10 && (
+        <label className="flex items-center gap-1.5 text-xs text-muted">Rows
+          <span className="w-20"><Select up value={String(size)} onChange={(v) => onSize(Number(v))} options={[25, 50, 100].map((n) => ({ value: String(n), label: String(n) }))} /></span>
+        </label>
+      )}
       {pages > 1 && (
-        <div className="ml-auto flex items-center gap-1">
-          <button className={`${b} border-line bg-panel hover:border-accent`} disabled={disabled || page <= 1} onClick={() => go(page - 1)}>← Prev</button>
+        <nav aria-label="Pages" className="ml-auto flex items-center gap-0.5 rounded-lg border border-line bg-panel p-0.5 shadow-sm">
+          {arrow(-1)}
           {nums.map((n, i) => n === "…"
-            ? <span key={`e${i}`} className="px-1 text-muted">…</span>
-            : <button key={n} className={`${b} ${n === page ? "border-accent bg-accent text-white" : "border-line bg-panel hover:border-accent"}`} disabled={disabled} onClick={() => go(n)} aria-current={n === page ? "page" : undefined}>{n}</button>)}
-          <button className={`${b} border-line bg-panel hover:border-accent`} disabled={disabled || page >= pages} onClick={() => go(page + 1)}>Next →</button>
-        </div>
+            ? <span key={`e${i}`} className="grid h-8 w-6 place-items-center text-muted">…</span>
+            : <button key={n} type="button" disabled={disabled} onClick={() => go(n)} aria-current={n === page ? "page" : undefined}
+                className={`${cell} ${n === page ? "bg-accent font-semibold text-white shadow-sm" : "text-fg hover:bg-accent-soft hover:text-accent-strong"}`}>{n}</button>)}
+          {arrow(1)}
+        </nav>
       )}
     </div>
   );
