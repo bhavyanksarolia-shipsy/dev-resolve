@@ -8,7 +8,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 export function ColumnMenu({ label, values, selected, text, sort, onSort, onSelected, onText, onClear, format = (v) => v }: {
   label: string; values: { value: string; count: number }[]; selected: string[] | null; text: string; sort: "asc" | "desc" | null;
   onSort: (d: "asc" | "desc" | null) => void; onSelected: (v: string[] | null) => void; onText: (v: string) => void;
-  /** Clears this column's sort, typed filter and ticked values in one go. */
+  /** Clears this column's sort and typed filter and unticks every value, in one go. */
   onClear: () => void;
   /** How a raw value is shown (e.g. "awaiting_development" → "awaiting development"). */
   format?: (v: string) => string;
@@ -37,6 +37,7 @@ export function ColumnMenu({ label, values, selected, text, sort, onSort, onSele
   useEffect(() => { if (!open) return; const t = setTimeout(() => draft !== text && onText(draft), 250); return () => clearTimeout(t); }, [draft, open, text, onText]);
 
   const shown = values.filter((v) => !draft || (v.value ? format(v.value) : "not set").toLowerCase().includes(draft.toLowerCase()));
+  // selected: null = every value ticked (no filter) · [] = nothing ticked (also no filter, boxes shown empty) · list = those.
   const isOn = (v: string) => !selected || selected.includes(v);
   const toggle = (v: string) => {
     const base = selected ?? values.map((x) => x.value);
