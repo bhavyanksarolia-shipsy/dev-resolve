@@ -139,7 +139,7 @@ function Dashboard() {
           </div>
 
           <div className="grid gap-4 lg:grid-cols-3 [&>*]:min-w-0">
-            <Panel title="Dev Resolve" hint={`Last ${range.label}`}>
+            <Panel title="Dev Resolve" hint={range.label}>
               <dl className="grid grid-cols-2 gap-3 text-sm">
                 <Stat k="Investigations" v={d.dev_resolve.investigations} />
                 <Stat k="RCAs posted" v={d.dev_resolve.posted} />
@@ -161,7 +161,7 @@ function Dashboard() {
                 </div>
               )}
             </Panel>
-            <Panel title="Recently closed" hint={`Last ${range.label}`} className="lg:col-span-2">
+            <Panel title="Recently closed" hint={range.label} className="lg:col-span-2">
               {d.recently_closed.length ? <TicketList rows={d.recently_closed} right={(r) => <span className="text-ok">{r.closed ? shortDate(r.closed) : ""}</span>} />
                 : <p className="py-6 text-center text-sm text-muted">Nothing closed in this period.</p>}
             </Panel>
