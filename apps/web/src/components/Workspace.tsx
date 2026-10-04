@@ -33,6 +33,7 @@ interface TicketData {
   investigations: { id: number; status: string }[];
   attachments?: Attachment[];
   routing: { kind: string; account?: string; name?: string; candidates?: string[] };
+  can_investigate?: boolean; investigate_blocked?: string | null;
   devrev_url: string;
 }
 
@@ -286,7 +287,10 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
       <section className="flex min-w-0 flex-col lg:min-h-0">
         <div className="mb-3 flex flex-wrap items-center gap-3">
           {/* Follow-ups go through Chat (same investigation, keeps its findings); a fresh run is only for a first or failed one. */}
-          {(!inv || inv.status === "failed") && (
+          {(!inv || inv.status === "failed") && data.can_investigate === false && data.investigate_blocked && (
+            <span className="rounded-md bg-bg px-3 py-1.5 text-sm text-muted ring-1 ring-line">{data.investigate_blocked}</span>
+          )}
+          {(!inv || inv.status === "failed") && data.can_investigate !== false && (
             <button onClick={start} disabled={busy || running || data.routing.kind === "unmapped" || data.routing.kind === "ignored"}
               className="rounded-md bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50">
               {inv ? "Try again" : "Start investigation"}
@@ -368,11 +372,11 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
                   <button key={n} onClick={() => setRating(n)} className={n <= rating ? "text-warn" : "text-muted"}>★</button>
                 ))}
               </>}
-              <button onClick={() => setMode("chat")} disabled={!canChat}
+              {data.can_investigate !== false && <button onClick={() => setMode("chat")} disabled={!canChat}
                 className="ml-auto flex items-center gap-1.5 rounded-md border border-accent px-3 py-1.5 font-medium text-accent-strong hover:bg-accent-soft disabled:opacity-50">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
                 Investigate more
-              </button>
+              </button>}
               <button onClick={post} disabled={busy} className="rounded-md bg-ok px-3 py-1.5 text-white disabled:opacity-50">
                 {currentPosted ? "Post again to internal discussion" : inv.posted_at ? `Approve & post update (v${inv.rca_version})` : "Approve & post to internal discussion"}
               </button>

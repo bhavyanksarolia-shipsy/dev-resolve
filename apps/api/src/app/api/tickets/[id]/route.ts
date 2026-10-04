@@ -1,6 +1,6 @@
 import { getTicket, devrevUrl } from "@/lib/devrev";
 import { apiError } from "@/lib/apiError";
-import { resolveDevrevAccount } from "@/lib/config";
+import { investigable, resolveDevrevAccount } from "@/lib/config";
 import { conversation } from "@/lib/conversation";
 import { q } from "@/lib/db";
 
@@ -19,10 +19,12 @@ export async function GET(req: Request, ctx: RouteContext<"/api/tickets/[id]">) 
     void conversation(ticket.id, modified).catch(() => {});
     const investigations = await q(`SELECT id, status, confidence, category, created_at, finished_at, posted_at FROM investigations WHERE ticket_display=$1 ORDER BY id DESC`, [ticket.display_id]);
     const routing = resolveDevrevAccount(ticket.account?.id);
+    const can = investigable(ticket.account?.id);
     return Response.json({
       ticket,
       devrev_url: devrevUrl(ticket.display_id),
       investigations,
+      can_investigate: can.ok, investigate_blocked: can.ok ? null : can.reason,
       routing: routing.kind === "account" ? { kind: "account", account: routing.account.slug, name: routing.account.name }
         : routing.kind === "ambiguous" ? { kind: "ambiguous", candidates: routing.candidates.map((c) => c.slug) }
         : { kind: routing.kind },

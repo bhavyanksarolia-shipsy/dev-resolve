@@ -14,7 +14,7 @@ import { ColumnMenu, Pager } from "@/components/TableTools";
 type Account = PickerAccount;
 interface Ticket {
   id: string; display_id: string; title: string; stage?: string; severity?: string; created_date: string;
-  part?: string; default_part?: boolean; pod?: string | null; owner?: string | null; account?: string; account_id?: string; devrev_url: string;
+  part?: string; default_part?: boolean; pod?: string | null; owner?: string | null; account?: string; account_id?: string; can_investigate?: boolean; devrev_url: string;
   investigation: { id: number; status: string; confidence: string | null } | null;
 }
 interface Counts { account: { total: number; wms: number; default_part: number }; org: { total: number; wms: number } }
@@ -413,7 +413,8 @@ function Inbox() {
                           )}
                           {/* Investigated tickets: the status chip (and the ticket number) open the page — no extra button. */}
                           {/* Running: the status chip says "investigating…" — no second button. */}
-                          {(!inv || inv.status === "failed") && inv?.status !== "running" && (
+                          {/* Only active clients' tickets are investigated (not inactive clients or accounts not set up). */}
+                          {(!inv || inv.status === "failed") && inv?.status !== "running" && t.can_investigate !== false && (
                             <button onClick={() => investigate(t)} disabled={busy}
                               className="inline-flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-accent-strong disabled:opacity-60">
                               {busy && <span className="spin inline-block">↻</span>}

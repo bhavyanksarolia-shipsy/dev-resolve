@@ -1,4 +1,4 @@
-import { getDevrevView, inTicketScope, ticketScope } from "@/lib/config";
+import { getDevrevView, inTicketScope, investigable, ticketScope } from "@/lib/config";
 import { listTickets, ticketCounts, devrevUrl } from "@/lib/devrev";
 import { apiError } from "@/lib/apiError";
 import { q } from "@/lib/db";
@@ -39,6 +39,7 @@ export async function GET(req: Request) {
       tickets: works.map((w) => ({
         id: w.id, display_id: w.display_id, title: w.title, stage: w.stage?.display_name || w.stage?.name, stage_name: w.stage?.name,
         severity: w.severity, created_date: w.created_date, account: w.account?.display_name, account_id: w.account?.id,
+        can_investigate: investigable(w.account?.id).ok,
         part: (w as { applies_to_part?: { name?: string } }).applies_to_part?.name,
         default_part: (w as { applies_to_part?: { id?: string } }).applies_to_part?.id === getDevrevView().default_part_id,
         pod: typeof w.custom_fields?.tnt__pod === "string" ? w.custom_fields.tnt__pod : null,

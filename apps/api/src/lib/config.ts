@@ -168,6 +168,17 @@ export function resolveDevrevAccount(accountId: string | undefined): DevrevResol
   return { kind: "unmapped" };
 }
 
+/**
+ * Can Dev Resolve investigate tickets of this DevRev account? Only for active clients: an inactive client, an account
+ * not set up on a client, or an ignored org can't. An ambiguous account can if one of its possible clients is active.
+ */
+export function investigable(accountId: string | undefined): { ok: true } | { ok: false; reason: string } {
+  const r = resolveDevrevAccount(accountId);
+  if (r.kind === "account") return r.account.client_active === false ? { ok: false, reason: `${r.account.name} is an inactive client — turn it on in Admin → Clients to investigate` } : { ok: true };
+  if (r.kind === "ambiguous") return r.candidates.some((c) => c.client_active !== false) ? { ok: true } : { ok: false, reason: "None of this account's possible clients is active" };
+  return { ok: false, reason: "This DevRev account isn't set up on a client (Admin → Clients)" };
+}
+
 /** config/config.env — the same file the Python MCP/skills read. Values never leave the server. */
 export function readConfigEnv(): Record<string, string> {
   if (!existsSync(CONFIG_ENV_FILE)) return {};

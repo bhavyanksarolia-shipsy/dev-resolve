@@ -178,9 +178,11 @@ function resolveScope(accountId: string | undefined, displayId: string, accountN
   const res = resolveDevrevAccount(accountId);
   let account: Account | undefined;
   let candidates: Account[] = [];
-  if (res.kind === "account") account = res.account;
-  else if (res.kind === "ambiguous") {
-    candidates = res.candidates;
+  if (res.kind === "account") {
+    if (res.account.client_active === false) throw new Error(`${res.account.name} is an inactive client — turn it on in Admin → Clients to investigate its tickets`);
+    account = res.account;
+  } else if (res.kind === "ambiguous") {
+    candidates = res.candidates.filter((c) => c.client_active !== false); // only active clients are investigated
     account = candidates[0];
   }
   if (!account) throw new Error(`Ticket ${displayId}'s DevRev account (${accountName ?? "none"}) is not mapped in config/projects.json`);
@@ -278,6 +280,7 @@ export async function sendChatMessage(id: number, text: string, by = "unknown", 
   if (inv.status === "running" || inv.chat_running) throw new LockedError("The agent is still working on this ticket — wait for it to finish.");
   const account = getAccount(inv.account_slug);
   if (!account) throw new Error(`account ${inv.account_slug} is no longer in config`);
+  if (account.client_active === false) throw new Error(`${account.name} is an inactive client — turn it on in Admin → Clients to investigate its tickets`);
   const candidates = (inv.candidate_slugs || []).map((s) => getAccount(s)).filter(Boolean) as Account[];
 
   const [{ next }] = await q<{ next: number }>(`SELECT COALESCE(max(seq), -1) + 1 AS next FROM investigation_steps WHERE investigation_id=$1`, [id]);
