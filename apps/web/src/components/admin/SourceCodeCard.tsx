@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { btn, btnPrimary, Field, input, Note, post } from "./ui";
 import { confirmDialog } from "@/components/Dialog";
 
@@ -15,6 +15,21 @@ export function SourceCodeCard() {
   const [edit, setEdit] = useState<{ base: string; branch: string; token: string } | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  // Repos being connected / disconnected right now: shown in the list at once (with a spinner) while the server works.
+  const [pending, setPending] = useState<{ repo: string; kind: "add" | "remove" }[]>([]);
+  const pendingRef = useRef<{ repo: string; kind: "add" | "remove" }[]>([]);
+  async function changeRepos(repo: string, kind: "add" | "remove") {
+    if (!s) return;
+    const all = [...pendingRef.current, { repo, kind }];
+    pendingRef.current = all;
+    setPending(all);
+    // Include other in-flight changes so two quick adds don't overwrite each other.
+    const adds = all.filter((x) => x.kind === "add").map((x) => x.repo), removes = all.filter((x) => x.kind === "remove").map((x) => x.repo);
+    const next = [...new Set([...(s.connected ?? []), ...adds])].filter((x) => !removes.includes(x));
+    await act({ action: "repos", repos: next });
+    pendingRef.current = pendingRef.current.filter((x) => x.repo !== repo);
+    setPending(pendingRef.current);
+  }
   const load = useCallback(() => fetch("/api/admin/code", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((d) => d && setS(d)).catch(() => {}), []);
   useEffect(() => { load(); }, [load]);
 
@@ -85,10 +100,25 @@ export function SourceCodeCard() {
               <h4 className="text-xs font-semibold uppercase tracking-wide text-muted">Connected repos · {s.repos.length}</h4>
               {s.last && <span className="text-xs text-muted">last sync {new Date(s.last.at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })} · every 30 min</span>}
             </div>
-            <AddRepo connected={s.connected ?? []} busy={busy} onAdd={(r) => act({ action: "repos", repos: [...(s.connected ?? []), r] })} />
+            <AddRepo connected={[...(s.connected ?? []), ...pending.map((p) => p.repo)]} busy={false} onAdd={(r) => changeRepos(r, "add")} />
             <ul className="mt-3 divide-y divide-line overflow-hidden rounded-xl border border-line">
+              {pending.filter((p) => p.kind === "add" && !s.repos.some((r) => r.repo === p.repo)).map((p) => (
+                <li key={`pending-${p.repo}`} className="chat-pop flex items-center gap-3 bg-accent-soft/40 px-4 py-2.5 text-sm">
+                  <span className="spin inline-block text-accent-strong" aria-hidden>↻</span>
+                  <span className="min-w-0 flex-1 truncate font-mono text-[13px]">{p.repo}</span>
+                  <span className="text-xs text-accent-strong">Connecting · downloading from GitHub…</span>
+                </li>
+              ))}
               {s.repos.map((r) => {
                 const x = result(r.repo);
+                const removing = pending.some((p) => p.kind === "remove" && p.repo === r.repo);
+                if (removing) return (
+                  <li key={r.repo} className="flex items-center gap-3 px-4 py-2.5 text-sm opacity-60">
+                    <span className="spin inline-block text-muted" aria-hidden>↻</span>
+                    <span className="min-w-0 flex-1 truncate font-mono text-[13px] line-through">{r.repo}</span>
+                    <span className="text-xs text-muted">Disconnecting…</span>
+                  </li>
+                );
                 const [hash, date] = (x?.commit ?? r.head ?? "").split(" · ");
                 return (
                   <li key={r.repo} className="group flex items-center gap-3 px-4 py-2.5 text-sm">
@@ -105,7 +135,7 @@ export function SourceCodeCard() {
                             message: "The agent stops reading this repo, and clients can no longer pick it. Clients that already use it keep it until you remove it from them (Admin → Clients → Code).",
                             confirmLabel: "Disconnect", danger: true,
                           });
-                          if (ok) act({ action: "repos", repos: (s.connected ?? []).filter((x) => x !== r.repo) });
+                          if (ok) changeRepos(r.repo, "remove");
                         }}
                         className="ml-1 grid h-6 w-6 place-items-center rounded-md text-muted opacity-0 transition hover:bg-red-50 hover:text-bad group-hover:opacity-100">✕</button>
                     )}
