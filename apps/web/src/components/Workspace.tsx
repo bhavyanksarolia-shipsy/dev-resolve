@@ -244,8 +244,7 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
             </span>
           </span>
           <span className="rounded-md bg-accent-soft px-2 py-0.5 font-mono font-semibold text-accent-strong">{t.display_id}</span>
-          <span>{data.routing.kind === "account" ? data.routing.name : t.account?.display_name}</span>
-          <span aria-hidden>·</span>
+          {/* The account is the Account pill below (it can be changed there) — not repeated here. */}
           <a href={data.devrev_url} target="_blank" rel="noreferrer" className="font-medium text-accent-strong hover:underline">Open in DevRev ↗</a>
         </div>
         <h1 className="mb-3 text-xl font-semibold leading-snug tracking-tight">{t.title}</h1>

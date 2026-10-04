@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { confirmDialog, notify } from "./Dialog";
 
 export interface StageOption { id: string; name: string; final: boolean }
@@ -113,10 +114,11 @@ function AccountPill({ current, disabled, onPick }: { current: { id: string; nam
   const [q, setQ] = useState("");
   const [found, setFound] = useState<{ id: string; name: string; client: string | null }[] | null>(null);
   const box = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null); // the pop-up is drawn at the page level (portal), outside `box`
   const { btn: popBtn, style: popStyle } = usePopover(open);
   useEffect(() => {
     if (!open) return;
-    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node) && !popRef.current?.contains(e.target as Node)) setOpen(false); };
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } };
     document.addEventListener("mousedown", away); document.addEventListener("keydown", esc, true);
     return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc, true); };
@@ -137,8 +139,8 @@ function AccountPill({ current, disabled, onPick }: { current: { id: string; nam
         <span className="text-muted">Account</span><span className="truncate">{current?.name ?? "not set"}</span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden><path d="m6 9 6 6 6-6" /></svg>
       </button>
-      {open && (
-        <div role="dialog" aria-label="Change account" style={popStyle} className="z-50 overflow-hidden rounded-xl border border-line bg-panel text-sm shadow-lg">
+      {open && createPortal(
+        <div ref={popRef} role="dialog" aria-label="Change account" style={popStyle} className="z-50 overflow-hidden rounded-xl border border-line bg-panel text-sm shadow-lg">
           <div className="border-b border-line p-2">
             <input ref={(el) => el?.focus({ preventScroll: true })} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search DevRev accounts…"
               className="w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft" />
@@ -154,7 +156,8 @@ function AccountPill({ current, disabled, onPick }: { current: { id: string; nam
               </li>
             ))}
           </ul>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
@@ -168,10 +171,11 @@ function PartPill({ current, parts, disabled, onPick }: {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const box = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null); // the pop-up is drawn at the page level (portal), outside `box`
   const { btn: popBtn, style: popStyle } = usePopover(open);
   useEffect(() => {
     if (!open) return;
-    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node) && !popRef.current?.contains(e.target as Node)) setOpen(false); };
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } };
     document.addEventListener("mousedown", away); document.addEventListener("keydown", esc, true);
     return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc, true); };
@@ -185,8 +189,8 @@ function PartPill({ current, parts, disabled, onPick }: {
         <span className="text-muted">Part</span><span className="truncate">{current?.name ?? "not set"}</span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden><path d="m6 9 6 6 6-6" /></svg>
       </button>
-      {open && (
-        <div role="dialog" aria-label="Change part" style={popStyle} className="z-50 overflow-hidden rounded-xl border border-line bg-panel text-sm shadow-lg">
+      {open && createPortal(
+        <div ref={popRef} role="dialog" aria-label="Change part" style={popStyle} className="z-50 overflow-hidden rounded-xl border border-line bg-panel text-sm shadow-lg">
           <div className="border-b border-line p-2">
             <input ref={(el) => el?.focus({ preventScroll: true })} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search parts…"
               className="w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft" />
@@ -200,7 +204,8 @@ function PartPill({ current, parts, disabled, onPick }: {
               </li>
             ))}
           </ul>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
@@ -228,14 +233,14 @@ export function TicketControls({ ticket, onChanged }: { ticket: string; onChange
   const canResolve = opts.stages.some((s) => s.name === "resolved");
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <PillMenu label="Stage" value={stageLabel(opts.stage.name)} disabled={busy}
-        items={opts.stages.filter((s) => s.name !== "resolved").map((s) => ({ value: s.name, label: stageLabel(s.name), hint: s.final ? "Closes the ticket" : undefined }))}
-        onPick={(v) => apply({ stage: v })} />
+      <AccountPill current={opts.account} disabled={busy} onPick={(a) => apply({ account: a })} />
       <PillMenu label="Pod" value={opts.pod ?? "not set"} tone={opts.pod ? "accent" : "muted"} disabled={busy}
         items={[...opts.pods.filter((p) => p !== opts.pod).map((p) => ({ value: p, label: p })), ...(opts.pod ? [{ value: CLEAR_POD, label: "Clear Pod" }] : [])]}
         onPick={(v) => apply({ pod: v === CLEAR_POD ? null : v })} />
       <PartPill current={opts.part} parts={opts.parts} disabled={busy} onPick={(p) => apply({ part: p })} />
-      <AccountPill current={opts.account} disabled={busy} onPick={(a) => apply({ account: a })} />
+      <PillMenu label="Stage" value={stageLabel(opts.stage.name)} disabled={busy}
+        items={opts.stages.filter((s) => s.name !== "resolved").map((s) => ({ value: s.name, label: stageLabel(s.name), hint: s.final ? "Closes the ticket" : undefined }))}
+        onPick={(v) => apply({ stage: v })} />
       {canResolve && (
         <button onClick={() => apply({ stage: "resolved" })} disabled={busy}
           className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium text-ok ring-1 ring-ok/40 transition hover:bg-ok hover:text-white disabled:opacity-50">
