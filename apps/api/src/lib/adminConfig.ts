@@ -81,7 +81,7 @@ export function gatewayPatterns(name: string, g: Gateway) {
 }
 function gatewaySummary(name: string, g: Gateway, env: Record<string, string>) {
   const url = env[gatewayUrlEnv(g)] ?? "";
-  return { url, host: hostOf(url), vpn: isVpnHost(hostOf(url)), vpnSuffix: coveringSuffix(hostOf(url)), auth: "google" as const,
+  return { displayName: g.display_name || name, url, host: hostOf(url), vpn: isVpnHost(hostOf(url)), vpnSuffix: coveringSuffix(hostOf(url)), auth: "google" as const,
     usernameSet: false, passwordSet: false, logTypes: {} as Record<string, string>, patterns: gatewayPatterns(name, g) };
 }
 
@@ -95,13 +95,13 @@ export function connectionsSummary() {
     return {
       name, label: p.label ?? "",
       opensearch: os && {
-        url: osUrl ?? "", host: hostOf(osUrl), vpn: isVpnHost(hostOf(osUrl)), vpnSuffix: coveringSuffix(hostOf(osUrl)),
+        displayName: os.display_name || name, url: osUrl ?? "", host: hostOf(osUrl), vpn: isVpnHost(hostOf(osUrl)), vpnSuffix: coveringSuffix(hostOf(osUrl)),
         auth: os.username_env ? "password" : "none", usernameSet: isSet(os.username_env), passwordSet: isSet(os.password_env),
         logTypes: os.log_types, patterns: Array.from(new Set(Object.values(os.log_types))),
       },
       ...(p.opensearch_mcp && !os ? { opensearch: gatewaySummary(name, p.opensearch_mcp, env) } : {}),
       metabase: mb && {
-        url: mbUrl ?? "", host: hostOf(mbUrl), vpn: isVpnHost(hostOf(mbUrl)), vpnSuffix: coveringSuffix(hostOf(mbUrl)),
+        displayName: mb.display_name || name, url: mbUrl ?? "", host: hostOf(mbUrl), vpn: isVpnHost(hostOf(mbUrl)), vpnSuffix: coveringSuffix(hostOf(mbUrl)),
         auth: mb.sso === "google" ? "google" : isSet(mbKey) ? "api_key" : "password",
         usernameSet: isSet(mb.username_env), passwordSet: isSet(mb.password_env), apiKeySet: isSet(mbKey),
         databases: mb.databases ?? {}, defaultDatabase: mb.default_database ?? null,
@@ -233,6 +233,7 @@ function patternKeys(conn: string, current: Record<string, string>, patterns: st
 
 export interface ConnectionInput {
   name?: string; label?: string; kind: "opensearch" | "metabase"; url: string; vpn: boolean;
+  display_name?: string;                                   // what admins call it; the id (name) never changes
   auth: "none" | "password" | "api_key" | "google";
   username?: string; password?: string; apiKey?: string; // empty = keep what's stored
   log_types?: Record<string, string>;                      // opensearch (older form): log type → index pattern
@@ -265,6 +266,7 @@ export async function saveConnection(input: ConnectionInput, originalName: strin
     const using = file.accounts.filter((a) => a.app_log?.project === name && Object.values(a.app_log.indices).some((i) => gone.includes(i)));
     if (using.length) throw new Error(`Can't remove ${gone.join(", ")} — used by ${using.map((a) => a.name).join(", ")}. Change those clients first.`);
     g.index_patterns = patterns;
+    if (input.display_name !== undefined) g.display_name = clean(input.display_name) || undefined;
     env[gatewayUrlEnv(g)] = url;
   } else if (input.kind === "opensearch") {
     const cur = (proj.opensearch as Record<string, unknown>) ?? {};
@@ -278,7 +280,7 @@ export async function saveConnection(input: ConnectionInput, originalName: strin
       if (input.username) env[userEnv] = clean(input.username);
       if (input.password) env[passEnv] = clean(input.password);
     }
-    proj.opensearch = { url_env: urlEnv, username_env: input.auth === "password" ? userEnv : null, password_env: input.auth === "password" ? passEnv : null, log_types: lt };
+    proj.opensearch = { display_name: clean(input.display_name ?? (cur.display_name as string) ?? "") || undefined, url_env: urlEnv, username_env: input.auth === "password" ? userEnv : null, password_env: input.auth === "password" ? passEnv : null, log_types: lt };
   } else {
     const cur = (proj.metabase as Record<string, unknown>) ?? {};
     const urlEnv = (cur.base_url_env as string) || `${P}_METABASE_BASE_URL`;
@@ -291,7 +293,7 @@ export async function saveConnection(input: ConnectionInput, originalName: strin
     if (input.auth !== "api_key") env[keyEnv] = null; // an API key would override the other sign-in types
     const dbs = Object.fromEntries(Object.entries(input.databases || {}).map(([k, v]) => [String(Number(k)), clean(v)]).filter(([k]) => Number(k) > 0));
     proj.metabase = {
-      ...cur, base_url_env: urlEnv, username_env: userEnv, password_env: passEnv, session_token_env: sessEnv,
+      ...cur, display_name: clean(input.display_name ?? (cur.display_name as string) ?? "") || undefined, base_url_env: urlEnv, username_env: userEnv, password_env: passEnv, session_token_env: sessEnv,
       ...(input.auth === "api_key" ? { api_key_env: keyEnv } : {}),
       default_database: input.default_database ?? (Object.keys(dbs)[0] ? Number(Object.keys(dbs)[0]) : null),
       databases: dbs,
@@ -304,6 +306,17 @@ export async function saveConnection(input: ConnectionInput, originalName: strin
   await setVpn(hostOf(url), input.vpn, by);
   await writeProjects(file, by);
   return name;
+}
+
+/** A saved username / password / API key, for an admin who clicks the eye in Admin → Connections. */
+export function revealSecret(name: string, kind: "opensearch" | "metabase", field: "username" | "password" | "apiKey") {
+  const p = getConnectionProjects()[name];
+  const env = { ...readConfigEnv(), ...(process.env as Record<string, string>) };
+  const x = (kind === "opensearch" ? p?.opensearch : p?.metabase) as { username_env?: string | null; password_env?: string | null; api_key_env?: string; session_token_env?: string } | undefined;
+  if (!x) return null;
+  const key = field === "username" ? x.username_env : field === "password" ? x.password_env
+    : x.api_key_env || (x.session_token_env || "").replace(/_SESSION_TOKEN$/, "_API_KEY");
+  return key ? env[key] ?? null : null;
 }
 
 // ── test a connection (through the admin's own extension when it's a VPN host) ────────────────────────────

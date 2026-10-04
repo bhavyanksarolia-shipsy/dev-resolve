@@ -50,16 +50,20 @@ export interface ConnectionProject {
     config_dir: string;
     login_command: string;
     read_only_tools: string[];
+    /** What admins call it (Admin → Connections); unset = the connection's id. */
+    display_name?: string;
     /** Index patterns clients can pick from (Admin → Connections); unset = the ones clients already use. */
     index_patterns?: string[];
   };
   opensearch?: {
+    display_name?: string;
     url_env: string;
     username_env: string | null;
     password_env: string | null;
     log_types: Record<string, string>;
   };
   metabase?: {
+    display_name?: string;
     sso?: "google";
     base_url_env: string;
     username_env?: string;

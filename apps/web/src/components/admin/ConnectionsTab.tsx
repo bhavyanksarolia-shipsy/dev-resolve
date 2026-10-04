@@ -1,6 +1,6 @@
 "use client";
 import { SlideSheet } from "@/components/SlideSheet";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AdminConfig, Conn } from "./types";
 import { btn, btnPrimary, Field, input, Note, post, Rows, Switch } from "./ui";
 import { SourceCodeCard } from "./SourceCodeCard";
@@ -10,7 +10,7 @@ import { TableCard, usePaged } from "@/components/TableTools";
 type Kind = "opensearch" | "metabase";
 type Auth = "none" | "password" | "api_key" | "google";
 interface Form {
-  originalName: string | null; name: string; kind: Kind; url: string; vpn: boolean; vpnSuffix: string | null; gateway: boolean;
+  originalName: string | null; name: string; displayName: string; kind: Kind; url: string; vpn: boolean; vpnSuffix: string | null; gateway: boolean;
   auth: Auth; username: string; password: string; apiKey: string;
   patterns: string[]; databases: [string, string][]; defaultDatabase: number | null;
   secretsSet: { username: boolean; password: boolean; apiKey: boolean };
@@ -19,7 +19,7 @@ interface Form {
 function toForm(c: Conn | null, kind: Kind): Form {
   const os = c?.opensearch, mb = c?.metabase, x = kind === "opensearch" ? os : mb;
   return {
-    originalName: c && x ? c.name : null, name: c?.name ?? "", kind, url: x?.url ?? "", vpn: x?.vpn ?? false, vpnSuffix: x?.vpnSuffix ?? null,
+    originalName: c && x ? c.name : null, name: c?.name ?? "", displayName: x?.displayName ?? "", kind, url: x?.url ?? "", vpn: x?.vpn ?? false, vpnSuffix: x?.vpnSuffix ?? null,
     gateway: !!c?.appLog && kind === "opensearch",
     auth: kind === "opensearch" ? (os?.auth ?? "password") : (mb?.auth ?? "password"),
     username: "", password: "", apiKey: "",
@@ -28,6 +28,54 @@ function toForm(c: Conn | null, kind: Kind): Form {
     defaultDatabase: mb?.defaultDatabase ?? null,
     secretsSet: { username: !!x?.usernameSet, password: !!x?.passwordSet, apiKey: !!mb?.apiKeySet },
   };
+}
+
+/**
+ * A saved credential: shown masked; the eye fetches the saved value (admins only) and shows / hides it. Typing replaces it.
+ * Usernames aren't masked — they load as soon as the form opens.
+ */
+function SecretInput({ value, onChange, saved, conn, kind, field }: {
+  value: string; onChange: (v: string) => void; saved: boolean; conn: string | null; kind: Kind; field: "username" | "password" | "apiKey";
+}) {
+  const masked = field !== "username";
+  const [shown, setShown] = useState(!masked);
+  const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const load = async () => {
+    if (loaded || !saved || !conn) return;
+    setBusy(true);
+    const r = await post<{ value?: string | null }>("/api/admin/connections/reveal", { name: conn, kind, field });
+    setBusy(false); setLoaded(true);
+    if (r.value && !value) onChange(r.value);
+  };
+  const change = useRef(onChange);
+  useEffect(() => { change.current = onChange; });
+  // Usernames aren't secret: fill the saved one in as soon as the form opens.
+  useEffect(() => {
+    if (masked || !saved || !conn) return;
+    let live = true;
+    post<{ value?: string | null }>("/api/admin/connections/reveal", { name: conn, kind, field }).then((r) => {
+      if (!live) return;
+      setLoaded(true);
+      if (r.value) change.current(r.value);
+    });
+    return () => { live = false; };
+  }, [masked, saved, conn, kind, field]);
+  return (
+    <div className="relative">
+      <input className={`${input} ${masked ? "pr-9" : ""}`} type={shown ? "text" : "password"} autoComplete={field === "password" ? "new-password" : "off"}
+        value={value} placeholder={saved && !loaded ? (busy ? "Loading…" : masked ? "••••••••" : "") : ""} onChange={(e) => onChange(e.target.value)} />
+      {masked && (
+        <button type="button" disabled={busy} aria-label={shown ? "Hide" : "Show"} title={shown ? "Hide" : "Show"}
+          onClick={async () => { if (!shown) await load(); setShown(!shown); }}
+          className="absolute right-1.5 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md text-muted hover:bg-accent-soft hover:text-accent-strong">
+          {shown
+            ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.1A10.6 10.6 0 0 1 12 5c5 0 9 4.5 10 7a13 13 0 0 1-2.9 4M6.1 6.1A13 13 0 0 0 2 12c1 2.5 5 7 10 7a10.6 10.6 0 0 0 4.1-.8" /></svg>
+            : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>}
+        </button>
+      )}
+    </div>
+  );
 }
 
 const AUTH_LABEL: Record<Auth, string> = { none: "No auth", password: "Username + password", api_key: "API key", google: "Google login" };
@@ -74,9 +122,9 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
   const [connQ, setConnQ] = useState("");
   const usedBy = (c: Conn, kind: Kind) => cfg.accounts.filter((a) => kind === "metabase" ? a.metabase_project === c.name
     : a.app_log?.project === c.name || Object.values(a.opensearch_log_types).some((lt) => c.opensearch?.logTypes[lt] !== undefined)).map((a) => a.name);
-  const set = (p: Partial<Form>) => form && setForm({ ...form, ...p });
+  const set = (p: Partial<Form>) => setForm((f) => f && { ...f, ...p });
   const payload = (f: Form) => ({
-    name: f.name, kind: f.kind, url: f.url, vpn: f.vpn, auth: f.auth, username: f.username, password: f.password, apiKey: f.apiKey,
+    name: f.originalName ?? f.displayName, display_name: f.displayName, kind: f.kind, url: f.url, vpn: f.vpn, auth: f.auth, username: f.username, password: f.password, apiKey: f.apiKey,
     ...(f.kind === "opensearch" ? { patterns: f.patterns } : {
       databases: Object.fromEntries(f.databases.filter(([k, v]) => k && v)),
       default_database: f.defaultDatabase && f.databases.some(([k]) => Number(k) === f.defaultDatabase) ? f.defaultDatabase : null,
@@ -108,7 +156,7 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
     const x = sub === "metabase" ? c.metabase : c.opensearch;
     return x ? [{ c, x, kind: sub as Kind, list: sub === "metabase" ? Object.entries(c.metabase!.databases).map(([id, n]) => `${id} · ${n}`) : c.opensearch!.patterns, clients: usedBy(c, sub as Kind) }] : [];
   });
-  const paged = usePaged(rows.filter(({ c, x }) => !connQ || [c.name, x.host].some((v) => v?.toLowerCase().includes(connQ.toLowerCase()))), { noun: "connections", reset: `${sub}|${connQ}` });
+  const paged = usePaged(rows.filter(({ c, x }) => !connQ || [c.name, x.displayName, x.host].some((v) => v?.toLowerCase().includes(connQ.toLowerCase()))), { noun: "connections", reset: `${sub}|${connQ}` });
   const TABS: [Sub, string, number | null][] = [
     ["github", "GitHub", null], ["opensearch", "OpenSearch", cfg.connections.filter((c) => c.opensearch).length],
     ["metabase", "Metabase", cfg.connections.filter((c) => c.metabase).length], ["claude", "Claude", null], ["devrev", "DevRev", null],
@@ -144,7 +192,7 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
               <tbody className="divide-y divide-line">
                 {paged.rows.map(({ c, x, kind, list, clients }) => (
                   <tr key={`${c.name}-${kind}`}>
-                    <td className="px-4 py-3 font-medium">{c.name}</td>
+                    <td className="px-4 py-3"><div className="font-medium">{x.displayName}</div>{x.displayName !== c.name && <div className="font-mono text-[11px] text-muted">{c.name}</div>}</td>
                     <td className="max-w-72 truncate px-4 py-3 font-mono text-xs" title={x.url}>{x.host || <span className="text-bad">no link</span>}</td>
                     <td className="px-4 py-3 text-xs">{x.vpn ? <span className="rounded-full bg-amber-50 px-2 py-0.5 text-warn ring-1 ring-amber-200">VPN</span> : <span className="text-muted">—</span>}</td>
                     <td className="px-4 py-3 text-xs">{AUTH_LABEL[x.auth]}
@@ -169,12 +217,14 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
       )}
 
       {form && (
-        <SlideSheet title={form.originalName ? `Edit ${form.originalName}` : `New ${form.kind === "metabase" ? "Metabase" : "OpenSearch"} connection`} onClose={() => setForm(null)}>
+        <SlideSheet title={form.originalName ? `Edit ${form.displayName || form.originalName}` : `New ${form.kind === "metabase" ? "Metabase" : "OpenSearch"} connection`} onClose={() => setForm(null)}>
           <div className="flex flex-1 flex-col gap-3">
           <section className="card space-y-3 p-4">
             <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">Connection</h3>
             <div className="grid gap-3 sm:grid-cols-[1fr_2fr]">
-              <Field label="Name"><input className={input} value={form.name} disabled={!!form.originalName} placeholder={form.kind === "metabase" ? "acme_metabase" : "acme_logs"} onChange={(e) => set({ name: e.target.value })} /></Field>
+              <Field label="Name" hint={form.originalName ? <>ID <code className="font-mono">{form.originalName}</code> · fixed, clients point to it</> : undefined}>
+                <input className={input} value={form.displayName} placeholder={form.kind === "metabase" ? "Acme production Metabase" : "Acme logs"} onChange={(e) => set({ displayName: e.target.value })} />
+              </Field>
               <Field label="Link"><input className={input} value={form.url} placeholder="https://" onChange={(e) => set({ url: e.target.value })} /></Field>
             </div>
             <Switch on={form.vpn || !!form.vpnSuffix} disabled={!!form.vpnSuffix} onChange={(v) => set({ vpn: v })}
@@ -197,14 +247,12 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
             </div>
             {form.auth === "password" && (
               <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="Username" hint={form.secretsSet.username ? "Saved — leave empty to keep it" : undefined}><input className={input} autoComplete="off" value={form.username} onChange={(e) => set({ username: e.target.value })} /></Field>
-                <Field label="Password" hint={form.secretsSet.password ? "Saved — leave empty to keep it" : undefined}><input className={input} type="password" autoComplete="new-password" value={form.password} onChange={(e) => set({ password: e.target.value })} /></Field>
+                <Field label="Username"><SecretInput field="username" kind={form.kind} conn={form.originalName} saved={form.secretsSet.username} value={form.username} onChange={(v) => set({ username: v })} /></Field>
+                <Field label="Password"><SecretInput field="password" kind={form.kind} conn={form.originalName} saved={form.secretsSet.password} value={form.password} onChange={(v) => set({ password: v })} /></Field>
               </div>
             )}
             {form.auth === "api_key" && (
-              <Field label="API key" hint={form.secretsSet.apiKey ? "Saved — leave empty to keep it" : undefined}>
-                <input className={input} type="password" autoComplete="off" value={form.apiKey} onChange={(e) => set({ apiKey: e.target.value })} />
-              </Field>
+              <Field label="API key"><SecretInput field="apiKey" kind={form.kind} conn={form.originalName} saved={form.secretsSet.apiKey} value={form.apiKey} onChange={(v) => set({ apiKey: v })} /></Field>
             )}
             {form.auth === "google" && <p className="text-xs text-muted">Each person signs in with their own Google account on the Connector page.</p>}
           </section>
@@ -225,7 +273,7 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
           <div className="sticky bottom-0 -mx-4 mt-auto flex items-center gap-3 border-t border-line bg-panel px-4 py-3 sm:-mx-6 sm:px-6">
             <button className={btn} disabled={busy || !form.url} onClick={runTest}>{busy ? "Checking…" : "Check connection"}</button>
             <button className={`${btn} ml-auto`} onClick={() => setForm(null)}>Cancel</button>
-            <button className={btnPrimary} disabled={busy || !form.url || (!form.originalName && !form.name)} onClick={save}>Save</button>
+            <button className={btnPrimary} disabled={busy || !form.url || (!form.originalName && !form.displayName.trim())} onClick={save}>Save</button>
           </div>
           </div>
         </SlideSheet>

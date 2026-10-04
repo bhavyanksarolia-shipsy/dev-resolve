@@ -1,5 +1,5 @@
-export interface OsConn { url: string; host: string; vpn: boolean; vpnSuffix: string | null; auth: "none" | "password" | "google"; usernameSet: boolean; passwordSet: boolean; logTypes: Record<string, string>; patterns: string[] }
-export interface MbConn { url: string; host: string; vpn: boolean; vpnSuffix: string | null; auth: "google" | "api_key" | "password"; usernameSet: boolean; passwordSet: boolean; apiKeySet: boolean; databases: Record<string, string>; defaultDatabase: number | null }
+export interface OsConn { displayName: string; url: string; host: string; vpn: boolean; vpnSuffix: string | null; auth: "none" | "password" | "google"; usernameSet: boolean; passwordSet: boolean; logTypes: Record<string, string>; patterns: string[] }
+export interface MbConn { displayName: string; url: string; host: string; vpn: boolean; vpnSuffix: string | null; auth: "google" | "api_key" | "password"; usernameSet: boolean; passwordSet: boolean; apiKeySet: boolean; databases: Record<string, string>; defaultDatabase: number | null }
 export interface Conn { name: string; label: string; opensearch?: OsConn; metabase?: MbConn; appLog: boolean }
 export interface Acc {
   name: string; slug: string; group: string | null; status: string; client_active?: boolean;

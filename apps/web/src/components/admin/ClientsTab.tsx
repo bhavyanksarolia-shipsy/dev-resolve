@@ -140,7 +140,7 @@ export function ClientsTab({ cfg, reload }: { cfg: AdminConfig; reload: () => vo
           <Section title="Logs">
             <Field label="Connection">
               <Select value={form.logConn} onChange={(v) => set({ logConn: v, patterns: v === form.logConn ? form.patterns : {} })}
-                options={[{ value: "", label: "No logs" }, ...osConns.map((c) => ({ value: c.name, label: c.name, hint: [c.opensearch?.host, c.opensearch?.auth === "google" && "Google login", c.opensearch?.vpn && "VPN"].filter(Boolean).join(" · ") }))]} />
+                options={[{ value: "", label: "No logs" }, ...osConns.map((c) => ({ value: c.name, label: c.opensearch!.displayName, hint: [c.opensearch?.host, c.opensearch?.auth === "google" && "Google login", c.opensearch?.vpn && "VPN"].filter(Boolean).join(" · ") }))]} />
             </Field>
             {form.logConn && (
               <div className="grid gap-3 sm:grid-cols-3">
@@ -163,7 +163,7 @@ export function ClientsTab({ cfg, reload }: { cfg: AdminConfig; reload: () => vo
           <Section title="Database">
             <Field label="Connection">
               <Select value={form.dbConn} onChange={(v) => set({ dbConn: v, database: v === form.dbConn ? form.database : String(conn(v)?.metabase?.defaultDatabase ?? ""), databases: v === form.dbConn ? form.databases : {} })}
-                options={[{ value: "", label: "No database" }, ...mbConns.map((c) => ({ value: c.name, label: c.name, hint: [c.metabase?.host, c.metabase?.auth === "google" && "Google login", c.metabase?.vpn && "VPN"].filter(Boolean).join(" · ") }))]} />
+                options={[{ value: "", label: "No database" }, ...mbConns.map((c) => ({ value: c.name, label: c.metabase!.displayName, hint: [c.metabase?.host, c.metabase?.auth === "google" && "Google login", c.metabase?.vpn && "VPN"].filter(Boolean).join(" · ") }))]} />
             </Field>
             {form.dbConn && (() => {
               const dbs = Object.entries(conn(form.dbConn)?.metabase?.databases ?? {}).map(([id, n]) => ({ value: id, label: n || `Database ${id}`, hint: `id ${id}` }));
