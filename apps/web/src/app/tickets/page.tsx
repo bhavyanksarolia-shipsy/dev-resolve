@@ -14,7 +14,7 @@ import { ColumnMenu, Pager } from "@/components/TableTools";
 type Account = PickerAccount;
 interface Ticket {
   id: string; display_id: string; title: string; stage?: string; severity?: string; created_date: string;
-  part?: string; default_part?: boolean; pod?: string | null; owner?: string | null; account?: string; devrev_url: string;
+  part?: string; default_part?: boolean; pod?: string | null; owner?: string | null; account?: string; account_id?: string; devrev_url: string;
   investigation: { id: number; status: string; confidence: string | null } | null;
 }
 interface Counts { account: { total: number; wms: number; default_part: number }; org: { total: number; wms: number } }
@@ -65,6 +65,8 @@ function Inbox() {
     ? { from: +new Date(`${params.get("cfrom")}T00:00:00+05:30`), to: +new Date(`${params.get("cto")}T23:59:59.999+05:30`), label: params.get("clabel") || `${params.get("cfrom")} – ${params.get("cto")}` }
     : null;
   const [loadedAt] = useState(() => Date.now()); // "now" for the age filter, fixed while the page is open
+  // One DevRev account (from a dashboard "By client" row that isn't a client: not routed / not set up).
+  const acct = params.get("acct") ? { id: params.get("acct")!, name: params.get("acctname") || "this account" } : null;
   const ageRange = ageMatch ? { min: Number(ageMatch[1]), max: ageMatch[2] ? Number(ageMatch[2]) : Infinity, label: params.get("agelabel") || `${ageMatch[1]}+ days` } : null;
   const filters = { stage: listParam("fstage"), pod: listParam("fpod"), owner: listParam("fowner") };
   const texts = { stage: params.get("qstage") || "", pod: params.get("qpod") || "", owner: params.get("qowner") || "" };
@@ -188,6 +190,7 @@ function Inbox() {
     let list = tickets ?? [];
     if (onlyDefaultPart) list = list.filter((t) => t.default_part);
     if (created) list = list.filter((t) => { const c = +new Date(t.created_date); return c >= created.from && c <= created.to; });
+    if (acct) list = list.filter((t) => t.account_id === acct.id);
     if (ageRange) list = list.filter((t) => { const a = (loadedAt - +new Date(t.created_date)) / 864e5; return a >= ageRange.min && a < ageRange.max; });
     for (const col of COLS) {
       const sel = filters[col], txt = texts[col].trim().toLowerCase();
@@ -225,8 +228,8 @@ function Inbox() {
     for (const t of tickets ?? []) if (others.every((o) => passes(t, o))) m.set(valueOf(t, col), (m.get(valueOf(t, col)) ?? 0) + 1);
     return [...m.entries()].sort((a, b) => (!a[0] ? 1 : !b[0] ? -1 : a[0].localeCompare(b[0]))).map(([value, count]) => ({ value, count }));
   };
-  const anyFilter = !!(COLS.some((c) => filters[c] || texts[c]) || sort || onlyDefaultPart || ageRange || created);
-  const clearAll = { sort: null, fstage: null, fpod: null, fowner: null, qstage: null, qpod: null, qowner: null, part: null, age: null, agelabel: null, cfrom: null, cto: null, clabel: null };
+  const anyFilter = !!(COLS.some((c) => filters[c] || texts[c]) || sort || onlyDefaultPart || ageRange || created || acct);
+  const clearAll = { sort: null, fstage: null, fpod: null, fowner: null, qstage: null, qpod: null, qowner: null, part: null, age: null, agelabel: null, acct: null, acctname: null, cfrom: null, cto: null, clabel: null };
   const colMenu = (col: Col, label: string) => (
     <ColumnMenu label={label} values={distinct(col)} selected={filters[col]} text={texts[col]}
       sort={sort.startsWith(`${col}:`) ? (sort.split(":")[1] as "asc" | "desc") : null}
@@ -280,6 +283,12 @@ function Inbox() {
           <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent-strong">
             Created {created.label === "Today" || created.label === "Yesterday" ? created.label.toLowerCase() : `in ${created.label.toLowerCase()}`}
             <button onClick={() => setView({ cfrom: null, cto: null, clabel: null })} aria-label="Remove the created-date filter" className="hover:text-fg">✕</button>
+          </span>
+        )}
+        {acct && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent-strong">
+            Account: {acct.name}
+            <button onClick={() => setView({ acct: null, acctname: null })} aria-label="Remove the account filter" className="hover:text-fg">✕</button>
           </span>
         )}
         {ageRange && (

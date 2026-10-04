@@ -97,12 +97,12 @@ export async function GET(req: Request) {
       // Every open ticket lands in exactly one row, so the rows add up to the Open tickets card: one row per client,
       // plus rows for accounts that map to several clients (not routed yet) or to none (not set up).
       by_client: (() => {
-        const rows = new Map<string, { slug: string | null; name: string; open: number; note?: string }>();
+        const rows = new Map<string, { slug: string | null; account_id?: string | null; name: string; open: number; note?: string }>();
         for (const w of open) {
           const r = accountRole(w.account?.id);
           const key = r.kind === "client" ? `c:${r.slug}` : `a:${w.account?.id ?? "-"}`;
           const row = rows.get(key) ?? (r.kind === "client" ? { slug: r.slug, name: r.name, open: 0, ...(getAccount(r.slug)?.client_active === false && { note: "inactive client" }) }
-            : { slug: null, name: w.account?.display_name || "No account", open: 0, note: r.kind === "ambiguous" ? "not routed — could be several clients" : "account not set up on a client" });
+            : { slug: null, account_id: w.account?.id ?? null, name: w.account?.display_name || "No account", open: 0, note: r.kind === "ambiguous" ? "not routed — could be several clients" : "account not set up on a client" });
           row.open++;
           rows.set(key, row);
         }

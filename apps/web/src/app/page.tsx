@@ -17,7 +17,7 @@ interface Dash {
     gaps: { default_part: number; no_pod: number; unassigned: number; not_investigated: number } };
   flow: { opened: number; closed: number; partial?: boolean; per_day: { day: string; opened: number; closed: number }[] };
   recently_closed: Brief[];
-  by_client: { slug: string | null; name: string; open: number; note?: string }[];
+  by_client: { slug: string | null; account_id?: string | null; name: string; open: number; note?: string }[];
   pod: string[] | null;
   pod_status: { stages: string[]; rows: { pod: string; open: number; by_stage: Record<string, number>; closed: number }[] };
   dev_resolve: { investigations: number; posted: number; draft_ready: number; failed: number; running: number; confidence: Count[]; avg_minutes: number | null; tickets: number };
@@ -109,7 +109,8 @@ function Dashboard() {
           {/* Clients and the opened-vs-closed chart side by side, same height. */}
           <div className="grid gap-4 lg:grid-cols-3 [&>*]:min-w-0">
             <ClientTable rows={d.by_client}
-              link={(slug) => `/tickets?account=${slug}${podPick?.length ? `&fpod=${encodeURIComponent(podPick.join("|"))}` : ""}`} />
+              link={(slug) => `/tickets?account=${slug}${podPick?.length ? `&fpod=${encodeURIComponent(podPick.join("|"))}` : ""}`}
+              accountLink={(id, name) => `/tickets?account=all&acct=${encodeURIComponent(id)}&acctname=${encodeURIComponent(name)}${podPick?.length ? `&fpod=${encodeURIComponent(podPick.join("|"))}` : ""}`} />
             <Panel title="Opened vs closed" hint={`${d.step > 1 ? "Per week" : "Per day"} · ${range.label}`} className="flex flex-col lg:col-span-2">
               <FlowChart rows={d.flow.per_day} />
               {d.flow.partial && <p className="mt-2 text-xs text-warn">Very busy period — the chart shows the most recent 5,000 tickets; the totals above are exact.</p>}
@@ -442,8 +443,9 @@ function RangeCalendar({ initial, onApply, onCancel }: { initial: Range; onApply
 
 
 /** One row per client: open tickets created in the selected period (date and Pod filters apply). */
-function ClientTable({ rows, link }: { rows: Dash["by_client"]; link: (slug: string) => string }) {
+function ClientTable({ rows, link, accountLink }: { rows: Dash["by_client"]; link: (slug: string) => string; accountLink: (accountId: string, name: string) => string }) {
   const total = rows.reduce((n, r) => n + r.open, 0);
+  const href = (r: Dash["by_client"][number]) => (r.slug ? link(r.slug) : r.account_id ? accountLink(r.account_id, r.name) : null);
   return (
     <section className="card flex max-h-[28rem] min-h-80 min-w-0 flex-col overflow-hidden">
       <div className="flex flex-wrap items-baseline gap-x-2 px-5 pt-4">
@@ -459,10 +461,10 @@ function ClientTable({ rows, link }: { rows: Dash["by_client"]; link: (slug: str
             {rows.map((r) => (
               <tr key={r.slug ?? `acc:${r.name}`} className="hover:bg-accent-soft/40">
                 <td className="px-5 py-2.5">
-                  {r.slug ? <Link href={link(r.slug)} className="font-medium hover:text-accent-strong hover:underline">{r.name}</Link> : <span className="font-medium">{r.name}</span>}
+                  {href(r) ? <Link href={href(r)!} className="font-medium hover:text-accent-strong hover:underline">{r.name}</Link> : <span className="font-medium">{r.name}</span>}
                   {r.note && <span className={`ml-2 text-xs ${r.slug ? "text-muted" : "text-warn"}`}>{r.note}</span>}
                 </td>
-                <td className="px-5 py-2.5 text-right font-semibold tabular-nums">{r.slug ? <Link href={link(r.slug)} className="hover:underline">{r.open}</Link> : r.open}</td>
+                <td className="px-5 py-2.5 text-right font-semibold tabular-nums">{href(r) ? <Link href={href(r)!} className="hover:underline">{r.open}</Link> : r.open}</td>
               </tr>
             ))}
             {!rows.length && <tr><td colSpan={2} className="px-5 py-6 text-center text-muted">No open tickets.</td></tr>}
