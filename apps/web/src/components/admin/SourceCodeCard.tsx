@@ -34,7 +34,7 @@ export function SourceCodeCard() {
   const badge = local ? ["Using local checkouts", "bg-accent-soft text-accent-strong"] : !s.base ? ["Not set up", "bg-red-50 text-bad"]
     : missing.length ? [`${missing.length} of ${s.repos.length} repos missing`, "bg-amber-50 text-warn"] : [`${s.repos.length} repos ready`, "bg-accent-soft text-accent-strong"];
   return (
-    <section className="card overflow-hidden">
+    <section className="card">
       {/* Header */}
       <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-4">
         <span className="grid h-9 w-9 place-items-center rounded-xl bg-fg text-white" aria-hidden>
@@ -85,7 +85,8 @@ export function SourceCodeCard() {
               <h4 className="text-xs font-semibold uppercase tracking-wide text-muted">Connected repos · {s.repos.length}</h4>
               {s.last && <span className="text-xs text-muted">last sync {new Date(s.last.at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })} · every 30 min</span>}
             </div>
-            <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line">
+            <AddRepo connected={s.connected ?? []} busy={busy} onAdd={(r) => act({ action: "repos", repos: [...(s.connected ?? []), r] })} />
+            <ul className="mt-3 divide-y divide-line overflow-hidden rounded-xl border border-line">
               {s.repos.map((r) => {
                 const x = result(r.repo);
                 const [hash, date] = (x?.commit ?? r.head ?? "").split(" · ");
@@ -112,7 +113,6 @@ export function SourceCodeCard() {
                 );
               })}
             </ul>
-            <AddRepo connected={s.connected ?? []} busy={busy} onAdd={(r) => act({ action: "repos", repos: [...(s.connected ?? []), r] })} />
           </div>
         )}
       </div>
@@ -164,13 +164,13 @@ function AddRepo({ connected, busy, onAdd }: { connected: string[]; busy: boolea
   const needle = q.trim().toLowerCase();
   const matches = (all ?? []).filter((r) => !connected.includes(r) && (!needle || r.toLowerCase().includes(needle))).slice(0, 12);
   return (
-    <div className="relative mt-3">
+    <div className="relative">
       <input className={input} value={q} disabled={busy} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)}
         onChange={(e) => { setQ(e.target.value); setOpen(true); }}
         onKeyDown={(e) => { if (e.key === "Enter" && matches[0]) { e.preventDefault(); onAdd(matches[0]); setQ(""); } }}
         placeholder={all === null ? "Loading repos…" : `+ Connect a repo — search ${all.length} available…`} />
       {open && (
-        <ul className="absolute left-0 right-0 z-30 mt-1 max-h-64 overflow-auto rounded-xl border border-line bg-panel py-1 text-sm shadow-xl">
+        <ul className="absolute left-0 right-0 top-full z-40 mt-1 max-h-72 overflow-auto rounded-xl border border-line bg-panel py-1 text-sm shadow-xl">
           {matches.map((r) => (
             <li key={r}><button type="button" onMouseDown={(e) => { e.preventDefault(); onAdd(r); setQ(""); }}
               className="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs hover:bg-accent-soft"><span className="text-accent-strong">+</span>{r}</button></li>
@@ -178,7 +178,6 @@ function AddRepo({ connected, busy, onAdd }: { connected: string[]; busy: boolea
           {!matches.length && <li className="px-3 py-2 text-xs text-muted">{needle ? `No repo matches “${q}”` : "Every repo is connected"}</li>}
         </ul>
       )}
-      <p className="mt-1.5 text-xs text-muted">Connected repos are kept in sync here; each client then picks from them (Admin → Clients → Code).</p>
     </div>
   );
 }
