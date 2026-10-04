@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Acc, AdminConfig } from "./types";
 import { ClientActiveToggle } from "@/components/ClientActiveToggle";
 import { btn, btnPrimary, Field, input, Note, post, Select, Switch } from "./ui";
@@ -236,27 +236,63 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
   );
 }
 
-/** Pick the repos a client's investigations may read: those already used + every repo the GitHub token can see. */
+/** Repos a client's investigations may read: chips for the chosen ones, a search dropdown over every repo the
+ * GitHub token can see, and one-click suggestions for the StockOne repos. */
 function RepoPicker({ known, value, onChange }: { known: string[]; value: string[]; onChange: (v: string[]) => void }) {
   const [remote, setRemote] = useState<string[] | null>(null);
   const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     fetch("/api/admin/code?repos=1").then((r) => (r.ok ? r.json() : { repos: [] })).then((d) => setRemote(d.repos ?? [])).catch(() => setRemote([]));
   }, []);
-  const all = [...new Set([...value, ...known, ...(remote ?? [])])].sort((a, b) => Number(value.includes(b)) - Number(value.includes(a)) || a.localeCompare(b));
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", away);
+    return () => document.removeEventListener("mousedown", away);
+  }, [open]);
+  const all = [...new Set([...known, ...(remote ?? [])])].sort((a, b) => a.localeCompare(b));
   const needle = q.trim().toLowerCase();
-  const shown = all.filter((r) => value.includes(r) || !needle || r.toLowerCase().includes(needle)).slice(0, needle ? 60 : 24);
+  const matches = all.filter((r) => !value.includes(r) && (!needle || r.toLowerCase().includes(needle))).slice(0, 12);
+  const suggested = all.filter((r) => /stockone/i.test(r) && !value.includes(r)).slice(0, 8);
+  const add = (r: string) => { onChange([...value, r]); setQ(""); };
   return (
-    <div className="space-y-2">
-      <input className={input} placeholder={remote === null ? "Loading repos from GitHub…" : `Search ${all.length} repos…`} value={q} onChange={(e) => setQ(e.target.value)} />
-      <div className="flex max-h-48 flex-wrap gap-x-4 gap-y-1.5 overflow-auto text-sm">
-        {shown.map((r) => (
-          <label key={r} className="inline-flex items-center gap-1.5"><input type="checkbox" checked={value.includes(r)}
-            onChange={(e) => onChange(e.target.checked ? [...value, r] : value.filter((x) => x !== r))} /> {r}</label>
-        ))}
-        {!shown.length && <span className="text-xs text-muted">No repo matches “{q}”.</span>}
+    <div ref={box} className="space-y-2">
+      {value.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {value.map((r) => (
+            <span key={r} className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft py-0.5 pl-2.5 pr-1.5 font-mono text-xs font-medium text-accent-strong">
+              {r}
+              <button type="button" aria-label={`Remove ${r}`} onClick={() => onChange(value.filter((x) => x !== r))} className="grid h-4 w-4 place-items-center rounded-full hover:bg-white/70 hover:text-bad">✕</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="relative">
+        <input className={input} value={q} onFocus={() => setOpen(true)} onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+          onKeyDown={(e) => { if (e.key === "Enter" && matches[0]) { e.preventDefault(); add(matches[0]); } if (e.key === "Escape") setOpen(false); }}
+          placeholder={remote === null ? "Loading repos from GitHub…" : `Search ${all.length} repos to add…`} />
+        {open && (
+          <ul className="absolute left-0 right-0 z-30 mt-1 max-h-64 overflow-auto rounded-xl border border-line bg-panel py-1 text-sm shadow-xl">
+            {matches.map((r) => (
+              <li key={r}><button type="button" onMouseDown={(e) => { e.preventDefault(); add(r); }}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs hover:bg-accent-soft">
+                <span className="text-accent-strong">+</span>{r}</button></li>
+            ))}
+            {!matches.length && <li className="px-3 py-2 text-xs text-muted">{needle ? `No repo matches “${q}”` : "All repos are already added"}</li>}
+          </ul>
+        )}
       </div>
-      {remote !== null && !remote.length && <p className="text-xs text-muted">Couldn&apos;t list repos from GitHub — set up Connections → Source code first.</p>}
+      {suggested.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="text-muted">Suggested:</span>
+          {suggested.map((r) => (
+            <button key={r} type="button" onClick={() => add(r)} className="rounded-full px-2 py-0.5 font-mono text-muted ring-1 ring-line hover:text-accent-strong hover:ring-accent">+ {r}</button>
+          ))}
+        </div>
+      )}
+      {remote !== null && !remote.length && <p className="text-xs text-muted">Couldn&apos;t list repos from GitHub — set up Connections → GitHub first.</p>}
     </div>
   );
 }
