@@ -1,4 +1,4 @@
-import { ALL_CLIENTS, getAccounts, inTicketScope, ticketScope } from "@/lib/config";
+import { accountRole, ACCOUNT_PREFIX, ALL_CLIENTS, getAccounts, inTicketScope, ticketScope } from "@/lib/config";
 import { countsByAccount, DevrevError, openTickets } from "@/lib/devrev";
 
 /** Accounts from config + live counts (DevRev Support view rules — see config devrev_view). */
@@ -11,9 +11,12 @@ export async function GET(req: Request) {
   let counts: Record<string, { total: number; wms: number }> = {};
   let countsError: string | undefined;
   let allOpen: number | null = null;
+  let others: AllOpen["others"] = [];
   try {
     // "All clients" is more than the sum of clients: it also has accounts not routed / not set up yet.
-    allOpen = await allClientsOpen(pods, force).catch(() => null);
+    const all = await allClientsOpen(pods, force).catch(() => null);
+    allOpen = all?.total ?? null;
+    others = all?.others ?? [];
     // Every client is counted (inactive ones are listed under their own heading, not hidden).
     counts = await countsByAccount(accounts.map((a) => ({ key: a.slug, accountIds: a.devrev.account_ids })), force);
     // With a Pod scope the counts MUST be scoped — never fall back to all-Pod counts silently.
@@ -27,22 +30,40 @@ export async function GET(req: Request) {
       open_tickets: counts[slug]?.total ?? null, wms_tickets: counts[slug]?.wms ?? null,
     })),
     all_open: allOpen,
+    other_accounts: others,
     counts_error: countsError,
   });
 }
 
-/** Open tickets under "All clients" (DevRev's whole Support view minus ignored test orgs), Pod scope applied. Cached 2 min. */
-const allCache = new Map<string, { at: number; value: Promise<number> }>();
+/**
+ * Open tickets under "All clients" (DevRev's whole Support view minus ignored test orgs), Pod scope applied, plus the
+ * accounts among them that aren't a client (not routed / not set up) — offered in the account picker. Cached 2 min.
+ */
+type AllOpen = { total: number; others: { slug: string; name: string; open: number; kind: "ambiguous" | "unknown" }[] };
+const allCache = new Map<string, { at: number; value: Promise<AllOpen> }>();
 function allClientsOpen(pods: Set<string> | null, force: boolean) {
   const key = pods ? [...pods].sort().join("|") : "*";
   const hit = allCache.get(key);
   if (!force && hit && Date.now() - hit.at < 2 * 60 * 1000) return hit.value;
   const scope = ticketScope(ALL_CLIENTS)!;
-  const value = openTickets(scope.ids).then((rows) => inTicketScope(rows, scope).filter((w) => {
-    if (!pods) return true;
-    const p = typeof w.custom_fields?.tnt__pod === "string" ? w.custom_fields.tnt__pod : "";
-    return pods.has(p || "-");
-  }).length);
+  const value = openTickets(scope.ids).then((rows): AllOpen => {
+    const open = inTicketScope(rows, scope).filter((w) => {
+      if (!pods) return true;
+      const p = typeof w.custom_fields?.tnt__pod === "string" ? w.custom_fields.tnt__pod : "";
+      return pods.has(p || "-");
+    });
+    const others = new Map<string, AllOpen["others"][number]>();
+    for (const w of open) {
+      const id = w.account?.id;
+      if (!id) continue;
+      const r = accountRole(id);
+      if (r.kind === "client" || r.kind === "ignored") continue;
+      const o = others.get(id) ?? { slug: `${ACCOUNT_PREFIX}${id}`, name: w.account?.display_name || "Unnamed account", open: 0, kind: r.kind };
+      o.open++;
+      others.set(id, o);
+    }
+    return { total: open.length, others: [...others.values()].sort((a, b) => b.open - a.open || a.name.localeCompare(b.name)) };
+  });
   value.catch(() => allCache.delete(key));
   allCache.set(key, { at: Date.now(), value });
   return value;

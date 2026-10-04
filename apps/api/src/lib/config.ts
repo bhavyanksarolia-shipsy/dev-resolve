@@ -205,6 +205,8 @@ export function toolEnv(): Record<string, string> {
 export const CODE_ROOT = process.env.CODE_ROOT || path.join(process.env.HOME || "", "Documents", "Stockone");
 
 export const ALL_CLIENTS = "all";
+/** Picker / URL value for a single DevRev account that isn't a client: "acct:<account id>". */
+export const ACCOUNT_PREFIX = "acct:";
 export interface TicketScope {
   slug: string; name: string;
   /** DevRev accounts to ask for; empty = every account (ALL_CLIENTS — the same tickets as DevRev's Support view). */
@@ -218,6 +220,12 @@ export interface TicketScope {
  * accounts that map to several clients (ambiguous) and accounts not set up yet included — minus ignored test orgs.
  */
 export function ticketScope(slug: string | null | undefined): TicketScope | null {
+  // One DevRev account that isn't a client (not routed / not set up) — picked in the account picker as "acct:<id>".
+  if (slug?.startsWith(ACCOUNT_PREFIX)) {
+    const id = slug.slice(ACCOUNT_PREFIX.length);
+    if (!/^don:identity:[^:]+:devo\/[^:]+:account\/[A-Za-z0-9]+$/.test(id)) return null;
+    return { slug, name: "DevRev account", ids: [id], exclude: new Set(), slugs: [], inactive: false };
+  }
   if (slug === ALL_CLIENTS) {
     const clients = getAccounts().filter((a) => a.devrev?.account_ids?.length);
     const exclude = new Set((loadProjectsFile().devrev_routing?.ignore ?? []).map((x) => x.account_id));

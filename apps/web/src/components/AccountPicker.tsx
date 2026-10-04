@@ -1,7 +1,18 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-export interface PickerAccount { name: string; slug: string; status: string; devrev_names?: string[]; open_tickets?: number | null; wms_tickets?: number | null; client_active?: boolean }
+export interface PickerAccount { name: string; slug: string; status: string; devrev_names?: string[]; open_tickets?: number | null; wms_tickets?: number | null; client_active?: boolean; note?: string }
+
+/** A DevRev account that isn't a client (not routed / not set up) — its picker value is "acct:<id>". */
+export const isAccountEntry = (slug: string) => slug.startsWith("acct:");
+
+/** Accounts from /api/accounts: the clients, then the non-client accounts that have open tickets. */
+export function pickerAccounts(d: { accounts?: PickerAccount[]; other_accounts?: { slug: string; name: string; open: number; kind: string }[] }): PickerAccount[] {
+  return [...(d.accounts ?? []), ...(d.other_accounts ?? []).map((o) => ({
+    name: o.name, slug: o.slug, status: "account", client_active: true, devrev_names: [o.name], open_tickets: o.open,
+    note: o.kind === "ambiguous" ? "not routed — could be several clients" : "not set up on a client",
+  }))];
+}
 
 /** Searchable account dropdown: type to filter (matches name, slug or any mapped DevRev account name), ↑/↓ + Enter, Esc to close. */
 /**
@@ -10,7 +21,7 @@ export interface PickerAccount { name: string; slug: string; status: string; dev
  */
 export function withAllClients(accounts: PickerAccount[], allOpen?: number | null): PickerAccount[] {
   if (!accounts.length) return accounts;
-  const sum = (k: "open_tickets" | "wms_tickets") => (accounts.some((a) => a[k] != null) ? accounts.reduce((n, a) => n + (a[k] ?? 0), 0) : null);
+  const sum = (k: "open_tickets" | "wms_tickets") => (accounts.some((a) => a[k] != null) ? accounts.reduce((n, a) => n + (a[k] ?? 0), 0) : null); // incl. non-client accounts
   return [{ name: "All clients", slug: "all", status: "active", client_active: true, devrev_names: [], open_tickets: allOpen ?? sum("open_tickets"), wms_tickets: sum("wms_tickets") }, ...accounts];
 }
 
@@ -20,7 +31,8 @@ export function AccountPicker({ accounts, value, onChange, label = true }: { acc
   const [hi, setHi] = useState(0);
   const box = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
-  const current = accounts.find((a) => a.slug === value);
+  const current = accounts.find((a) => a.slug === value)
+    ?? (isAccountEntry(value) && accounts.length ? { name: "DevRev account", slug: value, status: "account" } as PickerAccount : undefined);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -28,11 +40,13 @@ export function AccountPicker({ accounts, value, onChange, label = true }: { acc
       !q || a.name.toLowerCase().includes(q) || a.slug.includes(q) || (a.devrev_names || []).some((n) => n.toLowerCase().includes(q));
     const byCount = (a: PickerAccount, b: PickerAccount) => (b.wms_tickets ?? -1) - (a.wms_tickets ?? -1) || (b.open_tickets ?? -1) - (a.open_tickets ?? -1) || a.name.localeCompare(b.name);
     const live = (a: PickerAccount) => a.client_active !== false;
-    const active = accounts.filter((a) => live(a) && a.status === "active" && match(a)).sort(byCount);
-    const waiting = accounts.filter((a) => live(a) && a.status !== "active" && match(a)).sort(byCount);
+    const client = (a: PickerAccount) => !isAccountEntry(a.slug);
+    const active = accounts.filter((a) => client(a) && live(a) && a.status === "active" && match(a)).sort(byCount);
+    const waiting = accounts.filter((a) => client(a) && live(a) && a.status !== "active" && match(a)).sort(byCount);
+    const others = accounts.filter((a) => !client(a) && match(a)).sort(byCount);
     // Inactive clients are listed last, under their own heading.
     const inactive = accounts.filter((a) => !live(a) && match(a)).sort(byCount);
-    return { active, waiting, inactive, flat: [...active, ...waiting, ...inactive] };
+    return { active, waiting, others, inactive, flat: [...active, ...waiting, ...others, ...inactive] };
   }, [accounts, query]);
 
   useEffect(() => {
@@ -58,7 +72,8 @@ export function AccountPicker({ accounts, value, onChange, label = true }: { acc
       <li key={a.slug} className={dim ? "opacity-60" : ""}>
         <button type="button" onMouseEnter={() => setHi(i)} onClick={() => choose(a.slug)}
           className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm ${i === hi ? "bg-accent-soft text-accent-strong" : ""} ${a.slug === value ? "font-semibold" : ""}`}>
-          <span title={a.name} className="break-words [overflow-wrap:anywhere]">{a.name}</span>
+          <span title={a.note ? `${a.name} — ${a.note}` : a.name} className="break-words [overflow-wrap:anywhere]">{a.name}</span>
+          {a.note && <span title={a.note} className="h-1.5 w-1.5 shrink-0 rounded-full bg-bad" aria-label={a.note} />}
           <span className="ml-auto shrink-0 tabular-nums text-xs text-muted" title="Open Support tickets">{a.open_tickets ?? "…"} open</span>
         </button>
       </li>
@@ -83,6 +98,8 @@ export function AccountPicker({ accounts, value, onChange, label = true }: { acc
             {filtered.active.map((a) => row(a))}
             {filtered.waiting.length > 0 && <li className="px-3 pb-1 pt-2 text-xs uppercase tracking-wide text-muted">Awaiting logs / DB credentials</li>}
             {filtered.waiting.map((a) => row(a))}
+            {filtered.others.length > 0 && <li className="px-3 pb-1 pt-2 text-xs uppercase tracking-wide text-muted">Not set up on a client</li>}
+            {filtered.others.map((a) => row(a))}
             {filtered.inactive.length > 0 && <li className="px-3 pb-1 pt-2 text-xs uppercase tracking-wide text-muted">Inactive clients</li>}
             {filtered.inactive.map((a) => row(a, true))}
             {!filtered.flat.length && <li className="px-3 py-3 text-muted">No account matches “{query}”.</li>}

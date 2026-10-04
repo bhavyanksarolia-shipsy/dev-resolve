@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AccountPicker, withAllClients, type PickerAccount } from "@/components/AccountPicker";
+import { AccountPicker, isAccountEntry, pickerAccounts, withAllClients, type PickerAccount } from "@/components/AccountPicker";
 import { HealthBanner } from "@/components/HealthBanner";
 import { inPodScope, usePodScope } from "@/components/podScope";
 import { PodPicker } from "@/components/PodPicker";
@@ -47,7 +47,7 @@ function Dashboard() {
     // Only the latest request wins (an earlier, unscoped one can finish later and must not overwrite the counts).
     let live = true;
     fetch(`/api/accounts${scope.length ? `?pods=${encodeURIComponent(scope.join("|"))}` : ""}`).then((r) => r.json())
-      .then((d) => { if (live) { setAccounts(d.accounts ?? []); setAllOpen(d.all_open ?? null); setLoaded(true); } }).catch(() => live && setLoaded(true));
+      .then((d) => { if (live) { setAccounts(pickerAccounts(d)); setAllOpen(d.all_open ?? null); setLoaded(true); } }).catch(() => live && setLoaded(true));
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeKey]);
@@ -88,7 +88,7 @@ function Dashboard() {
         <PodPicker allLabel={scope.length === 1 ? scope[0] : scope.length ? `${scope.length} Pods` : "All Pods"} value={podPick} choices={podChoices} onChange={(v) => go({ pod: v && v.length && v.length < podChoices.length ? v.join("|") : null })} />
         <DateRangePicker range={range} onChange={(r) => go(r.key === "custom" ? { range: "custom", from: r.from, to: r.to } : { range: r.key, from: null, to: null })} />
       </div>
-      {loaded && <HealthBanner account={account === "all" ? undefined : account} compact />}
+      {loaded && <HealthBanner account={account === "all" || isAccountEntry(account) ? undefined : account} compact />}
 
       {d?.inactive && <div className="card p-5 text-sm">This client is marked <b>inactive</b> — nothing is fetched for it. <Link href={t("")} className="text-accent-strong underline">Open its tickets anyway</Link>.</div>}
       {d?.error && <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-bad ring-1 ring-red-200">{d.error}</div>}
@@ -110,7 +110,7 @@ function Dashboard() {
           <div className="grid gap-4 lg:grid-cols-3 [&>*]:min-w-0">
             <ClientTable rows={d.by_client}
               link={(slug) => `/tickets?account=${slug}${podPick?.length ? `&fpod=${encodeURIComponent(podPick.join("|"))}` : ""}`}
-              accountLink={(id, name) => `/tickets?account=all&acct=${encodeURIComponent(id)}&acctname=${encodeURIComponent(name)}${podPick?.length ? `&fpod=${encodeURIComponent(podPick.join("|"))}` : ""}`} />
+              accountLink={(id) => `/tickets?account=${encodeURIComponent(`acct:${id}`)}${podPick?.length ? `&fpod=${encodeURIComponent(podPick.join("|"))}` : ""}`} />
             <Panel title="Opened vs closed" hint={`${d.step > 1 ? "Per week" : "Per day"} · ${range.label}`} className="flex flex-col lg:col-span-2">
               <FlowChart rows={d.flow.per_day} />
               {d.flow.partial && <p className="mt-2 text-xs text-warn">Very busy period — the chart shows the most recent 5,000 tickets; the totals above are exact.</p>}
