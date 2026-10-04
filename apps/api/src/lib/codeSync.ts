@@ -119,3 +119,24 @@ export function startCodeSync() {
   void syncCode();
   setInterval(() => void syncCode(), Number(cfgValue("CODE_SYNC_SECONDS") || 1800) * 1000).unref();
 }
+
+let orgRepoCache: { at: number; key: string; repos: string[] } | null = null;
+/** Repos the saved token can read in the configured org (for the client "Code the agent reads" picker). Cached 10 min. */
+export async function availableRepos(): Promise<string[]> {
+  const m = base().match(/^https:\/\/github\.com\/([^/]+)$/i);
+  const token = githubToken();
+  if (!m || !token) return [];
+  const key = `${m[1]}|${token.slice(-6)}`;
+  if (orgRepoCache && orgRepoCache.key === key && Date.now() - orgRepoCache.at < 10 * 60 * 1000) return orgRepoCache.repos;
+  const repos: string[] = [];
+  for (let page = 1; page <= 20; page++) {
+    const r = await fetch(`https://api.github.com/orgs/${m[1]}/repos?per_page=100&type=all&sort=full_name&page=${page}`,
+      { headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}` } }).catch(() => null);
+    if (!r?.ok) break;
+    const batch = (await r.json()) as { name: string; archived?: boolean }[];
+    repos.push(...batch.filter((x) => !x.archived).map((x) => x.name));
+    if (batch.length < 100) break;
+  }
+  orgRepoCache = { at: Date.now(), key, repos };
+  return repos;
+}

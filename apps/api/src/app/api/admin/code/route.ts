@@ -1,11 +1,12 @@
 import { requireAdmin } from "@/lib/adminGuard";
 import { writeEnv } from "@/lib/adminConfig";
-import { codeStatus, syncCode } from "@/lib/codeSync";
+import { availableRepos, codeStatus, syncCode } from "@/lib/codeSync";
 
 /** Admin → Connections → Source code: where the agent's code comes from, and whether it's on this server. */
 export async function GET(req: Request) {
   const g = await requireAdmin(req);
   if (g.error) return g.error;
+  if (new URL(req.url).searchParams.get("repos") === "1") return Response.json({ repos: await availableRepos().catch(() => []) });
   return Response.json(codeStatus());
 }
 

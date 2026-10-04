@@ -149,13 +149,8 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
 
           <Field label="DevRev accounts" hint="Tickets from these DevRev accounts are investigated as this client."><DevrevPicker value={form.devrev} onChange={(v) => set({ devrev: v })} /></Field>
 
-          <Field label="Code the agent reads">
-            <div className="flex flex-wrap gap-4 text-sm">
-              {cfg.repos.map((r) => (
-                <label key={r} className="inline-flex items-center gap-1.5"><input type="checkbox" checked={form.code_repos.includes(r)}
-                  onChange={(e) => set({ code_repos: e.target.checked ? [...form.code_repos, r] : form.code_repos.filter((x) => x !== r) })} /> {r}</label>
-              ))}
-            </div>
+          <Field label="Code the agent reads" hint="Repos are downloaded from GitHub (Connections → Source code) when you save.">
+            <RepoPicker known={cfg.repos} value={form.code_repos} onChange={(v) => set({ code_repos: v })} />
           </Field>
 
           <div className="rounded-lg border border-line p-4">
@@ -237,6 +232,31 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Pick the repos a client's investigations may read: those already used + every repo the GitHub token can see. */
+function RepoPicker({ known, value, onChange }: { known: string[]; value: string[]; onChange: (v: string[]) => void }) {
+  const [remote, setRemote] = useState<string[] | null>(null);
+  const [q, setQ] = useState("");
+  useEffect(() => {
+    fetch("/api/admin/code?repos=1").then((r) => (r.ok ? r.json() : { repos: [] })).then((d) => setRemote(d.repos ?? [])).catch(() => setRemote([]));
+  }, []);
+  const all = [...new Set([...value, ...known, ...(remote ?? [])])].sort((a, b) => Number(value.includes(b)) - Number(value.includes(a)) || a.localeCompare(b));
+  const needle = q.trim().toLowerCase();
+  const shown = all.filter((r) => value.includes(r) || !needle || r.toLowerCase().includes(needle)).slice(0, needle ? 60 : 24);
+  return (
+    <div className="space-y-2">
+      <input className={input} placeholder={remote === null ? "Loading repos from GitHub…" : `Search ${all.length} repos…`} value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="flex max-h-48 flex-wrap gap-x-4 gap-y-1.5 overflow-auto text-sm">
+        {shown.map((r) => (
+          <label key={r} className="inline-flex items-center gap-1.5"><input type="checkbox" checked={value.includes(r)}
+            onChange={(e) => onChange(e.target.checked ? [...value, r] : value.filter((x) => x !== r))} /> {r}</label>
+        ))}
+        {!shown.length && <span className="text-xs text-muted">No repo matches “{q}”.</span>}
+      </div>
+      {remote !== null && !remote.length && <p className="text-xs text-muted">Couldn&apos;t list repos from GitHub — set up Connections → Source code first.</p>}
     </div>
   );
 }
