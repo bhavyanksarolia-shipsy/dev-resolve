@@ -52,6 +52,18 @@ async function main() {
       const r = await dst.query(`INSERT INTO ${table} (${names}) VALUES (${columns.map((_, i) => `$${i + 1}`).join(", ")})${returning ? " RETURNING id" : ""}`, params);
       return returning ? (r.rows[0].id as number) : 0;
     };
+    // Many rows in one statement (100 at a time): one network round trip instead of one per row.
+    const insertMany = async (table: string, columns: { name: string; json: boolean }[], rows: Row[]) => {
+      const names = columns.map((c) => `"${c.name}"`).join(", ");
+      for (let i = 0; i < rows.length; i += 100) {
+        const chunk = rows.slice(i, i + 100), params: unknown[] = [];
+        const values = chunk.map((row) => `(${columns.map((c) => {
+          params.push(c.json && row[c.name] != null ? JSON.stringify(row[c.name]) : row[c.name]);
+          return `$${params.length}`;
+        }).join(", ")})`).join(", ");
+        await dst.query(`INSERT INTO ${table} (${names}) VALUES ${values}`, params);
+      }
+    };
 
     // Investigations still running on this laptop are left out (they'd be copied half-done).
     const invs = (await src.query<Row>(`SELECT * FROM investigations WHERE status <> 'running' ORDER BY id`)).rows;
@@ -81,17 +93,21 @@ async function main() {
     const childCols: Record<string, Awaited<ReturnType<typeof shared>>> = {};
     for (const t of CHILDREN) childCols[t] = await shared(t); // one query at a time per connection
     const updCols = await shared("ticket_updates");
+    console.log("\nCopying (nothing is saved until the end — stopping now leaves the target unchanged)…");
     await dst.query("BEGIN");
     try {
+      let done = 0;
       for (const inv of todo) {
         // The agent's chat session lives on this laptop; without it the target re-seeds a chat from the ticket + RCA.
         const newId = await insert("investigations", invCols, { ...inv, session_id: null }, true);
         for (const t of CHILDREN) {
           const rows = (await src.query<Row>(`SELECT * FROM ${t} WHERE investigation_id = $1 ORDER BY id`, [inv.id])).rows;
-          for (const row of rows) await insert(t, childCols[t], { ...row, investigation_id: newId });
+          await insertMany(t, childCols[t], rows.map((row) => ({ ...row, investigation_id: newId })));
         }
+        console.log(`  ${++done}/${todo.length}  ${inv.ticket_display} (#${inv.id} → #${newId})`);
       }
-      for (const u of updTodo) await insert("ticket_updates", updCols, u);
+      await insertMany("ticket_updates", updCols, updTodo);
+      console.log("Saving…");
       await dst.query("COMMIT");
     } catch (e) {
       await dst.query("ROLLBACK");
