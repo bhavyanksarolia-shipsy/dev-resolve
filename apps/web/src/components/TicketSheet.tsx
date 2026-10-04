@@ -23,7 +23,7 @@ export function TicketSheet({ ticketId, onClosed }: { ticketId: string; onClosed
   const close = () => {
     if (closing) return;
     setClosing(true);
-    setTimeout(onClosed, 260); // let the slide-down play
+    setTimeout(onClosed, 400); // let the slide-down play
   };
   return (
     <div className="fixed inset-0 z-20" role="dialog" aria-modal="true" aria-label={ticketId}>
