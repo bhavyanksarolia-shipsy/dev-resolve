@@ -1,6 +1,6 @@
 import "server-only";
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { CODE_ROOT, cfgValue, getAccounts, readConfigEnv } from "./config";
 
@@ -125,7 +125,7 @@ let orgRepoCache: { at: number; key: string; repos: string[] } | null = null;
 export async function availableRepos(): Promise<string[]> {
   const m = base().match(/^https:\/\/github\.com\/([^/]+)$/i);
   const token = githubToken();
-  if (!m || !token) return [];
+  if (!m || !token) return localRepos(); // local setup: the checkouts already in CODE_ROOT
   const key = `${m[1]}|${token.slice(-6)}`;
   if (orgRepoCache && orgRepoCache.key === key && Date.now() - orgRepoCache.at < 10 * 60 * 1000) return orgRepoCache.repos;
   const repos: string[] = [];
@@ -139,4 +139,15 @@ export async function availableRepos(): Promise<string[]> {
   }
   orgRepoCache = { at: Date.now(), key, repos };
   return repos;
+}
+
+/** Git checkouts directly under CODE_ROOT (local machine without GitHub sync). */
+function localRepos(): string[] {
+  try {
+    return readdirSync(CODE_ROOT, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && !d.name.startsWith(".") && existsSync(path.join(CODE_ROOT, d.name, ".git")))
+      .map((d) => d.name).sort((a, b) => a.localeCompare(b));
+  } catch {
+    return [];
+  }
 }

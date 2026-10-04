@@ -157,7 +157,7 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
 
           <div className="rounded-lg border border-line p-4">
             <div className="mb-1 font-medium">Code</div>
-            <p className="mb-3 text-xs text-muted">Repos the agent searches for this client. They&apos;re downloaded from GitHub (Connections → GitHub) when you save.</p>
+            <p className="mb-3 text-xs text-muted">Repos the agent searches for this client — downloaded from GitHub (Connections → GitHub) on the server, or your local checkouts when GitHub isn&apos;t set up.</p>
             <RepoPicker known={cfg.repos} value={form.code_repos} onChange={(v) => set({ code_repos: v })} />
           </div>
 
@@ -322,7 +322,7 @@ function RepoPicker({ known, value, onChange }: { known: string[]; value: string
           ))}
         </div>
       )}
-      {remote !== null && !remote.length && <p className="text-xs text-muted">Couldn&apos;t list repos from GitHub — set up Connections → GitHub first.</p>}
+      {remote !== null && !remote.length && <p className="text-xs text-muted">No repos found — set up Connections → GitHub (or check out repos into the local code folder).</p>}
     </div>
   );
 }
