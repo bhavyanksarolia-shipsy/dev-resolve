@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { btn, btnPrimary, Field, input, Note, post, Select, Switch } from "./ui";
-import { confirmDialog } from "@/components/Dialog";
+import { Note, btn, btnPrimary, Field, input, post, Select, Switch } from "./ui";
+import { confirmDialog, toast } from "@/components/Dialog";
 import { Paged, TableCard } from "@/components/TableTools";
 
 interface U {
@@ -13,7 +13,7 @@ const when = (d: string | null) => (d ? new Date(d).toLocaleString("en-IN", { da
 /** User access control: everyone who can sign in, and what they may do. */
 export function UsersTab() {
   const [data, setData] = useState<{ users: U[]; me: string } | null>(null);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const setMsg = toast;
   const blank = { display_name: "", name: "", email: "", password: "", admin: false };
   const [nu, setNu] = useState(blank);
   const [pw, setPw] = useState<{ name: string; value: string } | null>(null);
@@ -59,7 +59,6 @@ export function UsersTab() {
     (!q || [u.name, u.display_name, u.email].some((v) => v?.toLowerCase().includes(q))));
   return (
     <div className="space-y-4">
-      {msg && !adding && <Note ok={msg.ok}>{msg.text}</Note>}
 
       {prefs && (
         <div className="card flex flex-wrap gap-x-8 gap-y-3 px-4 py-3">
@@ -173,7 +172,6 @@ export function UsersTab() {
                 { value: "admin", label: "Admin", hint: "Also manages users, clients and connections" },
               ]} />
             </Field>
-            {msg && !msg.ok && <Note ok={false}>{msg.text}</Note>}
             <div className="flex justify-end gap-2 pt-1">
               <button type="button" className="rounded-lg border border-line px-4 py-2 text-sm font-medium hover:border-accent" onClick={() => setAdding(false)}>Cancel</button>
               <button type="submit" className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-strong disabled:opacity-40"

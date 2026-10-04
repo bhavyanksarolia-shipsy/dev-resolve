@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { btn, btnPrimary, Field, input, Note, post } from "./ui";
+import { toast } from "@/components/Dialog";
+import { btn, btnPrimary, Field, input, post } from "./ui";
 
 type Info = Record<string, { present: boolean; size?: number; updated?: string; files?: number }>;
 const FILES = [
@@ -12,7 +13,6 @@ const FILES = [
 /** Bulk files, backups and the Chrome extension package — all from the browser. */
 export function FilesTab() {
   const [info, setInfo] = useState<Info | null>(null);
-  const [msg, setMsg] = useState<Record<string, { ok: boolean; text: string }>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [settings, setSettings] = useState<Record<string, { label: string; value: string }> | null>(null);
   const [store, setStore] = useState("");
@@ -31,7 +31,7 @@ export function FilesTab() {
     const r = await fetch("/api/admin/private-files", { method: "POST", body: fd });
     const d = await r.json().catch(() => ({}));
     setBusy(null);
-    setMsg((m) => ({ ...m, [kind]: { ok: r.ok, text: r.ok ? d.message : d.error || `HTTP ${r.status}` } }));
+    toast({ ok: r.ok, text: r.ok ? d.message : d.error || `HTTP ${r.status}` });
     load();
   }
   const status = (k: string) => {
@@ -61,10 +61,9 @@ export function FilesTab() {
           <div className="flex gap-2">
             <input className={input} value={store} placeholder="https://chromewebstore.google.com/detail/…" onChange={(e) => setStore(e.target.value)} />
             <button className={btnPrimary} disabled={busy === "store" || store === (settings?.EXTENSION_STORE_URL?.value ?? "")}
-              onClick={async () => { setBusy("store"); const r = await post("/api/admin/settings", { EXTENSION_STORE_URL: store }); setBusy(null); setMsg((m) => ({ ...m, store: { ok: !r.error, text: r.error || "Saved — the Connector page now shows Add to Chrome" } })); }}>Save</button>
+              onClick={async () => { setBusy("store"); const r = await post("/api/admin/settings", { EXTENSION_STORE_URL: store }); setBusy(null); toast({ ok: !r.error, text: r.error || "Saved — the Connector page now shows Add to Chrome" }); }}>Save</button>
           </div>
         </Field>
-        {msg.store && <Note ok={msg.store.ok}>{msg.store.text}</Note>}
       </section>
 
       <section className="card divide-y divide-line">
@@ -78,7 +77,6 @@ export function FilesTab() {
               <div className="font-medium">{f.label}</div>
               <div className="text-xs text-muted">{f.hint}</div>
               <div className="mt-1 text-xs">{status(f.kind)}</div>
-              {msg[f.kind] && <div className={`mt-1 text-xs ${msg[f.kind].ok ? "text-ok" : "text-bad"}`}>{msg[f.kind].text}</div>}
             </div>
             <label className={`cursor-pointer ${btn} ${busy === f.kind ? "opacity-50" : ""}`}>
               {busy === f.kind ? "Uploading…" : "Upload"}

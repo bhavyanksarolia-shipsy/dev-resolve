@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { btn, btnPrimary, Field, input, Note, post } from "./ui";
-import { confirmDialog } from "@/components/Dialog";
+import { btn, btnPrimary, Field, input, post } from "./ui";
+import { confirmDialog, toast } from "@/components/Dialog";
 import { Paged } from "@/components/TableTools";
 
 interface Status {
@@ -14,7 +14,7 @@ interface Status {
 export function SourceCodeCard() {
   const [s, setS] = useState<Status | null>(null);
   const [edit, setEdit] = useState<{ base: string; branch: string; token: string } | null>(null);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const setMsg = toast;
   const [busy, setBusy] = useState(false);
   // Repos being connected / disconnected right now: shown in the list at once (with a spinner) while the server works.
   const [pending, setPending] = useState<{ repo: string; kind: "add" | "remove" }[]>([]);
@@ -69,7 +69,6 @@ export function SourceCodeCard() {
       </div>
 
       <div className="space-y-5 px-5 py-4">
-        {msg && (msg.ok || !s.last?.repos.some((r) => !r.ok)) && <Note ok={msg.ok}>{msg.text}</Note>}
 
         {/* Settings: read-only summary, or the edit form */}
         {edit ? (

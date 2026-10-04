@@ -1,10 +1,11 @@
 "use client";
 import { SlideSheet } from "@/components/SlideSheet";
+import { toast } from "@/components/Dialog";
 import { useCallback, useEffect, useState } from "react";
 import type { Acc, AdminConfig } from "./types";
 import { ClientActiveToggle } from "@/components/ClientActiveToggle";
 import { TableCard, usePaged } from "@/components/TableTools";
-import { btn, btnPrimary, Field, input, MultiSelect, Note, post, Select, Switch } from "./ui";
+import { btn, btnPrimary, Field, input, MultiSelect, post, Select, Switch } from "./ui";
 
 const SLOTS = ["app", "audit", "integration"] as const;
 interface Form {
@@ -49,7 +50,7 @@ function DevrevPicker({ value, onChange }: { value: Form["devrev"]; onChange: (v
 /** Clients: which DevRev accounts belong to them and which logs / database their investigations use. */
 export function ClientsTab({ cfg, reload }: { cfg: AdminConfig; reload: () => void }) {
   const [form, setForm] = useState<Form | null>(null);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const setMsg = toast;
   const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState(false);
   const set = (p: Partial<Form>) => form && setForm({ ...form, ...p });
@@ -86,7 +87,6 @@ export function ClientsTab({ cfg, reload }: { cfg: AdminConfig; reload: () => vo
   const paged = usePaged(list, { noun: "clients", reset: filter });
   return (
     <div className="space-y-4">
-      {msg && <Note ok={msg.ok}>{msg.text}</Note>}
       <TableCard title="Clients" subtitle={`${cfg.accounts.filter((a) => a.client_active !== false).length} active · ${cfg.accounts.filter((a) => a.client_active === false).length} inactive`}
         search={filter} onSearch={setFilter} searchPlaceholder="Search clients…" pager={paged.pager}
         actions={<button className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-accent-strong" onClick={() => setForm(toForm(null, cfg))}>+ Add client</button>}>

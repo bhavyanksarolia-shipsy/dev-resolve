@@ -27,6 +27,11 @@ export function notify(o: { message: string; title?: string; tone?: Toast["tone"
   setTimeout(() => emit({ ...state, toasts: state.toasts.filter((x) => x.id !== t.id) }), t.tone === "error" ? 9000 : 5000);
 }
 
+/** Result of an action ({ ok, text }) as a toast that disappears by itself; null is ignored (clearing an old message). */
+export function toast(m: { ok: boolean; text: string } | null) {
+  if (m?.text) notify({ message: m.text, tone: m.ok ? "ok" : "error" });
+}
+
 const subscribe = (l: () => void) => { listeners.add(l); return () => listeners.delete(l); };
 const TOAST = { error: "border-red-200 bg-red-50 text-bad", ok: "border-emerald-200 bg-emerald-50 text-ok", info: "border-line bg-panel text-fg" };
 
@@ -79,7 +84,7 @@ export function DialogHost() {
       )}
       <div className="pointer-events-none fixed right-4 top-16 z-50 flex w-full max-w-sm flex-col gap-2">
         {s.toasts.map((t) => (
-          <div key={t.id} role="status" className={`pointer-events-auto rounded-xl border px-4 py-3 text-sm shadow-lg ${TOAST[t.tone]}`}>
+          <div key={t.id} role="status" className={`chat-pop pointer-events-auto rounded-xl border px-4 py-3 text-sm shadow-lg ${TOAST[t.tone]}`}>
             <div className="flex items-start gap-3">
               <div className="min-w-0 flex-1">{t.title && <div className="font-semibold">{t.title}</div>}<div className="break-words">{t.message}</div></div>
               <button aria-label="Dismiss" className="text-muted hover:text-fg" onClick={() => emit({ ...state, toasts: state.toasts.filter((x) => x.id !== t.id) })}>✕</button>

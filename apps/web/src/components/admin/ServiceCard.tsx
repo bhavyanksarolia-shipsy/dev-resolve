@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { btn, btnPrimary, Field, input, Note, post, Select } from "./ui";
+import { toast } from "@/components/Dialog";
+import { btn, btnPrimary, Field, input, post, Select } from "./ui";
 
 interface Svc { status: string; message: string; fix?: string; host?: string }
 interface Data {
@@ -34,7 +35,7 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
   const recheck = async () => { setBusy(true); setD(await load(true)); setBusy(false); };
   const [edit, setEdit] = useState(false);
   const [f, setF] = useState({ mode: "keep", secret: "", model: "" });
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const setMsg = toast;
   const save = async () => {
     setBusy(true); setMsg(null);
     const body = which === "devrev" ? { service: "devrev", token: f.secret }
@@ -57,7 +58,6 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
         <button className={`${btn} ml-auto`} disabled={busy} onClick={recheck}>{busy ? "Checking…" : "Check connection"}</button>
         <button className={btnPrimary} onClick={() => { setF({ mode: "keep", secret: "", model: which === "claude" ? d.claude.model : "" }); setEdit((e) => !e); }}>{edit ? "Close" : "Edit"}</button>
       </div>
-      {msg && <div className="mb-3"><Note ok={msg.ok}>{msg.text}</Note></div>}
       {edit && (
         <div className="mb-4 grid gap-3 rounded-lg bg-bg p-4 sm:grid-cols-2">
           {which === "claude" ? <>

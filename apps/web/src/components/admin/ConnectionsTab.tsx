@@ -1,8 +1,9 @@
 "use client";
 import { SlideSheet } from "@/components/SlideSheet";
+import { toast } from "@/components/Dialog";
 import { useEffect, useRef, useState } from "react";
 import type { AdminConfig, Conn } from "./types";
-import { btn, btnPrimary, Field, input, Note, post, Rows, Switch } from "./ui";
+import { btn, btnPrimary, Field, input, post, Rows, Switch } from "./ui";
 import { SourceCodeCard } from "./SourceCodeCard";
 import { ServiceCard } from "./ServiceCard";
 import { TableCard, usePaged } from "@/components/TableTools";
@@ -78,6 +79,20 @@ function SecretInput({ value, onChange, saved, conn, kind, field }: {
   );
 }
 
+/** Last check per connection, kept in this browser for an hour so the result survives switching tabs / pages. */
+type Checks = Record<string, { ok: boolean; message: string; at: number } | "…">;
+const CHECKS_KEY = "dr.connectionChecks", CHECKS_TTL = 60 * 60 * 1000;
+function loadChecks(): Checks {
+  try {
+    const all = JSON.parse(localStorage.getItem(CHECKS_KEY) || "{}") as Checks;
+    return Object.fromEntries(Object.entries(all).filter(([, v]) => v !== "…" && Date.now() - v.at < CHECKS_TTL));
+  } catch { return {}; }
+}
+function saveChecks(c: Checks) {
+  try { localStorage.setItem(CHECKS_KEY, JSON.stringify(Object.fromEntries(Object.entries(c).filter(([, v]) => v !== "…")))); } catch { /* storage blocked */ }
+}
+const ago = (t: number) => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? "just now" : `${m} min ago`; };
+
 const AUTH_LABEL: Record<Auth, string> = { none: "No auth", password: "Username + password", api_key: "API key", google: "Google login" };
 
 /** Index patterns as removable chips plus an input to add more (Enter or comma adds). */
@@ -107,15 +122,16 @@ function PatternList({ value, onChange }: { value: string[]; onChange: (v: strin
 /** Systems clients use: OpenSearch log clusters and Metabase instances (URL, sign-in, VPN). */
 export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () => void }) {
   const [form, setForm] = useState<Form | null>(null);
-  const [test, setTest] = useState<{ ok: boolean; message: string } | null>(null);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const setTest = (t: { ok: boolean; message: string } | null) => toast(t && { ok: t.ok, text: t.message });
+  const setMsg = toast;
   const [busy, setBusy] = useState(false);
-  const [checks, setChecks] = useState<Record<string, { ok: boolean; message: string } | "…">>({});
+  const [checks, setChecksState] = useState<Checks>(loadChecks);
+  const setChecks = (f: (m: Checks) => Checks) => setChecksState((m) => { const n = f(m); saveChecks(n); return n; });
   async function checkRow(c: Conn, kind: Kind) {
     const key = `${c.name}-${kind}`;
     setChecks((m) => ({ ...m, [key]: "…" }));
     const r = await post<{ ok: boolean; message: string }>("/api/admin/connections/test", { ...payload(toForm(c, kind)), existing: c.name });
-    setChecks((m) => ({ ...m, [key]: { ok: !r.error && r.ok, message: r.error || r.message } }));
+    setChecks((m) => ({ ...m, [key]: { ok: !r.error && r.ok, message: r.error || r.message, at: Date.now() } }));
   }
   type Sub = "github" | "opensearch" | "metabase" | "claude" | "devrev";
   const [sub, setSub] = useState<Sub>("github");
@@ -162,11 +178,11 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
     ["metabase", "Metabase", cfg.connections.filter((c) => c.metabase).length], ["claude", "Claude", null], ["devrev", "DevRev", null],
   ];
   const newHostNeedsExt = form && form.vpn && !form.vpnSuffix && (() => { try { const h = new URL(form.url).hostname; return !cfg.vpnSuffixes.some((s) => h.endsWith(s)); } catch { return false; } })();
+  const gatewayName = cfg.connections.find((c) => c.appLog)?.opensearch?.displayName;
   const authChoices: Auth[] = form?.kind === "metabase" ? ["password", "api_key", "google"] : ["none", "password", "google"];
 
   return (
     <div className="space-y-4">
-      {msg && <Note ok={msg.ok}>{msg.text}</Note>}
       {(
         <div role="tablist" aria-label="Connection types" className="inline-flex flex-wrap rounded-xl border border-line bg-panel p-1 text-sm font-medium">
           {TABS.map(([k, l, n]) => (
@@ -203,7 +219,7 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
                     <td className="max-w-56 px-4 py-3 text-xs">
                       {(() => { const r = checks[`${c.name}-${kind}`];
                         return r === "…" ? <span className="text-muted">checking…</span>
-                          : r ? <button type="button" onClick={() => checkRow(c, kind)} title={`${r.message} — click to check again`} className={`line-clamp-2 text-left ${r.ok ? "text-ok" : "text-bad"}`}>{r.ok ? "● connected" : `○ ${r.message}`}</button>
+                          : r ? <button type="button" onClick={() => checkRow(c, kind)} title={`${r.message} — click to check again`} className={`line-clamp-2 text-left ${r.ok ? "text-ok" : "text-bad"}`}>{r.ok ? "● connected" : `○ ${r.message}`}<span className="ml-1 text-muted">· {ago(r.at)}</span></button>
                           : <button className={btn} onClick={() => checkRow(c, kind)}>Check</button>; })()}
                     </td>
                     <td className="px-4 py-3"><button className={btn} onClick={() => { setForm(toForm(c, kind)); setTest(null); }}>Edit</button></td>
@@ -222,7 +238,7 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
           <section className="card space-y-3 p-4">
             <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">Connection</h3>
             <div className="grid gap-3 sm:grid-cols-[1fr_2fr]">
-              <Field label="Name" hint={form.originalName ? <>ID <code className="font-mono">{form.originalName}</code> · fixed, clients point to it</> : undefined}>
+              <Field label="Name">
                 <input className={input} value={form.displayName} placeholder={form.kind === "metabase" ? "Acme production Metabase" : "Acme logs"} onChange={(e) => set({ displayName: e.target.value })} />
               </Field>
               <Field label="Link"><input className={input} value={form.url} placeholder="https://" onChange={(e) => set({ url: e.target.value })} /></Field>
@@ -256,7 +272,7 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
             )}
             {form.auth === "google" && <p className="text-xs text-muted">Each person signs in with their own Google account on the Connector page.</p>}
             {form.kind === "opensearch" && !form.gateway && (
-              <p className="text-xs text-muted">Google login isn&apos;t available here: for OpenSearch it only works through the Shipsy app-log gateway (the Google-login connection). This link signs in with no auth or a username + password.</p>
+              <p className="text-xs text-muted">Google login is only for the Shipsy app logs, which already have a connection{gatewayName ? <> (<b className="font-medium text-fg">{gatewayName}</b>)</> : null}. To add index patterns there, edit that connection.</p>
             )}
             {form.gateway && <p className="text-xs text-muted">This is the Shipsy app-log gateway, which only supports Google login.</p>}
           </section>
@@ -273,7 +289,6 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
               : <PatternList value={form.patterns} onChange={(v) => set({ patterns: v })} />}
           </section>
 
-          {test && <Note ok={test.ok}>{test.message}</Note>}
           <div className="sticky bottom-0 -mx-4 mt-auto flex items-center gap-3 border-t border-line bg-panel px-4 py-3 sm:-mx-6 sm:px-6">
             <button className={btn} disabled={busy || !form.url} onClick={runTest}>{busy ? "Checking…" : "Check connection"}</button>
             <button className={`${btn} ml-auto`} onClick={() => setForm(null)}>Cancel</button>
