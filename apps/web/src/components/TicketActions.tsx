@@ -8,6 +8,7 @@ interface Options {
   stage: { id: string | null; name: string | null }; pod: string | null; stages: StageOption[]; pods: string[];
   part: { id: string; name: string } | null; parts: { id: string; name: string; type?: string; product?: string }[];
   account: { id: string; name: string } | null;
+  owner: { id: string; name: string } | null;
 }
 interface UpdateResult { ok: boolean; updated: number; failed: { ticket: string; error?: string }[]; warnings?: { ticket: string; warning: string }[]; error?: string }
 
@@ -31,9 +32,9 @@ export function useTicketOptions(ticket: string | null, reload = 0) {
 }
 
 /** Changes Stage and/or Pod on DevRev tickets after a confirm, and reports what DevRev accepted. */
-export async function updateTickets(tickets: string[], change: { stage?: string; pod?: string | null; account?: { id: string; name: string }; part?: { id: string; name: string } }) {
+export async function updateTickets(tickets: string[], change: { stage?: string; pod?: string | null; account?: { id: string; name: string }; part?: { id: string; name: string }; owner?: { id: string; name: string } }) {
   const what = [change.stage && `stage → ${stageLabel(change.stage)}`, change.pod !== undefined && `Pod → ${change.pod ?? "none"}`,
-    change.account && `account → ${change.account.name}`, change.part && `part → ${change.part.name}`].filter(Boolean).join(" and ");
+    change.account && `account → ${change.account.name}`, change.part && `part → ${change.part.name}`, change.owner && `owner → ${change.owner.name}`].filter(Boolean).join(" and ");
   const many = tickets.length > 1;
   // Resolve is one click (empty resolve fields get the defaults on the server); other changes are confirmed first.
   const ok = change.stage === "resolved" || await confirmDialog({
@@ -42,7 +43,7 @@ export async function updateTickets(tickets: string[], change: { stage?: string;
     confirmLabel: change.stage === "resolved" ? (many ? `Resolve ${tickets.length} tickets` : "Mark resolved") : "Update",
   });
   if (!ok) return null;
-  const r = await fetch("/api/tickets/update", { method: "POST", body: JSON.stringify({ tickets, ...change, account: change.account?.id, part: change.part?.id }) });
+  const r = await fetch("/api/tickets/update", { method: "POST", body: JSON.stringify({ tickets, ...change, account: change.account?.id, part: change.part?.id, owner: change.owner?.id }) });
   const d: UpdateResult = await r.json().catch(() => ({ ok: false, updated: 0, failed: [], error: `HTTP ${r.status}` }));
   if (d.warnings?.length) notify({ title: "Check in DevRev", message: d.warnings.slice(0, 4).map((w) => `${w.ticket}: ${w.warning}`).join(" · "), tone: "error" });
   if (d.error) notify({ title: "Not updated", message: d.error, tone: "error" });
@@ -211,12 +212,65 @@ function PartPill({ current, parts, disabled, onPick }: {
   );
 }
 
+/** Owner pill: DevRev users, searchable by name or email, with "Assign to me" first. */
+function OwnerPill({ current, disabled, onPick }: { current: { id: string; name: string } | null; disabled?: boolean; onPick: (u: { id: string; name: string }) => void }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const box = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null); // the pop-up is drawn at the page level (portal), outside `box`
+  const { btn: popBtn, style: popStyle } = usePopover(open);
+  const people = useDevrevUsers(open);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node) && !popRef.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } };
+    document.addEventListener("mousedown", away); document.addEventListener("keydown", esc, true);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc, true); };
+  }, [open]);
+  const needle = q.trim().toLowerCase();
+  const me = people?.users.find((u) => u.id === people.me);
+  const rows = (people?.users ?? []).filter((u) => u.id !== current?.id && (!needle || `${u.name} ${u.email ?? ""}`.toLowerCase().includes(needle))).slice(0, 100);
+  return (
+    <div ref={box} className="relative">
+      <button ref={popBtn} type="button" disabled={disabled} onClick={() => { setOpen((o) => !o); setQ(""); }} aria-haspopup="dialog" aria-expanded={open}
+        title={current?.name} className={`inline-flex max-w-72 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ring-1 transition hover:ring-accent disabled:opacity-50 ${current ? "bg-panel ring-line" : "bg-bg text-muted ring-line"}`}>
+        <span className="text-muted">Owner</span><span className="truncate">{current?.name ?? "unassigned"}</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden><path d="m6 9 6 6 6-6" /></svg>
+      </button>
+      {open && createPortal(
+        <div ref={popRef} role="dialog" aria-label="Change owner" style={popStyle} className="z-50 overflow-hidden rounded-xl border border-line bg-panel text-sm shadow-lg">
+          <div className="border-b border-line p-2">
+            <input ref={(el) => el?.focus({ preventScroll: true })} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search people…"
+              className="w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft" />
+          </div>
+          <ul className="max-h-72 overflow-auto py-1">
+            {!people && <li className="px-3 py-2 text-xs text-muted">Loading people…</li>}
+            {me && me.id !== current?.id && !needle && (
+              <li role="menuitem" onClick={() => { setOpen(false); onPick({ id: me.id, name: me.name }); }} className="cursor-pointer border-b border-line px-3 py-1.5 font-medium text-accent-strong hover:bg-accent-soft">
+                Assign to me<span className="block text-xs font-normal text-muted">{me.name}</span>
+              </li>
+            )}
+            {people && !rows.length && <li className="px-3 py-2 text-xs text-muted">No one matches “{q.trim()}”</li>}
+            {rows.map((u) => (
+              <li key={u.id} role="menuitem" onClick={() => { setOpen(false); onPick({ id: u.id, name: u.name }); }} className="cursor-pointer px-3 py-1.5 hover:bg-accent-soft">
+                <span className="break-words [overflow-wrap:anywhere]">{u.name}</span>
+                {u.email && <span className="block text-xs text-muted">{u.email}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
+}
+
 /** Ticket page: Stage and Pod as small pills, plus Resolve. */
 export function TicketControls({ ticket, onChanged }: { ticket: string; onChanged: () => void }) {
   const [reload, setReload] = useState(0);
   const opts = useTicketOptions(ticket, reload);
   const [busy, setBusy] = useState(false);
-  async function apply(change: { stage?: string; pod?: string | null; account?: { id: string; name: string }; part?: { id: string; name: string } }) {
+  async function apply(change: { stage?: string; pod?: string | null; account?: { id: string; name: string }; part?: { id: string; name: string }; owner?: { id: string; name: string } }) {
     setBusy(true);
     const d = await updateTickets([ticket], change);
     setBusy(false);
@@ -225,7 +279,7 @@ export function TicketControls({ ticket, onChanged }: { ticket: string; onChange
       // Tell the Tickets table (still open behind the ticket sheet) so it updates / drops the row.
       const final = !!change.stage && !!opts?.stages.find((x) => x.name === change.stage)?.final;
       window.dispatchEvent(new CustomEvent<{ id: string; change: SavedChange }>("ticket-changed", {
-        detail: { id: ticket, change: { ...(change.stage && { stage: change.stage, closed: final }), ...(change.pod !== undefined && { pod: change.pod }), ...(change.part && { part: change.part.name }) } },
+        detail: { id: ticket, change: { ...(change.stage && { stage: change.stage, closed: final }), ...(change.pod !== undefined && { pod: change.pod }), ...(change.part && { part: change.part.name }), ...(change.owner && { owner: change.owner.name }) } },
       }));
     }
   }
@@ -241,6 +295,7 @@ export function TicketControls({ ticket, onChanged }: { ticket: string; onChange
       <PillMenu label="Stage" value={stageLabel(opts.stage.name)} disabled={busy}
         items={opts.stages.filter((s) => s.name !== "resolved").map((s) => ({ value: s.name, label: stageLabel(s.name), hint: s.final ? "Closes the ticket" : undefined }))}
         onPick={(v) => apply({ stage: v })} />
+      <OwnerPill current={opts.owner} disabled={busy} onPick={(u) => apply({ owner: u })} />
       {canResolve && (
         <button onClick={() => apply({ stage: "resolved" })} disabled={busy}
           className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium text-ok ring-1 ring-ok/40 transition hover:bg-ok hover:text-white disabled:opacity-50">

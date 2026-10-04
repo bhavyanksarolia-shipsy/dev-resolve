@@ -12,7 +12,10 @@ export async function GET(req: Request) {
     const part = (t as { applies_to_part?: { id: string; name?: string } }).applies_to_part;
     return Response.json({ stage: { id: t.stage?.stage?.id ?? null, name: t.stage?.name ?? null }, pod: typeof t.custom_fields?.tnt__pod === "string" ? t.custom_fields.tnt__pod : null,
       part: part ? { id: part.id, name: part.name ?? "" } : null, stages, pods, parts,
-      account: t.account?.id ? { id: t.account.id, name: t.account.display_name ?? "" } : null });
+      account: t.account?.id ? { id: t.account.id, name: t.account.display_name ?? "" } : null,
+      // DevRev's placeholder user "Unassigned" means nobody.
+      owner: ((t.owned_by ?? []) as { id?: string; full_name?: string; display_name?: string }[])
+        .map((o) => ({ id: o.id ?? "", name: o.full_name || o.display_name || "" })).find((o) => o.id && o.name && !/^unassigned$/i.test(o.name)) ?? null });
   } catch (e) {
     return apiError(e);
   }
