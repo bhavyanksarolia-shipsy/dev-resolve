@@ -155,7 +155,7 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
 
           <div className="rounded-lg border border-line p-4">
             <div className="mb-1 font-medium">Code</div>
-            <p className="mb-3 text-xs text-muted">Repos the agent searches for this client — downloaded from GitHub (Connections → GitHub) on the server, or your local checkouts when GitHub isn&apos;t set up.</p>
+            <p className="mb-3 text-xs text-muted">Repos the agent searches for this client — picked from the repos connected under Connections → GitHub.</p>
             <RepoPicker known={cfg.repos} value={form.code_repos} onChange={(v) => set({ code_repos: v })} />
           </div>
 
@@ -273,7 +273,7 @@ function RepoPicker({ known, value, onChange }: { known: string[]; value: string
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    fetch("/api/admin/code?repos=1").then((r) => (r.ok ? r.json() : { repos: [] })).then((d) => setRemote(d.repos ?? [])).catch(() => setRemote([]));
+    fetch("/api/admin/code?connected=1").then((r) => (r.ok ? r.json() : { repos: [] })).then((d) => setRemote(d.repos ?? [])).catch(() => setRemote([]));
   }, []);
   useEffect(() => {
     if (!open) return;
@@ -281,10 +281,11 @@ function RepoPicker({ known, value, onChange }: { known: string[]; value: string
     document.addEventListener("mousedown", away);
     return () => document.removeEventListener("mousedown", away);
   }, [open]);
-  const all = [...new Set([...known, ...(remote ?? [])])].sort((a, b) => a.localeCompare(b));
+  // Only repos connected on Connections → GitHub (plus any this client already has).
+  const all = [...new Set([...value, ...(remote ?? known)])].sort((a, b) => a.localeCompare(b));
   const needle = q.trim().toLowerCase();
   const matches = all.filter((r) => !value.includes(r) && (!needle || r.toLowerCase().includes(needle))).slice(0, 12);
-  const suggested = all.filter((r) => /stockone/i.test(r) && !value.includes(r)).slice(0, 8);
+  const suggested = all.filter((r) => !value.includes(r)).slice(0, 8);
   const add = (r: string) => { onChange([...value, r]); setQ(""); };
   return (
     <div ref={box} className="space-y-2">
@@ -301,7 +302,7 @@ function RepoPicker({ known, value, onChange }: { known: string[]; value: string
       <div className="relative">
         <input className={input} value={q} onFocus={() => setOpen(true)} onChange={(e) => { setQ(e.target.value); setOpen(true); }}
           onKeyDown={(e) => { if (e.key === "Enter" && matches[0]) { e.preventDefault(); add(matches[0]); } if (e.key === "Escape") setOpen(false); }}
-          placeholder={remote === null ? "Loading repos from GitHub…" : `Search ${all.length} repos to add…`} />
+          placeholder={remote === null ? "Loading connected repos…" : `Search ${all.length} connected repos…`} />
         {open && (
           <ul className="absolute left-0 right-0 z-30 mt-1 max-h-64 overflow-auto rounded-xl border border-line bg-panel py-1 text-sm shadow-xl">
             {matches.map((r) => (
@@ -315,13 +316,13 @@ function RepoPicker({ known, value, onChange }: { known: string[]; value: string
       </div>
       {suggested.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 text-xs">
-          <span className="text-muted">Suggested:</span>
+          <span className="text-muted">Connected:</span>
           {suggested.map((r) => (
             <button key={r} type="button" onClick={() => add(r)} className="rounded-full px-2 py-0.5 font-mono text-muted ring-1 ring-line hover:text-accent-strong hover:ring-accent">+ {r}</button>
           ))}
         </div>
       )}
-      {remote !== null && !remote.length && <p className="text-xs text-muted">No repos found — set up Connections → GitHub (or check out repos into the local code folder).</p>}
+      <p className="text-xs text-muted">Missing a repo? Connect it first under <a href="/admin?tab=connections" className="text-accent-strong underline">Connections → GitHub</a>.</p>
     </div>
   );
 }

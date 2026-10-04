@@ -14,7 +14,14 @@ interface SyncResult { at: string; ok: boolean; repos: RepoResult[]; error?: str
 let last: SyncResult | null = null;
 let running: Promise<SyncResult> | null = null;
 
-export const codeRepos = () => Array.from(new Set(getAccounts().flatMap((a) => a.code_repos ?? []))).sort();
+/** Repos connected on the GitHub tab (CODE_REPOS). Unset = the repos clients already use (older setups). */
+export const connectedRepos = (): string[] => {
+  const v = pick("CODE_REPOS");
+  if (v != null) return v.split(",").map((x) => x.trim()).filter(Boolean).sort();
+  return Array.from(new Set(getAccounts().flatMap((a) => a.code_repos ?? []))).sort();
+};
+/** What gets downloaded: the connected repos (+ any a client still points at, so nothing breaks). */
+export const codeRepos = () => Array.from(new Set([...connectedRepos(), ...getAccounts().flatMap((a) => a.code_repos ?? [])])).sort();
 // Values saved in Admin → Connections → Source code win over the service's variables (Railway), so changing the
 // token in the UI actually takes effect even when an older GITHUB_TOKEN variable is still set.
 const saved = (k: string) => readConfigEnv()[k] || undefined;
@@ -108,7 +115,7 @@ export async function ensureRepos(repos: string[]) {
 
 export function codeStatus() {
   return {
-    base: base(), branch: branch(), tokenSet: !!githubToken(), tokenSource: tokenSource(), root: CODE_ROOT, syncing: !!running, last,
+    base: base(), branch: branch(), tokenSet: !!githubToken(), tokenSource: tokenSource(), tokenPreview: mask(githubToken()), connected: connectedRepos(), root: CODE_ROOT, syncing: !!running, last,
     repos: codeRepos().map((r) => ({ repo: r, present: existsSync(path.join(CODE_ROOT, r, ".git")) || existsSync(path.join(CODE_ROOT, r)) })),
   };
 }
@@ -162,3 +169,12 @@ export async function checkAccess(): Promise<{ ok: boolean; message: string }> {
     ? { ok: false, message: problems.map(([r, p]) => `${r}: ${p}`).join(" · ") }
     : { ok: true, message: `Connected — the token can read all ${repos.length} repo${repos.length === 1 ? "" : "s"}` };
 }
+
+/** "ghp_••••••••a1B2" — enough to recognise a token without exposing it. */
+export function mask(t?: string | null) {
+  if (!t) return null;
+  const prefix = t.match(/^(github_pat_|ghp_|gho_|ghs_)/)?.[1] ?? "";
+  return `${prefix}${"•".repeat(12)}${t.slice(-4)}`;
+}
+/** Full token for an admin who clicked the eye (never included in normal responses). */
+export const revealToken = () => githubToken() ?? null;
