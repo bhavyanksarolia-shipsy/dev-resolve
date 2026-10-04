@@ -99,7 +99,7 @@ export function Select({ value, onChange, options, placeholder = "Choose…", di
       <button type="button" disabled={disabled} aria-haspopup="listbox" aria-expanded={open} aria-controls={id}
         onClick={(e) => { e.preventDefault(); if (open) setOpen(false); else show(); }}
         className={`${input} flex items-center gap-2 text-left disabled:opacity-50 ${open ? "border-accent ring-2 ring-accent-soft" : ""}`}>
-        <span className={`min-w-0 flex-1 truncate ${current ? "" : "text-muted"}`}>{current?.label ?? placeholder}</span>
+        <span title={current?.label} className={`min-w-0 flex-1 truncate ${current ? "" : "text-muted"}`}>{current?.label ?? placeholder}</span>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-muted" aria-hidden>
           <path d={open ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} />
         </svg>
@@ -119,7 +119,7 @@ export function Select({ value, onChange, options, placeholder = "Choose…", di
               <li key={o.value} role="option" aria-selected={sel} onMouseEnter={() => setActive(i)} onMouseDown={(e) => { e.preventDefault(); pick(o); }}
                 className={`flex cursor-pointer items-start gap-2 px-3 py-2 text-sm ${i === active ? "bg-accent-soft" : ""}`}>
                 <span className={`mt-0.5 w-4 shrink-0 text-accent-strong ${sel ? "" : "invisible"}`}>✓</span>
-                <span className="min-w-0"><span className={`block truncate ${sel ? "font-medium text-accent-strong" : ""}`}>{o.label}</span>
+                <span className="min-w-0" title={o.label}><span className={`block break-words [overflow-wrap:anywhere] ${sel ? "font-medium text-accent-strong" : ""}`}>{o.label}</span>
                   {o.hint && <span className="block text-xs text-muted">{o.hint}</span>}</span>
               </li>
             );
@@ -169,7 +169,7 @@ export function MultiSelect({ value, onChange, options, search, placeholder = "C
       <button type="button" onClick={() => setOpen((o) => !o)} aria-haspopup="listbox" aria-expanded={open}
         className={`${input} flex min-h-10 flex-wrap items-center gap-1.5 text-left ${open ? "border-accent ring-2 ring-accent-soft" : ""}`}>
         {value.length ? value.map((v) => (
-          <span key={v.value} className={`rounded bg-accent-soft px-1.5 py-0.5 text-xs font-medium text-accent-strong ${v.mono ? "font-mono" : ""}`}>{v.label}</span>
+          <span key={v.value} title={v.label} className={`rounded bg-accent-soft px-1.5 py-0.5 text-xs font-medium text-accent-strong ${v.mono ? "font-mono" : ""}`}>{v.label}</span>
         )) : <span className="text-muted">{placeholder}</span>}
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="ml-auto shrink-0 text-muted" aria-hidden><path d={open ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} /></svg>
       </button>
@@ -183,7 +183,7 @@ export function MultiSelect({ value, onChange, options, search, placeholder = "C
               <li key={o.value}>
                 <label className="flex cursor-pointer items-center gap-2.5 px-3 py-1.5 hover:bg-accent-soft">
                   <input type="checkbox" checked={picked.has(o.value)} onChange={() => toggle(o)} className="h-4 w-4 shrink-0 accent-[var(--accent)]" />
-                  <span className={`min-w-0 flex-1 truncate ${o.mono ? "font-mono text-xs" : ""}`}>{o.label}</span>
+                  <span title={o.label} className={`min-w-0 flex-1 break-words [overflow-wrap:anywhere] ${o.mono ? "font-mono text-xs" : ""}`}>{o.label}</span>
                   {o.hint && <span className="shrink-0 text-xs text-warn">{o.hint}</span>}
                 </label>
               </li>

@@ -78,7 +78,7 @@ export function ColumnMenu({ label, values, selected, text, sort, onSort, onSele
               <li key={v.value || "_none"}>
                 <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-bg">
                   <input type="checkbox" checked={isOn(v.value)} onChange={() => toggle(v.value)} className="accent-[var(--accent)]" />
-                  <span className={`flex-1 truncate ${v.value ? "" : "italic text-muted"}`}>{v.value ? format(v.value) : "not set"}</span>
+                  <span title={v.value ? format(v.value) : "not set"} className={`flex-1 break-words [overflow-wrap:anywhere] ${v.value ? "" : "italic text-muted"}`}>{v.value ? format(v.value) : "not set"}</span>
                   <span className={`text-xs tabular-nums ${v.count ? "text-muted" : "text-line"}`}>{v.count}</span>
                 </label>
               </li>

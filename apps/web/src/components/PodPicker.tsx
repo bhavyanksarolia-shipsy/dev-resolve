@@ -28,7 +28,7 @@ export function PodPicker({ value, choices, onChange, allLabel = "All Pods" }: {
         title={value?.length ? value.map(name).join(", ") : choices.map((c) => c.value || "Not set").join(", ") || undefined}
         className={`flex items-center gap-2 rounded-lg border bg-panel px-3 py-2 text-sm shadow-sm transition hover:border-accent ${open ? "border-accent ring-2 ring-accent-soft" : value?.length ? "border-accent" : "border-line"}`}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted" aria-hidden><path d="M3 5h18l-7 8v6l-4 2v-8Z" /></svg>
-        <span className={`max-w-48 truncate font-medium ${value?.length ? "text-accent-strong" : ""}`}>{label}</span>
+        <span title={label} className={`max-w-48 truncate font-medium ${value?.length ? "text-accent-strong" : ""}`}>{label}</span>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-muted" aria-hidden><path d={open ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} /></svg>
       </button>
       {open && (
@@ -46,7 +46,7 @@ export function PodPicker({ value, choices, onChange, allLabel = "All Pods" }: {
               <li key={it.v}>
                 <label className={`flex cursor-pointer items-center gap-2.5 px-3 py-1.5 hover:bg-accent-soft ${it.v === "-" ? "text-muted" : ""}`}>
                   <input type="checkbox" checked={isOn(it.v)} onChange={() => toggle(it.v)} className="h-4 w-4 accent-[var(--accent)]" />
-                  <span className="flex-1 truncate">{it.label}</span>
+                  <span title={it.label} className="flex-1 break-words [overflow-wrap:anywhere]">{it.label}</span>
                   <span className="text-xs tabular-nums text-muted">{it.count}</span>
                 </label>
               </li>

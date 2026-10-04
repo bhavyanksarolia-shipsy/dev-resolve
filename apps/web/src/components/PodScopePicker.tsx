@@ -33,7 +33,7 @@ export function PodScopePicker() {
         title={scope.length ? `${scope.join(", ")} + tickets with no Pod` : "Showing every Pod"}
         className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ring-1 transition hover:ring-accent ${scope.length ? "bg-accent-soft text-accent-strong ring-emerald-200" : "bg-panel text-muted ring-line"}`}>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M3 5h18l-7 8v6l-4 2v-8Z" /></svg>
-        <span className="max-w-40 truncate">{label}</span>
+        <span title={label} className="max-w-40 truncate">{label}</span>
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden><path d={open ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} /></svg>
       </button>
       {open && (
@@ -48,7 +48,7 @@ export function PodScopePicker() {
               <li key={v}>
                 <label className="flex cursor-pointer items-center gap-2.5 px-3 py-1.5 hover:bg-accent-soft">
                   <input type="checkbox" checked={isOn(v)} onChange={() => toggle(v)} className="h-4 w-4 accent-[var(--accent)]" />
-                  <span className="flex-1 truncate">{v}</span>
+                  <span title={v} className="flex-1 break-words [overflow-wrap:anywhere]">{v}</span>
                 </label>
               </li>
             ))}
