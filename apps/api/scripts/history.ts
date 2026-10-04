@@ -20,6 +20,9 @@ async function main() {
   const [cmd, url, ...rest] = process.argv.slice(2);
   const apply = rest.includes("--apply");
   if (cmd !== "push" || !url) throw new Error('Usage: npm run history -- push "<database URL>" [--apply]');
+  if (!/^postgres(ql)?:\/\//i.test(url)) throw new Error(
+    "That's not a database address. Use the Postgres one: Railway → the Postgres service → Variables → DATABASE_PUBLIC_URL " +
+    '(it starts with "postgresql://" and contains "proxy.rlwy.net") — not the app\'s https:// web address.');
 
   const src = new Client(pgConfig());
   const dst = new Client({ connectionString: url, ssl: /railway|rlwy|amazonaws|render|neon|supabase/.test(url) ? { rejectUnauthorized: false } : undefined });
