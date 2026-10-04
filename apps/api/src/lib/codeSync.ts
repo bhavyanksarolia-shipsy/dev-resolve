@@ -43,7 +43,16 @@ async function tokenProblem(repo: string, token?: string): Promise<string | null
   if (res.status === 401) return token ? "GitHub rejected the token (wrong, expired or not fully copied) — paste a fresh one" : "no token set — this repo is private";
   if (res.status === 403 && sso) return "the token isn't authorised for the organisation's SSO — on GitHub: Configure SSO → Authorize";
   if (res.status === 403) return "the token isn't allowed to read this repo yet (fine-grained tokens need the organisation's approval)";
-  if (res.status === 404) return `the token can't see ${m[1]}/${repo} — create it with Resource owner = ${m[1]} and give it Contents: Read on this repo (or check the name)`;
+  if (res.status === 404) {
+    // Private repos look "not found" to a token that can't reach them — say whose token it is and what it can do.
+    const me = token ? await fetch("https://api.github.com/user", { headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}` } }).catch(() => null) : null;
+    const login = me?.ok ? ((await me.json()) as { login?: string }).login : undefined;
+    const scopes = me?.headers.get("x-oauth-scopes"); // classic tokens only
+    const who = login ? `the token belongs to GitHub user "${login}"` : "the token";
+    if (scopes != null && !scopes.split(/,\s*/).includes("repo")) return `${who} but lacks the "repo" scope (has: ${scopes || "none"}) — tick "repo" when creating the classic token`;
+    if (scopes != null) return `${who} (scope repo ✓) but can't see ${m[1]}/${repo} — is "${login}" a member with access to it? If yes: Configure SSO → Authorize for ${m[1]}`;
+    return `${who} can't see ${m[1]}/${repo} — for a fine-grained token: Resource owner = ${m[1]}, Contents: Read on this repo, and org approval`;
+  }
   return `GitHub answered ${res.status}`;
 }
 
