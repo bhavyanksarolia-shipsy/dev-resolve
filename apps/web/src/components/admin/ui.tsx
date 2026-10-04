@@ -118,3 +118,71 @@ export function Select({ value, onChange, options, placeholder = "Choose…", di
     </div>
   );
 }
+
+export interface MultiOption { value: string; label: string; hint?: string; mono?: boolean }
+/**
+ * Multi-select dropdown in the app's style: chips in the button; the panel has a search box on top and checkboxes.
+ * Static options are filtered locally; pass `search` to look options up as you type (e.g. DevRev accounts).
+ */
+export function MultiSelect({ value, onChange, options, search, placeholder = "Choose…", searchPlaceholder = "Search…", emptyText = "Nothing to choose" }: {
+  value: MultiOption[]; onChange: (v: MultiOption[]) => void; options?: MultiOption[];
+  search?: (q: string) => Promise<MultiOption[]>; placeholder?: string; searchPlaceholder?: string; emptyText?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [found, setFound] = useState<MultiOption[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); setOpen(false); } };
+    document.addEventListener("mousedown", away); document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  useEffect(() => {
+    if (!search || q.trim().length < 2) return;
+    let live = true;
+    const t = setTimeout(() => { setLoading(true); search(q.trim()).then((r) => live && setFound(r)).finally(() => live && setLoading(false)); }, 250);
+    return () => { live = false; clearTimeout(t); };
+  }, [q, search]);
+  const needle = q.trim().toLowerCase();
+  const picked = new Set(value.map((v) => v.value));
+  const pool = search ? (needle.length >= 2 ? found ?? [] : []) : (options ?? []).filter((o) => !needle || o.label.toLowerCase().includes(needle));
+  // Chosen ones first (always visible), then the rest of the matches.
+  const rows = [...value.filter((v) => !needle || v.label.toLowerCase().includes(needle)), ...pool.filter((o) => !picked.has(o.value))];
+  const toggle = (o: MultiOption) => onChange(picked.has(o.value) ? value.filter((v) => v.value !== o.value) : [...value, o]);
+  return (
+    <div ref={box} className="relative">
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-haspopup="listbox" aria-expanded={open}
+        className={`${input} flex min-h-10 flex-wrap items-center gap-1.5 text-left ${open ? "border-accent ring-2 ring-accent-soft" : ""}`}>
+        {value.length ? value.map((v) => (
+          <span key={v.value} className={`rounded-full bg-accent-soft px-2 py-0.5 text-xs font-medium text-accent-strong ${v.mono ? "font-mono" : ""}`}>{v.label}</span>
+        )) : <span className="text-muted">{placeholder}</span>}
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="ml-auto shrink-0 text-muted" aria-hidden><path d={open ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} /></svg>
+      </button>
+      {open && (
+        <div className="absolute left-0 right-0 z-30 mt-1 overflow-hidden rounded-xl border border-line bg-panel text-sm shadow-xl">
+          <div className="border-b border-line p-2">
+            <input autoFocus className={input} value={q} onChange={(e) => setQ(e.target.value)} placeholder={searchPlaceholder} />
+          </div>
+          <ul role="listbox" aria-multiselectable="true" className="max-h-64 overflow-auto py-1">
+            {rows.map((o) => (
+              <li key={o.value}>
+                <label className="flex cursor-pointer items-center gap-2.5 px-3 py-1.5 hover:bg-accent-soft">
+                  <input type="checkbox" checked={picked.has(o.value)} onChange={() => toggle(o)} className="h-4 w-4 shrink-0 accent-[var(--accent)]" />
+                  <span className={`min-w-0 flex-1 truncate ${o.mono ? "font-mono text-xs" : ""}`}>{o.label}</span>
+                  {o.hint && <span className="shrink-0 text-xs text-warn">{o.hint}</span>}
+                </label>
+              </li>
+            ))}
+            {loading && <li className="px-3 py-2 text-xs text-muted">Searching…</li>}
+            {!loading && !rows.length && (
+              <li className="px-3 py-2 text-xs text-muted">{search && needle.length < 2 ? "Type at least 2 letters to search" : needle ? `Nothing matches “${q}”` : emptyText}</li>
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}

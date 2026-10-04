@@ -1,9 +1,9 @@
 "use client";
 import { SlideSheet } from "@/components/SlideSheet";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { Acc, AdminConfig } from "./types";
 import { ClientActiveToggle } from "@/components/ClientActiveToggle";
-import { btn, btnPrimary, Field, input, Note, post, Select, Switch } from "./ui";
+import { btn, btnPrimary, Field, input, MultiSelect, Note, post, Select, Switch } from "./ui";
 
 const SLOTS = ["app", "audit", "integration"] as const;
 interface Form {
@@ -35,39 +35,12 @@ function toForm(a: Acc | null, cfg: AdminConfig): Form {
 }
 
 function DevrevPicker({ value, onChange }: { value: Form["devrev"]; onChange: (v: Form["devrev"]) => void }) {
-  const [q, setQ] = useState("");
-  const [res, setRes] = useState<{ id: string; name: string; usedBy: string | null }[]>([]);
-  useEffect(() => {
-    if (q.trim().length < 2) return;
-    const t = setTimeout(() => fetch(`/api/admin/devrev-accounts?q=${encodeURIComponent(q)}`).then((r) => r.json()).then((d) => setRes(d.results ?? [])), 300);
-    return () => clearTimeout(t);
-  }, [q]);
+  const search = useCallback((q: string) => fetch(`/api/admin/devrev-accounts?q=${encodeURIComponent(q)}`).then((r) => r.json())
+    .then((d: { results?: { id: string; name: string; usedBy: string | null }[] }) => (d.results ?? []).map((r) => ({ value: r.id, label: r.name, hint: r.usedBy ? `used by ${r.usedBy}` : undefined })))
+    .catch(() => []), []);
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap gap-1.5">
-        {value.map((d) => (
-          <span key={d.id} className="inline-flex items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-xs text-accent-strong">
-            {d.name}<button type="button" onClick={() => onChange(value.filter((x) => x.id !== d.id))} className="hover:text-bad">✕</button>
-          </span>
-        ))}
-        {!value.length && <span className="text-xs text-muted">None yet — search below</span>}
-      </div>
-      <input className={input} placeholder="Search DevRev accounts by name…" value={q} onChange={(e) => setQ(e.target.value)} />
-      {q.trim().length >= 2 && res.length > 0 && (
-        <ul className="max-h-48 divide-y divide-line overflow-auto rounded-md border border-line bg-panel text-sm">
-          {res.map((r) => {
-            const picked = value.some((x) => x.id === r.id);
-            return (
-              <li key={r.id} className="flex items-center gap-2 px-3 py-1.5">
-                <span className="flex-1">{r.name}</span>
-                {r.usedBy && !picked && <span className="text-xs text-warn">used by {r.usedBy}</span>}
-                <button type="button" className={btn} disabled={picked} onClick={() => onChange([...value, { id: r.id, name: r.name }])}>{picked ? "Added" : "Add"}</button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
+    <MultiSelect value={value.map((d) => ({ value: d.id, label: d.name }))} onChange={(v) => onChange(v.map((o) => ({ id: o.value, name: o.label })))}
+      search={search} placeholder="Choose DevRev accounts…" searchPlaceholder="Search DevRev accounts by name…" />
   );
 }
 
@@ -265,64 +238,16 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
   );
 }
 
-/** Repos a client's investigations may read: chips for the chosen ones, a search dropdown over every repo the
- * GitHub token can see, and one-click suggestions for the StockOne repos. */
+/** Repos a client's investigations may read: a multi-select over the repos connected under Connections → GitHub. */
 function RepoPicker({ known, value, onChange }: { known: string[]; value: string[]; onChange: (v: string[]) => void }) {
   const [remote, setRemote] = useState<string[] | null>(null);
-  const [q, setQ] = useState("");
-  const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     fetch("/api/admin/code?connected=1").then((r) => (r.ok ? r.json() : { repos: [] })).then((d) => setRemote(d.repos ?? [])).catch(() => setRemote([]));
   }, []);
-  useEffect(() => {
-    if (!open) return;
-    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener("mousedown", away);
-    return () => document.removeEventListener("mousedown", away);
-  }, [open]);
-  // Only repos connected on Connections → GitHub (plus any this client already has).
-  const all = [...new Set([...value, ...(remote ?? known)])].sort((a, b) => a.localeCompare(b));
-  const needle = q.trim().toLowerCase();
-  const matches = all.filter((r) => !value.includes(r) && (!needle || r.toLowerCase().includes(needle))).slice(0, 12);
-  const suggested = all.filter((r) => !value.includes(r)).slice(0, 8);
-  const add = (r: string) => { onChange([...value, r]); setQ(""); };
+  const all = [...new Set([...(remote ?? known), ...value])].sort((a, b) => a.localeCompare(b));
   return (
-    <div ref={box} className="space-y-2">
-      {value.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {value.map((r) => (
-            <span key={r} className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft py-0.5 pl-2.5 pr-1.5 font-mono text-xs font-medium text-accent-strong">
-              {r}
-              <button type="button" aria-label={`Remove ${r}`} onClick={() => onChange(value.filter((x) => x !== r))} className="grid h-4 w-4 place-items-center rounded-full hover:bg-white/70 hover:text-bad">✕</button>
-            </span>
-          ))}
-        </div>
-      )}
-      <div className="relative">
-        <input className={input} value={q} onFocus={() => setOpen(true)} onChange={(e) => { setQ(e.target.value); setOpen(true); }}
-          onKeyDown={(e) => { if (e.key === "Enter" && matches[0]) { e.preventDefault(); add(matches[0]); } if (e.key === "Escape") setOpen(false); }}
-          placeholder={remote === null ? "Loading connected repos…" : `Search ${all.length} connected repos…`} />
-        {open && (
-          <ul className="absolute left-0 right-0 z-30 mt-1 max-h-64 overflow-auto rounded-xl border border-line bg-panel py-1 text-sm shadow-xl">
-            {matches.map((r) => (
-              <li key={r}><button type="button" onMouseDown={(e) => { e.preventDefault(); add(r); }}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs hover:bg-accent-soft">
-                <span className="text-accent-strong">+</span>{r}</button></li>
-            ))}
-            {!matches.length && <li className="px-3 py-2 text-xs text-muted">{needle ? `No repo matches “${q}”` : "All repos are already added"}</li>}
-          </ul>
-        )}
-      </div>
-      {suggested.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 text-xs">
-          <span className="text-muted">Connected:</span>
-          {suggested.map((r) => (
-            <button key={r} type="button" onClick={() => add(r)} className="rounded-full px-2 py-0.5 font-mono text-muted ring-1 ring-line hover:text-accent-strong hover:ring-accent">+ {r}</button>
-          ))}
-        </div>
-      )}
-      <p className="text-xs text-muted">Missing a repo? Connect it first under <a href="/admin?tab=connections" className="text-accent-strong underline">Connections → GitHub</a>.</p>
-    </div>
+    <MultiSelect value={value.map((r) => ({ value: r, label: r, mono: true }))} onChange={(v) => onChange(v.map((o) => o.value))}
+      options={all.map((r) => ({ value: r, label: r, mono: true }))} placeholder="Choose repos…" searchPlaceholder="Search connected repos…"
+      emptyText="No repos connected yet (Connections → GitHub)" />
   );
 }
