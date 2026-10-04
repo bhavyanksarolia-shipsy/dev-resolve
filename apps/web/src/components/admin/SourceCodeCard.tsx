@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { btn, btnPrimary, Field, input, Note, post } from "./ui";
+import { confirmDialog } from "@/components/Dialog";
 
 interface Status {
   base: string; branch: string; tokenSet: boolean; tokenSource?: string | null; tokenPreview?: string | null; connected?: string[]; syncing: boolean;
@@ -97,7 +98,14 @@ export function SourceCodeCard() {
                       : <span className="text-xs text-muted" title={r.present ? "Downloaded (not a git checkout)" : "Not downloaded yet — Sync now"}>{r.present ? "downloaded" : "not downloaded yet"}</span>}
                     {(s.connected ?? []).includes(r.repo) && (
                       <button type="button" disabled={busy} title="Disconnect this repo" aria-label={`Disconnect ${r.repo}`}
-                        onClick={() => act({ action: "repos", repos: (s.connected ?? []).filter((x) => x !== r.repo) })}
+                        onClick={async () => {
+                          const ok = await confirmDialog({
+                            title: `Disconnect ${r.repo}?`,
+                            message: "The agent stops reading this repo, and clients can no longer pick it. Clients that already use it keep it until you remove it from them (Admin → Clients → Code).",
+                            confirmLabel: "Disconnect", danger: true,
+                          });
+                          if (ok) act({ action: "repos", repos: (s.connected ?? []).filter((x) => x !== r.repo) });
+                        }}
                         className="ml-1 grid h-6 w-6 place-items-center rounded-md text-muted opacity-0 transition hover:bg-red-50 hover:text-bad group-hover:opacity-100">✕</button>
                     )}
                   </li>
