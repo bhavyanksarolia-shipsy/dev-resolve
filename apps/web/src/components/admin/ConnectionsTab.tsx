@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { AdminConfig, Conn } from "./types";
 import { btn, btnPrimary, Field, input, Note, post, Rows, Switch } from "./ui";
 import { SourceCodeCard } from "./SourceCodeCard";
+import { ServiceCard } from "./ServiceCard";
 
 type Kind = "opensearch" | "metabase";
 interface Form {
@@ -31,6 +32,8 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
   const [test, setTest] = useState<{ ok: boolean; message: string } | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  type Sub = "github" | "opensearch" | "metabase" | "claude" | "devrev";
+  const [sub, setSub] = useState<Sub>("github");
   const usedBy = (name: string) => cfg.accounts.filter((a) => a.metabase_project === name || a.app_log?.project === name ||
     Object.values(a.opensearch_log_types).some((lt) => cfg.connections.find((c) => c.name === name)?.opensearch?.logTypes[lt] !== undefined)).length;
   const set = (p: Partial<Form>) => form && setForm({ ...form, ...p });
@@ -55,21 +58,37 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
     setBusy(false);
   }
 
-  const rows = cfg.connections.flatMap((c) => [
+  const allRows = cfg.connections.flatMap((c) => [
     ...(c.opensearch ? [{ c, kind: "opensearch" as Kind, x: c.opensearch, what: "OpenSearch logs", detail: `${Object.keys(c.opensearch.logTypes).length} log types` }] : []),
     ...(c.metabase ? [{ c, kind: "metabase" as Kind, x: c.metabase, what: "Metabase", detail: `${Object.keys(c.metabase.databases).length} databases · ${c.metabase.auth === "google" ? "each person's Google" : c.metabase.auth === "api_key" ? "API key" : "username/password"}` }] : []),
   ]);
+  const rows = allRows.filter((r) => r.kind === sub);
+  const appLogs = sub === "opensearch" ? cfg.connections.filter((c) => c.appLog) : [];
+  const TABS: [Sub, string, number | null][] = [
+    ["github", "GitHub", null], ["opensearch", "OpenSearch", allRows.filter((r) => r.kind === "opensearch").length + cfg.connections.filter((c) => c.appLog).length],
+    ["metabase", "Metabase", allRows.filter((r) => r.kind === "metabase").length], ["claude", "Claude", null], ["devrev", "DevRev", null],
+  ];
   const newHostNeedsExt = form && form.vpn && !form.vpnSuffix && (() => { try { const h = new URL(form.url).hostname; return !cfg.vpnSuffixes.some((s) => h.endsWith(s)); } catch { return false; } })();
 
   return (
     <div className="space-y-4">
       {msg && <Note ok={msg.ok}>{msg.text}</Note>}
       {!form && (
+        <div role="tablist" aria-label="Connection types" className="inline-flex flex-wrap rounded-xl border border-line bg-panel p-1 text-sm font-medium">
+          {TABS.map(([k, l, n]) => (
+            <button key={k} role="tab" aria-selected={sub === k} onClick={() => setSub(k)}
+              className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 transition ${sub === k ? "bg-accent text-white shadow-sm" : "text-muted hover:text-fg"}`}>
+              {l}{n != null && <span className={`rounded-full px-1.5 text-[10px] tabular-nums ${sub === k ? "bg-white/25" : "bg-bg"}`}>{n}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+      {!form && sub === "github" && <SourceCodeCard />}
+      {!form && (sub === "claude" || sub === "devrev") && <ServiceCard key={sub} which={sub} />}
+      {!form && (sub === "opensearch" || sub === "metabase") && (
         <>
-          <SourceCodeCard />
           <div className="flex gap-2">
-            <button className={btnPrimary} onClick={() => { setForm(toForm(null, "metabase")); setTest(null); }}>+ Metabase</button>
-            <button className={btnPrimary} onClick={() => { setForm(toForm(null, "opensearch")); setTest(null); }}>+ OpenSearch logs</button>
+            <button className={btnPrimary} onClick={() => { setForm(toForm(null, sub)); setTest(null); }}>{sub === "metabase" ? "+ Metabase" : "+ OpenSearch logs"}</button>
           </div>
           <div className="card overflow-x-auto">
             <table className="w-full text-sm">
@@ -88,7 +107,7 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
                     <td className="px-4 py-3"><button className={btn} onClick={() => { setForm(toForm(c, kind)); setTest(null); }}>Edit</button></td>
                   </tr>
                 ))}
-                {cfg.connections.filter((c) => c.appLog).map((c) => (
+                {appLogs.map((c) => (
                   <tr key={`${c.name}-applog`} className="text-muted">
                     <td className="px-4 py-3"><div className="font-medium text-fg">{c.name}</div><div className="text-xs">{c.label}</div></td>
                     <td className="px-4 py-3 text-xs">Shared app logs</td><td className="px-4 py-3 text-xs" colSpan={3}>Each person signs in with Google (Connector page)</td>

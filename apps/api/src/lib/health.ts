@@ -171,7 +171,7 @@ function checkMetabase(project: string, cfg: NonNullable<ReturnType<typeof getCo
   });
 }
 
-async function checkDevrev(): Promise<ConnectionHealth> {
+export async function checkDevrev(): Promise<ConnectionHealth> {
   const base = { id: "devrev", kind: "devrev" as const, label: "DevRev API", host: new URL(settings.devrevApiUrl()).host, used_by: ["all accounts"] };
   try {
     const me = await whoAmI();
@@ -193,7 +193,7 @@ async function checkPostgres(): Promise<ConnectionHealth> {
   }
 }
 
-async function checkClaude(): Promise<ConnectionHealth> {
+export async function checkClaude(): Promise<ConnectionHealth> {
   const base = { id: "claude", kind: "claude" as const, label: "Claude (investigation agent)", host: new URL(settings.anthropicApiUrl()).host, used_by: ["all accounts"] };
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) {
