@@ -462,7 +462,12 @@ function ClientTable({ rows, link, accountLink }: { rows: Dash["by_client"]; lin
               <tr key={r.slug ?? `acc:${r.name}`} className="hover:bg-accent-soft/40">
                 <td className="px-5 py-2.5">
                   {href(r) ? <Link href={href(r)!} className="font-medium hover:text-accent-strong hover:underline">{r.name}</Link> : <span className="font-medium">{r.name}</span>}
-                  {r.note && <span className={`ml-2 text-xs ${r.slug ? "text-muted" : "text-warn"}`}>{r.note}</span>}
+                  {r.note && (
+                    <span className="group relative ml-2 inline-flex align-middle" tabIndex={0} aria-label={r.note}>
+                      <span className={`block h-2 w-2 rounded-full ${r.slug ? "bg-muted/50" : "bg-bad"}`} />
+                      <span role="tooltip" className="pointer-events-none absolute left-1/2 top-full z-20 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-fg px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus:opacity-100">{r.note}</span>
+                    </span>
+                  )}
                 </td>
                 <td className="px-5 py-2.5 text-right font-semibold tabular-nums">{href(r) ? <Link href={href(r)!} className="hover:underline">{r.open}</Link> : r.open}</td>
               </tr>
