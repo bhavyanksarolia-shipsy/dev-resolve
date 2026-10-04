@@ -26,7 +26,7 @@ export function TicketSheet({ ticketId, onClosed }: { ticketId: string; onClosed
     setTimeout(onClosed, 400); // let the slide-down play
   };
   return (
-    <div className="fixed inset-0 z-20" role="dialog" aria-modal="true" aria-label={ticketId}>
+    <div className="fixed inset-0 z-20" role="dialog" aria-modal="true" aria-label={ticketId} data-ticket-sheet>
       <div className={`absolute inset-0 bg-black/20 ${closing ? "sheet-fade-out" : "sheet-fade-in"}`} onClick={close} aria-hidden />
       <div className={`absolute inset-x-0 bottom-0 top-[3.6rem] overflow-y-auto rounded-t-2xl border-t border-line bg-bg px-4 pb-6 pt-5 shadow-2xl sm:px-6 ${closing ? "sheet-down" : "sheet-up"}`}>
         <Workspace ticketId={ticketId} onClose={close} />

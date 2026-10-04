@@ -98,7 +98,8 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
       if (e.key !== "Escape" || e.defaultPrevented) return;
       const el = document.activeElement;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable)) return;
-      if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')) return;
+      // Another pop-up (menu, dropdown, confirm) is open → Esc closes that first. The ticket sheet itself doesn't count.
+      if (document.querySelector('[role="dialog"]:not([data-ticket-sheet]), [role="menu"], [role="listbox"]')) return;
       close();
     };
     document.addEventListener("keydown", onKey);
@@ -232,11 +233,15 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
       {/* Left: ticket */}
       <section className="min-w-0 lg:overflow-y-auto lg:pr-2">
         <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-          <button type="button" onClick={close} title="Back (Esc)"
-            className="inline-flex items-center gap-1 rounded-md bg-bad px-2 py-0.5 font-semibold text-white shadow-sm transition hover:opacity-90">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M15 18 9 12l6-6" /></svg>
-            Back
-          </button>
+          <span className="group relative">
+            <button type="button" onClick={close} aria-label="Back (Esc)"
+              className="grid h-6 w-7 place-items-center rounded-md bg-bad text-white shadow-sm transition hover:opacity-90">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
+            </button>
+            <span role="tooltip" className="pointer-events-none absolute left-0 top-full z-50 mt-1.5 flex items-center gap-1.5 whitespace-nowrap rounded-md bg-fg px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+              Back <kbd className="rounded border border-white/30 bg-white/10 px-1 font-mono text-[10px]">Esc</kbd>
+            </span>
+          </span>
           <span className="rounded-md bg-accent-soft px-2 py-0.5 font-mono font-semibold text-accent-strong">{t.display_id}</span>
           <span>{data.routing.kind === "account" ? data.routing.name : t.account?.display_name}</span>
           <span aria-hidden>·</span>
