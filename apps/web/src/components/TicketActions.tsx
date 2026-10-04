@@ -144,7 +144,7 @@ function useDevrevUsers(active: boolean) {
   return data;
 }
 
-/** Inbox: resolve the ticked tickets in one click (shown in the table card's header). */
+/** Inbox: resolve the ticked tickets in one click — a pill floating at the bottom of the screen (fixed, z-100). */
 export function BulkBar({ selected, onDone, onClear }: { selected: string[]; onDone: (resolved: string[]) => void; onClear: () => void }) {
   const [busy, setBusy] = useState(false);
   async function resolve() {
@@ -157,11 +157,11 @@ export function BulkBar({ selected, onDone, onClear }: { selected: string[]; onD
     }
   }
   return (
-    <div className="chat-pop flex items-center gap-3 rounded-full bg-accent-soft py-1 pl-4 pr-1 ring-1 ring-emerald-200">
+    <div className="chat-pop fixed bottom-6 left-1/2 z-[100] flex -translate-x-1/2 items-center gap-4 rounded-full border border-line bg-panel py-2 pl-5 pr-2 shadow-xl">
       <span className="text-sm font-semibold"><span className="tabular-nums">{selected.length}</span> selected</span>
       <button onClick={onClear} disabled={busy} className="text-sm text-muted hover:text-fg">Clear</button>
       <button onClick={resolve} disabled={busy}
-        className="flex items-center gap-1.5 rounded-full bg-ok px-3.5 py-1 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">
+        className="flex items-center gap-1.5 rounded-full bg-ok px-4 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M20 6 9 17l-5-5" /></svg>
         {busy ? "Resolving…" : `Resolve ${selected.length}`}
       </button>

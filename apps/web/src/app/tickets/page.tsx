@@ -320,11 +320,6 @@ function Inbox() {
           </div>
           {marked.size > 0 && <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent-strong">{marked.size} new since last refresh</span>}
           <div className="ml-auto flex items-center gap-2 text-sm">
-            {/* Bulk actions sit here (in the card header) so ticking rows never changes the table's height. */}
-            {picked.size > 0 && (
-              <BulkBar selected={[...picked]} onClear={() => setPicked(new Set())}
-                onDone={(done) => { setLocal((m) => ({ ...m, ...Object.fromEntries(done.map((id) => [id, { closed: true }])) })); setPicked(new Set()); refresh(); window.dispatchEvent(new Event("tickets-refreshed")); }} />
-            )}
             <button onClick={refresh} disabled={fetching}
               className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-3 py-1.5 font-medium hover:border-accent hover:text-accent-strong disabled:opacity-70">
               <span className={`inline-block ${fetching ? "spin" : ""}`}>↻</span>{fetching ? "Refreshing…" : "Refresh"}
@@ -438,6 +433,11 @@ function Inbox() {
           All {rows.length} on this page are selected ·{" "}
           <button className="font-medium text-accent-strong underline" onClick={() => setPicked(new Set(view.map((t) => t.display_id)))}>select all {view.length} matching</button>
         </p>
+      )}
+      {/* Floats over the page (fixed), so ticking rows never changes the layout. */}
+      {picked.size > 0 && (
+        <BulkBar selected={[...picked]} onClear={() => setPicked(new Set())}
+          onDone={(done) => { setLocal((m) => ({ ...m, ...Object.fromEntries(done.map((id) => [id, { closed: true }])) })); setPicked(new Set()); refresh(); window.dispatchEvent(new Event("tickets-refreshed")); }} />
       )}
       {sheet && <TicketSheet key={sheet} ticketId={sheet} onClosed={() => window.history.back()} />}
     </div>
