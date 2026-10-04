@@ -3,7 +3,7 @@ import { SlideSheet } from "@/components/SlideSheet";
 import { useCallback, useEffect, useState } from "react";
 import type { Acc, AdminConfig } from "./types";
 import { ClientActiveToggle } from "@/components/ClientActiveToggle";
-import { usePaged } from "@/components/TableTools";
+import { TableCard, usePaged } from "@/components/TableTools";
 import { btn, btnPrimary, Field, input, MultiSelect, Note, post, Select, Switch } from "./ui";
 
 const SLOTS = ["app", "audit", "integration"] as const;
@@ -79,13 +79,9 @@ export function ClientsTab({ cfg, reload }: { cfg: AdminConfig; reload: () => vo
   return (
     <div className="space-y-4">
       {msg && <Note ok={msg.ok}>{msg.text}</Note>}
-      {(
-        <>
-          <div className="flex flex-wrap items-center gap-2">
-            <button className={btnPrimary} onClick={() => setForm(toForm(null, cfg))}>+ Add client</button>
-            <input className={`${input} ml-auto max-w-xs`} placeholder="Filter…" value={filter} onChange={(e) => setFilter(e.target.value)} />
-          </div>
-          <div className="card overflow-x-auto">
+      <TableCard title="Clients" subtitle={`${cfg.accounts.filter((a) => a.client_active !== false).length} active · ${cfg.accounts.filter((a) => a.client_active === false).length} inactive`}
+        search={filter} onSearch={setFilter} searchPlaceholder="Search clients…" pager={paged.pager}
+        actions={<button className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-accent-strong" onClick={() => setForm(toForm(null, cfg))}>+ Add client</button>}>
             <table className="w-full text-sm">
               <thead className="bg-head text-left text-xs font-semibold uppercase tracking-wide text-head-fg">
                 <tr><th className="px-4 py-3">Client</th><th className="px-4 py-3">Active with us</th><th className="px-4 py-3">DevRev accounts</th><th className="px-4 py-3">Logs</th><th className="px-4 py-3">Database</th><th className="px-4 py-3">Status</th><th className="px-4 py-3" /></tr>
@@ -108,10 +104,7 @@ export function ClientsTab({ cfg, reload }: { cfg: AdminConfig; reload: () => vo
                 })}
               </tbody>
             </table>
-          </div>
-          {paged.pager}
-        </>
-      )}
+      </TableCard>
 
       {form && (
         <SlideSheet title={form.originalSlug ? `Edit ${form.name}` : "New client"} onClose={() => setForm(null)}>

@@ -5,7 +5,7 @@ import type { AdminConfig, Conn } from "./types";
 import { btn, btnPrimary, Field, input, Note, post, Rows, Switch } from "./ui";
 import { SourceCodeCard } from "./SourceCodeCard";
 import { ServiceCard } from "./ServiceCard";
-import { usePaged } from "@/components/TableTools";
+import { TableCard, usePaged } from "@/components/TableTools";
 
 type Kind = "opensearch" | "metabase";
 interface Form {
@@ -43,6 +43,7 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
   }
   type Sub = "github" | "opensearch" | "metabase" | "claude" | "devrev";
   const [sub, setSub] = useState<Sub>("github");
+  const [connQ, setConnQ] = useState("");
   const usedBy = (name: string) => cfg.accounts.filter((a) => a.metabase_project === name || a.app_log?.project === name ||
     Object.values(a.opensearch_log_types).some((lt) => cfg.connections.find((c) => c.name === name)?.opensearch?.logTypes[lt] !== undefined)).length;
   const set = (p: Partial<Form>) => form && setForm({ ...form, ...p });
@@ -73,7 +74,7 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
   ]);
   const rows = allRows.filter((r) => r.kind === sub);
   const appLogs = sub === "opensearch" ? cfg.connections.filter((c) => c.appLog) : [];
-  const paged = usePaged(rows, { noun: "connections", reset: sub });
+  const paged = usePaged(rows.filter(({ c, x }) => !connQ || [c.name, c.label, x.host].some((v) => v?.toLowerCase().includes(connQ.toLowerCase()))), { noun: "connections", reset: `${sub}|${connQ}` });
   const TABS: [Sub, string, number | null][] = [
     ["github", "GitHub", null], ["opensearch", "OpenSearch", allRows.filter((r) => r.kind === "opensearch").length + cfg.connections.filter((c) => c.appLog).length],
     ["metabase", "Metabase", allRows.filter((r) => r.kind === "metabase").length], ["claude", "Claude", null], ["devrev", "DevRev", null],
@@ -97,10 +98,9 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
       {(sub === "claude" || sub === "devrev") && <ServiceCard key={sub} which={sub} />}
       {(sub === "opensearch" || sub === "metabase") && (
         <>
-          <div className="flex gap-2">
-            <button className={btnPrimary} onClick={() => { setForm(toForm(null, sub)); setTest(null); }}>{sub === "metabase" ? "+ Metabase" : "+ OpenSearch logs"}</button>
-          </div>
-          <div className="card overflow-x-auto">
+          <TableCard title={sub === "metabase" ? "Metabase connections" : "OpenSearch connections"} pager={paged.pager}
+            search={connQ} onSearch={setConnQ} searchPlaceholder="Search connections…"
+            actions={<button className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-accent-strong" onClick={() => { setForm(toForm(null, sub)); setTest(null); }}>{sub === "metabase" ? "+ Metabase" : "+ OpenSearch logs"}</button>}>
             <table className="w-full text-sm">
               <thead className="bg-head text-left text-xs font-semibold uppercase tracking-wide text-head-fg">
                 <tr><th className="px-4 py-3">Connection</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Host</th><th className="px-4 py-3">VPN</th><th className="px-4 py-3">Sign-in</th><th className="px-4 py-3 text-right">Clients</th><th className="px-4 py-3">Connection</th><th className="px-4 py-3" /></tr>
@@ -132,8 +132,7 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
                 ))}
               </tbody>
             </table>
-          </div>
-          {paged.pager}
+          </TableCard>
         </>
       )}
 

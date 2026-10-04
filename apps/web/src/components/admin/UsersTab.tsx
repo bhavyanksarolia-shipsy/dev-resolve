@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { btn, btnPrimary, Field, input, Note, post, Select, Switch } from "./ui";
 import { confirmDialog } from "@/components/Dialog";
-import { Paged } from "@/components/TableTools";
+import { Paged, TableCard } from "@/components/TableTools";
 
 interface U {
   name: string; email: string | null; display_name: string | null; is_admin: boolean; disabled_at: string | null; last_login_at: string | null;
@@ -59,25 +59,6 @@ export function UsersTab() {
     (!q || [u.name, u.display_name, u.email].some((v) => v?.toLowerCase().includes(q))));
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative w-full max-w-sm">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" aria-hidden><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
-          <input className={`${input} pl-9`} placeholder="Search name, username or email…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search users" />
-          {query && <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-fg">✕</button>}
-        </div>
-        <button className={`${btnPrimary} ml-auto`} onClick={() => { setNu(blank); setAdding(true); }}>+ Add user</button>
-      </div>
-      <div className="flex flex-wrap gap-2 text-sm">
-        {([
-          ["all", `All · ${data.users.length}`],
-          ["active", `${active.length} active`],
-          ["admins", `${active.filter((u) => u.is_admin).length} admins`],
-          ["disabled", `${data.users.length - active.length} disabled`],
-        ] as const).map(([k, l]) => (
-          <button key={k} type="button" aria-pressed={show === k} onClick={() => setShow(k)}
-            className={`rounded-full px-3 py-1 ring-1 transition-colors ${show === k ? "bg-accent text-white ring-accent" : "bg-panel text-muted ring-line hover:text-fg"}`}>{l}</button>
-        ))}
-      </div>
       {msg && !adding && <Note ok={msg.ok}>{msg.text}</Note>}
 
       {prefs && (
@@ -89,8 +70,22 @@ export function UsersTab() {
         </div>
       )}
 
-      <Paged items={shown} noun="people" reset={`${query}|${show}`}>{(rows, pager) => (<div>
-      <div className="card overflow-x-auto">
+      <Paged items={shown} noun="people" reset={`${query}|${show}`}>{(rows, pager) => (
+      <TableCard title="People" subtitle="Only people added here can sign in" pager={pager}
+        toolbar={
+      <div className="flex flex-wrap gap-1.5 text-xs">
+        {([
+          ["all", `All · ${data.users.length}`],
+          ["active", `${active.length} active`],
+          ["admins", `${active.filter((u) => u.is_admin).length} admins`],
+          ["disabled", `${data.users.length - active.length} disabled`],
+        ] as const).map(([k, l]) => (
+          <button key={k} type="button" aria-pressed={show === k} onClick={() => setShow(k)}
+            className={`rounded-full px-2.5 py-1 ring-1 transition-colors ${show === k ? "bg-accent text-white ring-accent" : "bg-panel text-muted ring-line hover:text-fg"}`}>{l}</button>
+        ))}
+      </div>}
+        search={query} onSearch={setQuery} searchPlaceholder="Search people…"
+        actions={<button className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-accent-strong" onClick={() => { setNu(blank); setAdding(true); }}>+ Add user</button>}>
         <table className="w-full text-sm">
           <thead className="bg-head text-left text-xs font-semibold uppercase tracking-wide text-head-fg">
             <tr><th className="px-4 py-3">Person</th><th className="px-4 py-3">Sign-in</th><th className="px-4 py-3">Role</th><th className="px-4 py-3">Status</th>
@@ -155,8 +150,7 @@ export function UsersTab() {
             })}
           </tbody>
         </table>
-      </div>
-      {pager}</div>)}</Paged>
+      </TableCard>)}</Paged>
 
       {adding && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4 backdrop-blur-[2px]" onMouseDown={(e) => e.target === e.currentTarget && setAdding(false)}>

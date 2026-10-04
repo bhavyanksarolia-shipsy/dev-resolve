@@ -146,7 +146,7 @@ export function SourceCodeCard() {
                 );
               })}
             </ul>
-            {pager}</>)}</Paged>
+            {pager && <div className="pt-2">{pager}</div>}</>)}</Paged>
           </div>
         )}
       </div>

@@ -3,7 +3,7 @@ import { EmptyState } from "@/components/EmptyState";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { fileLabel, hidePaths, scopeLabel } from "@/components/labels";
-import { Paged } from "@/components/TableTools";
+import { Paged, TableCard } from "@/components/TableTools";
 
 interface Data {
   isAdmin?: boolean;
@@ -15,6 +15,7 @@ interface Data {
 export default function KnowledgePage() {
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [q, setQ] = useState("");
   const load = useCallback(() => {
     fetch("/api/knowledge", { cache: "no-store" }).then(async (r) => {
       const d = await r.json();
@@ -44,15 +45,12 @@ export default function KnowledgePage() {
             </li>
           ))}
         </ul>
-        {pager}</>)}</Paged>
+        {pager && <div className="pt-2">{pager}</div>}</>)}</Paged>
       </section>}
       <section>
-        <h2 className="mb-1 font-semibold">Knowledge per account</h2>
-        <p className="mb-3 text-xs text-muted">
-          {rows.filter((r) => r.clientActive).length} active clients · {rows.filter((r) => !r.clientActive).length} inactive (greyed out) — switch clients on/off in Admin → Clients.
-        </p>
-        <Paged items={rows} noun="accounts">{(page, pager) => (<>
-        <div className="card overflow-x-auto">
+        <Paged items={rows.filter((r) => !q || r.name.toLowerCase().includes(q.toLowerCase()))} noun="accounts" reset={q}>{(page, pager) => (
+        <TableCard title="Knowledge per account" pager={pager} search={q} onSearch={setQ} searchPlaceholder="Search accounts…"
+          subtitle={<>{rows.filter((r) => r.clientActive).length} active clients · {rows.filter((r) => !r.clientActive).length} inactive (greyed out) — switch clients on/off in Admin → Clients</>}>
           <table className="w-full text-sm">
             <thead className="bg-head text-left text-xs font-semibold uppercase tracking-wide text-head-fg">
               <tr><th className="px-4 py-3">Account</th><th className="px-4 py-3">Connections</th><th className="px-4 py-3">Last ticket</th><th className="px-4 py-3 text-right">Learnings</th><th className="px-4 py-3 text-right">Saved queries</th><th className="px-4 py-3 text-right">Resolved cases</th></tr>
@@ -70,8 +68,7 @@ export default function KnowledgePage() {
               ))}
             </tbody>
           </table>
-        </div>
-        {pager}</>)}</Paged>
+        </TableCard>)}</Paged>
       </section>
     </div>
   );

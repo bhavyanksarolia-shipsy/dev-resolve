@@ -41,6 +41,9 @@ a[href], button:not(:disabled), select, summary, label[for], [role="button"] { c
 button:disabled { cursor: not-allowed; }
 
 /* Soft card */
+/* Any scrolling table body keeps its header row in view (Tickets, Admin, Knowledge). */
+[data-scroll-table] thead { position: sticky; top: 0; z-index: 10; }
+
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 1px 2px rgb(16 40 28 / 0.04), 0 4px 16px rgb(16 40 28 / 0.04); }
 
 /* Loading skeleton shimmer */
