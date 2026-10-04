@@ -27,6 +27,8 @@ export interface Account {
   metabase_database: number | null;
   metabase_databases: Record<string, number>;
   code_repos: string[];
+  /** Other places the agent should know about for this client (dashboards, runbooks, portals): reference only. */
+  extra_sources?: { name: string; url?: string; notes?: string }[];
   skills?: string[];
   knowledge_dir: string;
   /** Logs via the Shipsy opensearch-app-log MCP (shared application-log cluster). */

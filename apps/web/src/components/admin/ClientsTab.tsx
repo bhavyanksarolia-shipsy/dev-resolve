@@ -7,6 +7,7 @@ import { btn, btnPrimary, Field, input, Note, post, Select, Switch } from "./ui"
 const SLOTS = ["app", "audit", "integration"] as const;
 interface Form {
   originalSlug: string | null; name: string; group: string; client_active: boolean; code_repos: string[];
+  extra: { name: string; url: string; notes: string }[];
   devrev: { id: string; name: string }[];
   logsKind: "none" | "opensearch" | "app_log"; osProject: string; logTypes: Record<string, string>;
   appProject: string; indices: Record<string, string>; company: string; warehouses: string;
@@ -19,6 +20,7 @@ function toForm(a: Acc | null, cfg: AdminConfig): Form {
   return {
     originalSlug: a?.slug ?? null, name: a?.name ?? "", group: a?.group ?? "", client_active: a?.client_active !== false,
     code_repos: a?.code_repos ?? ["stockone-neo"],
+    extra: (a?.extra_sources ?? []).map((x) => ({ name: x.name, url: x.url ?? "", notes: x.notes ?? "" })),
     devrev: (a?.devrev.account_ids ?? []).map((id, i) => ({ id, name: a!.devrev.names[i] ?? id.slice(-8) })),
     logsKind: a?.app_log ? "app_log" : Object.keys(a?.opensearch_log_types ?? {}).length ? "opensearch" : "none",
     osProject, logTypes: { ...(a?.opensearch_log_types ?? {}) },
@@ -82,7 +84,7 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
     if (!form) return;
     setBusy(true);
     const account = {
-      name: form.name, group: form.group || null, client_active: form.client_active, code_repos: form.code_repos,
+      name: form.name, group: form.group || null, client_active: form.client_active, code_repos: form.code_repos, extra_sources: form.extra.filter((x) => x.name.trim()),
       devrev: { account_ids: form.devrev.map((d) => d.id), names: form.devrev.map((d) => d.name) },
       logs: form.logsKind === "opensearch" ? { kind: "opensearch", project: form.osProject, log_types: form.logTypes }
         : form.logsKind === "app_log" ? { kind: "app_log", project: form.appProject, indices: form.indices,
@@ -147,11 +149,17 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
           </div>
           <Switch on={form.client_active} onChange={(v) => set({ client_active: v })} label="Client is active with us" />
 
-          <Field label="DevRev accounts" hint="Tickets from these DevRev accounts are investigated as this client."><DevrevPicker value={form.devrev} onChange={(v) => set({ devrev: v })} /></Field>
+          <div className="rounded-lg border border-line p-4">
+            <div className="mb-1 font-medium">DevRev accounts</div>
+            <p className="mb-3 text-xs text-muted">Tickets from these DevRev accounts are investigated as this client.</p>
+            <DevrevPicker value={form.devrev} onChange={(v) => set({ devrev: v })} />
+          </div>
 
-          <Field label="Code the agent reads" hint="Repos are downloaded from GitHub (Connections → Source code) when you save.">
+          <div className="rounded-lg border border-line p-4">
+            <div className="mb-1 font-medium">Code</div>
+            <p className="mb-3 text-xs text-muted">Repos the agent searches for this client. They&apos;re downloaded from GitHub (Connections → GitHub) when you save.</p>
             <RepoPicker known={cfg.repos} value={form.code_repos} onChange={(v) => set({ code_repos: v })} />
-          </Field>
+          </div>
 
           <div className="rounded-lg border border-line p-4">
             <div className="mb-3 font-medium">Logs</div>
@@ -224,6 +232,28 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
                 <Switch on={form.shared} onChange={(v) => set({ shared: v })} label="This database is shared by several clients (the agent must filter every query to this client)" />
               </div>
             )}
+          </div>
+
+          <div className="rounded-lg border border-line p-4">
+            <div className="mb-1 flex items-center gap-3">
+              <span className="font-medium">Other sources</span>
+              <button type="button" className={`${btn} ml-auto`} onClick={() => set({ extra: [...form.extra, { name: "", url: "", notes: "" }] })}>+ Add source</button>
+            </div>
+            <p className="mb-3 text-xs text-muted">Anything else that helps with this client&apos;s tickets — a dashboard, portal, runbook or contact. The agent gets the name, link and notes as reference (it can&apos;t sign in to them).</p>
+            {!form.extra.length && <p className="text-sm text-muted">None yet.</p>}
+            <div className="space-y-3">
+              {form.extra.map((x, i) => {
+                const upd = (p: Partial<typeof x>) => set({ extra: form.extra.map((y, j) => (j === i ? { ...y, ...p } : y)) });
+                return (
+                  <div key={i} className="grid gap-2 rounded-lg bg-bg p-3 sm:grid-cols-[1fr_1.5fr_auto]">
+                    <input className={input} placeholder="Name, e.g. SAP IDoc monitor" value={x.name} onChange={(e) => upd({ name: e.target.value })} />
+                    <input className={input} placeholder="Link (optional)" value={x.url} onChange={(e) => upd({ url: e.target.value })} />
+                    <button type="button" aria-label="Remove source" className={`${btn} text-bad`} onClick={() => set({ extra: form.extra.filter((_, j) => j !== i) })}>Remove</button>
+                    <textarea className={`${input} sm:col-span-3`} rows={2} placeholder="Notes for the agent: what's there, when to check it, who owns it" value={x.notes} onChange={(e) => upd({ notes: e.target.value })} />
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           <div className="flex gap-2">

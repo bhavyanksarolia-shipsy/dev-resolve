@@ -126,7 +126,10 @@ bullet lists with **bold labels**, one fact per line, identifiers in \`code\`. P
    imply fixes, improvements, product changes, alerts or timelines ("we're improving…", "we'll add…", "this will be fixed") —
    those need team sign-off first. Recommended fixes belong only in the internal "Fix / next step" section.)
 
-# Knowledge base (curated — prefer it over assumptions, but lines marked Unverified must be checked)
+${scope.some((a) => a.extra_sources?.length) ? `# Other sources for this client (added by admins — reference only; you can't open these, but name them in "Fix / next step" when a person should check one)
+${scope.flatMap((a) => (a.extra_sources ?? []).map((x) => `- **${x.name}**${x.url ? ` — ${x.url}` : ""}${x.notes ? `: ${x.notes}` : ""}`)).join("\n")}
+
+` : ""}# Knowledge base (curated — prefer it over assumptions, but lines marked Unverified must be checked)
 ${accountKnowledge(account)}
 
 ${skillText(account)}`;

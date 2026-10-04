@@ -111,6 +111,7 @@ export function adminConfig() {
 // ── save a client ─────────────────────────────────────────────────────────────────────────────────────────
 export interface AccountInput {
   slug?: string; name: string; group?: string | null; client_active?: boolean; code_repos?: string[];
+  extra_sources?: { name: string; url?: string; notes?: string }[];
   devrev: { account_ids: string[]; names: string[] };
   logs: { kind: "none" } | { kind: "opensearch"; project: string; log_types: Record<string, string> }
     | { kind: "app_log"; project: string; indices: Record<string, string>; company: string[]; warehouses: string[] };
@@ -145,6 +146,8 @@ export async function saveAccount(input: AccountInput, originalSlug: string | nu
     code_repos: (input.code_repos?.length ? input.code_repos : ["stockone-neo"]).map(clean).filter(Boolean),
     knowledge_dir: existing?.knowledge_dir || `knowledge/${slug}`,
     client_active: input.client_active !== false,
+    extra_sources: (input.extra_sources || []).map((x) => ({ name: clean(x.name), url: clean(x.url || ""), notes: String(x.notes || "").trim().slice(0, 2000) }))
+      .filter((x) => x.name).slice(0, 20),
   } as Account;
   delete acc.app_log;
   delete acc._shared_db_note;

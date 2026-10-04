@@ -6,7 +6,7 @@ export interface Acc {
   devrev: { account_ids: string[]; names: string[] };
   opensearch_log_type: string | null; opensearch_log_types: Record<string, string>;
   metabase_project: string | null; metabase_database: number | null; metabase_databases: Record<string, number>;
-  code_repos: string[]; app_log?: { project: string; indices: Record<string, string>; company: string | string[] | null; warehouses?: string[] };
+  code_repos: string[]; extra_sources?: { name: string; url?: string; notes?: string }[]; app_log?: { project: string; indices: Record<string, string>; company: string | string[] | null; warehouses?: string[] };
   _shared_db_note?: string;
 }
 export interface AdminConfig { accounts: Acc[]; connections: Conn[]; vpnSuffixes: string[]; repos: string[]; connectorMode: boolean }
