@@ -1,5 +1,5 @@
 import "server-only";
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { CODE_ROOT, cfgValue, getAccounts, readConfigEnv } from "./config";
@@ -116,7 +116,7 @@ export async function ensureRepos(repos: string[]) {
 export function codeStatus() {
   return {
     base: base(), branch: branch(), tokenSet: !!githubToken(), tokenSource: tokenSource(), tokenPreview: mask(githubToken()), connected: connectedRepos(), root: CODE_ROOT, syncing: !!running, last,
-    repos: codeRepos().map((r) => ({ repo: r, present: existsSync(path.join(CODE_ROOT, r, ".git")) || existsSync(path.join(CODE_ROOT, r)) })),
+    repos: codeRepos().map((r) => ({ repo: r, present: existsSync(path.join(CODE_ROOT, r, ".git")) || existsSync(path.join(CODE_ROOT, r)), head: headOf(r) })),
   };
 }
 
@@ -178,3 +178,14 @@ export function mask(t?: string | null) {
 }
 /** Full token for an admin who clicked the eye (never included in normal responses). */
 export const revealToken = () => githubToken() ?? null;
+
+/** Latest commit of a downloaded repo, read from disk ("8c9359e · 2026-10-02"), so it survives restarts. */
+function headOf(repo: string): string | null {
+  const dir = path.join(CODE_ROOT, repo);
+  if (!existsSync(path.join(dir, ".git"))) return null;
+  try {
+    return execFileSync("git", ["-C", dir, "log", "-1", "--format=%h · %cd", "--date=short"], { timeout: 3000, encoding: "utf8" }).trim() || null;
+  } catch {
+    return null;
+  }
+}

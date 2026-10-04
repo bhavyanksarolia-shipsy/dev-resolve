@@ -5,7 +5,7 @@ import { btn, btnPrimary, Field, input, Note, post } from "./ui";
 interface Status {
   base: string; branch: string; tokenSet: boolean; tokenSource?: string | null; tokenPreview?: string | null; connected?: string[]; syncing: boolean;
   last: { at: string; ok: boolean; error?: string; repos: { repo: string; ok: boolean; commit?: string; error?: string }[] } | null;
-  repos: { repo: string; present: boolean }[];
+  repos: { repo: string; present: boolean; head?: string | null }[];
 }
 
 /** Where the agent's source code comes from (GitHub, read-only) and whether each repo is on the server. */
@@ -87,14 +87,14 @@ export function SourceCodeCard() {
             <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line">
               {s.repos.map((r) => {
                 const x = result(r.repo);
-                const [hash, date] = (x?.commit ?? "").split(" · ");
+                const [hash, date] = (x?.commit ?? r.head ?? "").split(" · ");
                 return (
                   <li key={r.repo} className="group flex items-center gap-3 px-4 py-2.5 text-sm">
                     <span className={`h-2 w-2 shrink-0 rounded-full ${r.present && !x?.error ? "bg-ok" : "bg-bad"}`} aria-hidden />
                     <span className="min-w-0 flex-1 truncate font-mono text-[13px]">{r.repo}</span>
                     {x?.error ? <span className="truncate text-xs text-bad" title={x.error}>{x.error}</span>
                       : hash ? <><code className="rounded bg-bg px-1.5 py-0.5 text-xs text-muted">{hash}</code><span className="w-24 text-right text-xs text-muted">{date}</span></>
-                      : <span className="text-xs text-muted">{r.present ? "on disk" : "not downloaded"}</span>}
+                      : <span className="text-xs text-muted" title={r.present ? "Downloaded (not a git checkout)" : "Not downloaded yet — Sync now"}>{r.present ? "downloaded" : "not downloaded yet"}</span>}
                     {(s.connected ?? []).includes(r.repo) && (
                       <button type="button" disabled={busy} title="Disconnect this repo" aria-label={`Disconnect ${r.repo}`}
                         onClick={() => act({ action: "repos", repos: (s.connected ?? []).filter((x) => x !== r.repo) })}
