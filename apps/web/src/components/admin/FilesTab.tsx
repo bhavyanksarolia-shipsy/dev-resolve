@@ -57,9 +57,9 @@ export function FilesTab() {
           <li>Privacy tab: single purpose “let the company&apos;s Dev Resolve reach internal systems through the user&apos;s laptop and use their own sign-ins”; no remote code.</li>
           <li>Visibility <b>Private</b> → submit. When it&apos;s approved, paste its store link below.</li>
         </ol>
-        <Field label="Chrome Web Store link" hint="When set, the Connector page shows “Add to Chrome” instead of the manual install.">
+        <Field label="Chrome Web Store link" hint={<>e.g. <code className="font-mono">https://chromewebstore.google.com/detail/dev-resolve/abcdefghijklmnop</code></>}>
           <div className="flex gap-2">
-            <input className={input} value={store} placeholder="https://chromewebstore.google.com/detail/dev-resolve/abcdefghijklmnopabcdefghijklmnop" onChange={(e) => setStore(e.target.value)} />
+            <input className={input} value={store} placeholder="https://" onChange={(e) => setStore(e.target.value)} />
             <button className={btnPrimary} disabled={busy === "store" || store === (settings?.EXTENSION_STORE_URL?.value ?? "")}
               onClick={async () => { setBusy("store"); const r = await post("/api/admin/settings", { EXTENSION_STORE_URL: store }); setBusy(null); toast({ ok: !r.error, text: r.error || "Saved — the Connector page now shows Add to Chrome" }); }}>Save</button>
           </div>

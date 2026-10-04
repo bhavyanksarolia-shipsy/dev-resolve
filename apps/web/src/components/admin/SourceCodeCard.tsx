@@ -73,7 +73,7 @@ export function SourceCodeCard() {
         {/* Settings: read-only summary, or the edit form */}
         {edit ? (
           <div className="grid gap-3 rounded-xl bg-bg p-4 sm:grid-cols-3">
-            <Field label="GitHub address" hint="Your organisation's page, no / at the end"><input className={`${input} font-mono text-[13px]`} value={edit.base} placeholder="https://github.com/acme" onChange={(e) => setEdit({ ...edit, base: e.target.value })} /></Field>
+            <Field label="GitHub address" hint={<>e.g. <code className="font-mono">https://github.com/acme</code></>}><input className={`${input} font-mono text-[13px]`} value={edit.base} placeholder="https://" onChange={(e) => setEdit({ ...edit, base: e.target.value })} /></Field>
             <Field label="Branch"><input className={input} value={edit.branch} onChange={(e) => setEdit({ ...edit, branch: e.target.value })} /></Field>
             <Field label="New token" hint={s.tokenSet ? "Leave empty to keep the saved one" : "Classic (repo scope) or fine-grained (Contents: read)"}>
               <input className={input} type="password" autoComplete="off" placeholder={s.tokenPreview ?? ""} value={edit.token} onChange={(e) => setEdit({ ...edit, token: e.target.value })} />

@@ -101,11 +101,6 @@ const LINK_EXAMPLE: Record<LinkKind, string> = {
   opensearch: "https://logs.example.com/internal/search/opensearch-with-long-numerals",
   gateway: "https://app-log.example.com/mcp/",
 };
-const LINK_HINT: Record<LinkKind, string> = {
-  metabase: "Just the site address, no / at the end",
-  opensearch: "The full search address from OpenSearch Dashboards, no / at the end",
-  gateway: "Keep the / at the end",
-};
 
 const AUTH_LABEL: Record<Auth, string> = { none: "No auth", password: "Username + password", api_key: "API key", google: "Google login" };
 
@@ -255,8 +250,8 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
               <Field label="Name">
                 <input className={input} value={form.displayName} placeholder={form.kind === "metabase" ? "Acme production Metabase" : "Acme logs"} onChange={(e) => set({ displayName: e.target.value })} />
               </Field>
-              <Field label="Link" hint={LINK_HINT[linkKind(form)]}>
-                <input className={`${input} font-mono text-[13px]`} value={form.url} placeholder={LINK_EXAMPLE[linkKind(form)]} onChange={(e) => set({ url: e.target.value })} />
+              <Field label="Link" hint={<>e.g. <code className="font-mono">{LINK_EXAMPLE[linkKind(form)]}</code></>}>
+                <input className={`${input} font-mono text-[13px]`} value={form.url} placeholder="https://" onChange={(e) => set({ url: e.target.value })} />
               </Field>
             </div>
             <Switch on={form.vpn} onChange={(v) => set({ vpn: v })}
