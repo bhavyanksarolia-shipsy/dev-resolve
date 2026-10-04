@@ -1,4 +1,5 @@
 "use client";
+import { SlideSheet } from "@/components/SlideSheet";
 import { useState } from "react";
 import type { AdminConfig, Conn } from "./types";
 import { btn, btnPrimary, Field, input, Note, post, Rows, Switch } from "./ui";
@@ -134,11 +135,8 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
       )}
 
       {form && (
-        <div className="card space-y-4 p-5">
-          <div className="flex items-center gap-3">
-            <h2 className="font-semibold">{form.originalName ? `Edit ${form.originalName}` : `New ${form.kind === "metabase" ? "Metabase" : "OpenSearch logs"} connection`}</h2>
-            <button className={`${btn} ml-auto`} onClick={() => setForm(null)}>Cancel</button>
-          </div>
+        <SlideSheet title={form.originalName ? `Edit ${form.originalName}` : `New ${form.kind === "metabase" ? "Metabase" : "OpenSearch logs"} connection`} onClose={() => setForm(null)}>
+          <div className="card space-y-4 p-5">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Name" hint={form.originalName ? "Can't be renamed (clients point to it)" : "Short id, e.g. acme_metabase"}>
               <input className={input} value={form.name} disabled={!!form.originalName} onChange={(e) => set({ name: e.target.value })} />
@@ -188,7 +186,8 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
             <button className={btn} disabled={busy || !form.url} onClick={runTest}>{busy ? "…" : "Test connection"}</button>
             <button className={btnPrimary} disabled={busy || !form.url || (!form.originalName && !form.name)} onClick={save}>Save</button>
           </div>
-        </div>
+          </div>
+        </SlideSheet>
       )}
     </div>
   );

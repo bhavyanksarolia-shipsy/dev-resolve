@@ -1,4 +1,5 @@
 "use client";
+import { SlideSheet } from "@/components/SlideSheet";
 import { useEffect, useRef, useState } from "react";
 import type { Acc, AdminConfig } from "./types";
 import { ClientActiveToggle } from "@/components/ClientActiveToggle";
@@ -137,11 +138,8 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
       )}
 
       {form && (
-        <div className="card space-y-5 p-5">
-          <div className="flex items-center gap-3">
-            <h2 className="font-semibold">{form.originalSlug ? `Edit ${form.name}` : "New client"}</h2>
-            <button className={`${btn} ml-auto`} onClick={() => setForm(null)}>Cancel</button>
-          </div>
+        <SlideSheet title={form.originalSlug ? `Edit ${form.name}` : "New client"} onClose={() => setForm(null)}>
+          <div className="card space-y-5 p-5">
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Client name"><input className={input} value={form.name} placeholder="e.g. Acme Retail" onChange={(e) => set({ name: e.target.value })} /></Field>
@@ -260,7 +258,8 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
             <button className={btnPrimary} disabled={busy || !form.name || !form.devrev.length} onClick={save}>{busy ? "Saving…" : "Save client"}</button>
             {!form.devrev.length && <span className="self-center text-xs text-muted">Add at least one DevRev account to save.</span>}
           </div>
-        </div>
+          </div>
+        </SlideSheet>
       )}
     </div>
   );
