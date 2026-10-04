@@ -4,7 +4,7 @@ import { ReactNode, useEffect, useId, useRef, useState } from "react";
 /** Small shared pieces for the admin screens. */
 export const btn = "rounded-lg border border-line px-3 py-1.5 text-xs font-medium hover:border-accent disabled:opacity-40";
 export const btnPrimary = "rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-strong disabled:opacity-40";
-export const input = "w-full rounded-md border border-line bg-bg px-2 py-1.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft";
+export const input = "w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft";
 
 export function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
@@ -18,7 +18,7 @@ export function Field({ label, hint, children }: { label: string; hint?: ReactNo
 
 export function Switch({ on, onChange, label, disabled, title }: { on: boolean; onChange: (v: boolean) => void; label: ReactNode; disabled?: boolean; title?: string }) {
   return (
-    <button type="button" role="switch" aria-checked={on} disabled={disabled} title={title} onClick={() => onChange(!on)} className="inline-flex items-center gap-2 text-sm disabled:opacity-60">
+    <button type="button" role="switch" aria-checked={on} disabled={disabled} title={title} onClick={() => onChange(!on)} className="inline-flex items-center gap-2 text-left text-sm disabled:opacity-60">
       <span className={`relative inline-block h-5 w-9 shrink-0 rounded-full transition-colors ${on ? "bg-accent" : "bg-line"}`}>
         <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${on ? "left-[18px]" : "left-0.5"}`} />
       </span>
@@ -100,7 +100,7 @@ export function Select({ value, onChange, options, placeholder = "Choose…", di
         </svg>
       </button>
       {open && (
-        <ul id={id} role="listbox" className={`absolute left-0 right-0 z-50 max-h-64 ${up ? "bottom-full mb-1" : "mt-1"} overflow-auto rounded-lg border border-line bg-panel py-1 shadow-lg`}>
+        <ul id={id} role="listbox" className={`absolute left-0 right-0 z-50 max-h-64 ${up ? "bottom-full mb-1" : "mt-1"} overflow-auto rounded-md border border-line bg-panel py-1 shadow-lg`}>
           {options.length === 0 && <li className="px-3 py-2 text-sm text-muted">Nothing to choose yet</li>}
           {options.map((o, i) => {
             const sel = o.value === value;
@@ -157,12 +157,12 @@ export function MultiSelect({ value, onChange, options, search, placeholder = "C
       <button type="button" onClick={() => setOpen((o) => !o)} aria-haspopup="listbox" aria-expanded={open}
         className={`${input} flex min-h-10 flex-wrap items-center gap-1.5 text-left ${open ? "border-accent ring-2 ring-accent-soft" : ""}`}>
         {value.length ? value.map((v) => (
-          <span key={v.value} className={`rounded-full bg-accent-soft px-2 py-0.5 text-xs font-medium text-accent-strong ${v.mono ? "font-mono" : ""}`}>{v.label}</span>
+          <span key={v.value} className={`rounded bg-accent-soft px-1.5 py-0.5 text-xs font-medium text-accent-strong ${v.mono ? "font-mono" : ""}`}>{v.label}</span>
         )) : <span className="text-muted">{placeholder}</span>}
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="ml-auto shrink-0 text-muted" aria-hidden><path d={open ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} /></svg>
       </button>
       {open && (
-        <div className="absolute left-0 right-0 z-30 mt-1 overflow-hidden rounded-xl border border-line bg-panel text-sm shadow-xl">
+        <div className="absolute left-0 right-0 z-30 mt-1 overflow-hidden rounded-md border border-line bg-panel text-sm shadow-lg">
           <div className="border-b border-line p-2">
             <input autoFocus className={input} value={q} onChange={(e) => setQ(e.target.value)} placeholder={searchPlaceholder} />
           </div>

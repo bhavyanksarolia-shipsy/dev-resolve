@@ -2,11 +2,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { btn, btnPrimary, Field, input, Note, post } from "./ui";
 import { confirmDialog } from "@/components/Dialog";
+import { Paged } from "@/components/TableTools";
 
 interface Status {
   base: string; branch: string; tokenSet: boolean; tokenSource?: string | null; tokenPreview?: string | null; connected?: string[]; syncing: boolean;
   last: { at: string; ok: boolean; error?: string; repos: { repo: string; ok: boolean; commit?: string; error?: string }[] } | null;
-  repos: { repo: string; present: boolean; head?: string | null }[];
+  repos: { repo: string; present: boolean; head?: string | null; clients?: string[] }[];
 }
 
 /** Where the agent's source code comes from (GitHub, read-only) and whether each repo is on the server. */
@@ -101,6 +102,7 @@ export function SourceCodeCard() {
               {s.last && <span className="text-xs text-muted">last sync {new Date(s.last.at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })} · every 30 min</span>}
             </div>
             <AddRepo connected={[...(s.connected ?? []), ...pending.map((p) => p.repo)]} busy={false} onAdd={(r) => changeRepos(r, "add")} />
+            <Paged items={s.repos} noun="repos" size={10}>{(repos, pager) => (<>
             <ul className="mt-3 divide-y divide-line overflow-hidden rounded-xl border border-line">
               {pending.filter((p) => p.kind === "add" && !s.repos.some((r) => r.repo === p.repo)).map((p) => (
                 <li key={`pending-${p.repo}`} className="chat-pop flex items-center gap-3 bg-accent-soft/40 px-4 py-2.5 text-sm">
@@ -109,7 +111,7 @@ export function SourceCodeCard() {
                   <span className="text-xs text-accent-strong">Connecting · downloading from GitHub…</span>
                 </li>
               ))}
-              {s.repos.map((r) => {
+              {repos.map((r) => {
                 const x = result(r.repo);
                 const removing = pending.some((p) => p.kind === "remove" && p.repo === r.repo);
                 if (removing) return (
@@ -124,6 +126,7 @@ export function SourceCodeCard() {
                   <li key={r.repo} className="group flex items-center gap-3 px-4 py-2.5 text-sm">
                     <span className={`h-2 w-2 shrink-0 rounded-full ${r.present && !x?.error ? "bg-ok" : "bg-bad"}`} aria-hidden />
                     <span className="min-w-0 flex-1 truncate font-mono text-[13px]">{r.repo}</span>
+                    <ClientCount names={r.clients ?? []} />
                     {x?.error ? <span className="truncate text-xs text-bad" title={x.error}>{x.error}</span>
                       : hash ? <><code className="rounded bg-bg px-1.5 py-0.5 text-xs text-muted">{hash}</code><span className="w-24 text-right text-xs text-muted">{date}</span></>
                       : <span className="text-xs text-muted" title={r.present ? "Downloaded (not a git checkout)" : "Not downloaded yet — Sync now"}>{r.present ? "downloaded" : "not downloaded yet"}</span>}
@@ -132,7 +135,7 @@ export function SourceCodeCard() {
                         onClick={async () => {
                           const ok = await confirmDialog({
                             title: `Disconnect ${r.repo}?`,
-                            message: "The agent stops reading this repo, and clients can no longer pick it. Clients that already use it keep it until you remove it from them (Admin → Clients → Code).",
+                            message: `The agent stops reading this repo, and clients can no longer pick it.${r.clients?.length ? ` Used by ${r.clients.join(", ")} — they keep it until you remove it from them (Admin → Clients → Code).` : " No client uses it."}`,
                             confirmLabel: "Disconnect", danger: true,
                           });
                           if (ok) changeRepos(r.repo, "remove");
@@ -143,6 +146,7 @@ export function SourceCodeCard() {
                 );
               })}
             </ul>
+            {pager}</>)}</Paged>
           </div>
         )}
       </div>
@@ -209,5 +213,15 @@ function AddRepo({ connected, busy, onAdd }: { connected: string[]; busy: boolea
         </ul>
       )}
     </div>
+  );
+}
+
+/** How many clients pick this repo (Admin → Clients → Code); hover for their names. */
+function ClientCount({ names }: { names: string[] }) {
+  return (
+    <span title={names.length ? `Used by ${names.join(", ")}` : "No client uses this repo yet"}
+      className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${names.length ? "bg-accent-soft text-accent-strong" : "bg-bg text-muted"}`}>
+      {names.length} client{names.length === 1 ? "" : "s"}
+    </span>
   );
 }

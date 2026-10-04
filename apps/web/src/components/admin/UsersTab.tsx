@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { btn, btnPrimary, Field, input, Note, post, Select, Switch } from "./ui";
 import { confirmDialog } from "@/components/Dialog";
+import { Paged } from "@/components/TableTools";
 
 interface U {
   name: string; email: string | null; display_name: string | null; is_admin: boolean; disabled_at: string | null; last_login_at: string | null;
@@ -88,6 +89,7 @@ export function UsersTab() {
         </div>
       )}
 
+      <Paged items={shown} noun="people" reset={`${query}|${show}`}>{(rows, pager) => (<div>
       <div className="card overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-head text-left text-xs font-semibold uppercase tracking-wide text-head-fg">
@@ -99,7 +101,7 @@ export function UsersTab() {
               <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-muted">No users match{query ? ` “${query}”` : ""}.
                 {(query || show !== "all") && <button className="ml-2 text-accent-strong underline" onClick={() => { setQuery(""); setShow("all"); }}>Show everyone</button>}</td></tr>
             )}
-            {shown.map((u) => {
+            {rows.map((u) => {
               const me = u.name === data.me;
               const locked = u.locked_until && new Date(u.locked_until) > new Date();
               return (
@@ -154,6 +156,7 @@ export function UsersTab() {
           </tbody>
         </table>
       </div>
+      {pager}</div>)}</Paged>
 
       {adding && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4 backdrop-blur-[2px]" onMouseDown={(e) => e.target === e.currentTarget && setAdding(false)}>

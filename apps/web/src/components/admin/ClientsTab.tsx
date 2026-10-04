@@ -3,6 +3,7 @@ import { SlideSheet } from "@/components/SlideSheet";
 import { useCallback, useEffect, useState } from "react";
 import type { Acc, AdminConfig } from "./types";
 import { ClientActiveToggle } from "@/components/ClientActiveToggle";
+import { usePaged } from "@/components/TableTools";
 import { btn, btnPrimary, Field, input, MultiSelect, Note, post, Select, Switch } from "./ui";
 
 const SLOTS = ["app", "audit", "integration"] as const;
@@ -74,10 +75,11 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
   }
 
   const list = cfg.accounts.filter((a) => !filter || a.name.toLowerCase().includes(filter.toLowerCase()));
+  const paged = usePaged(list, { noun: "clients", reset: filter });
   return (
     <div className="space-y-4">
       {msg && <Note ok={msg.ok}>{msg.text}</Note>}
-      {!form && (
+      {(
         <>
           <div className="flex flex-wrap items-center gap-2">
             <button className={btnPrimary} onClick={() => setForm(toForm(null, cfg))}>+ Add client</button>
@@ -89,7 +91,7 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
                 <tr><th className="px-4 py-3">Client</th><th className="px-4 py-3">Active with us</th><th className="px-4 py-3">DevRev accounts</th><th className="px-4 py-3">Logs</th><th className="px-4 py-3">Database</th><th className="px-4 py-3">Status</th><th className="px-4 py-3" /></tr>
               </thead>
               <tbody className="divide-y divide-line">
-                {list.map((a) => {
+                {paged.rows.map((a) => {
                   const osC = cfg.connections.find((c) => c.opensearch && Object.values(a.opensearch_log_types).some((lt) => lt in c.opensearch!.logTypes));
                   const vpn = (osC?.opensearch?.vpn) || conn(a.metabase_project || "")?.metabase?.vpn;
                   return (
@@ -107,33 +109,31 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
               </tbody>
             </table>
           </div>
+          {paged.pager}
         </>
       )}
 
       {form && (
         <SlideSheet title={form.originalSlug ? `Edit ${form.name}` : "New client"} onClose={() => setForm(null)}>
-          <div className="card space-y-5 p-5">
+          <div className="-mx-4 border-t border-line sm:-mx-6">
 
+          <Section title="Client" desc="How this client shows up across Dev Resolve.">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Client name"><input className={input} value={form.name} placeholder="e.g. Acme Retail" onChange={(e) => set({ name: e.target.value })} /></Field>
             <Field label="Group (optional)" hint="Clients sharing a group (e.g. one company's several products)"><input className={input} value={form.group} onChange={(e) => set({ group: e.target.value })} /></Field>
           </div>
           <Switch on={form.client_active} onChange={(v) => set({ client_active: v })} label="Client is active with us" />
+          </Section>
 
-          <div className="rounded-lg border border-line p-4">
-            <div className="mb-1 font-medium">DevRev accounts</div>
-            <p className="mb-3 text-xs text-muted">Tickets from these DevRev accounts are investigated as this client.</p>
+          <Section title="DevRev accounts" desc="Tickets from these accounts are investigated as this client.">
             <DevrevPicker value={form.devrev} onChange={(v) => set({ devrev: v })} />
-          </div>
+          </Section>
 
-          <div className="rounded-lg border border-line p-4">
-            <div className="mb-1 font-medium">Code</div>
-            <p className="mb-3 text-xs text-muted">Repos the agent searches for this client — picked from the repos connected under Connections → GitHub.</p>
+          <Section title="Code" desc="Repos the agent searches, from the ones connected under Connections → GitHub.">
             <RepoPicker known={cfg.repos} value={form.code_repos} onChange={(v) => set({ code_repos: v })} />
-          </div>
+          </Section>
 
-          <div className="rounded-lg border border-line p-4">
-            <div className="mb-3 font-medium">Logs</div>
+          <Section title="Logs" desc="Where the agent looks for this client's request and error trail.">
             <div className="mb-3 flex flex-wrap gap-4 text-sm">
               {[["none", "No logs"], ["opensearch", "OpenSearch cluster"], ["app_log", "Shared app logs"]].map(([k, l]) => (
                 <label key={k} className="inline-flex items-center gap-1.5"><input type="radio" checked={form.logsKind === k} onChange={() => set({ logsKind: k as Form["logsKind"] })} /> {l}</label>
@@ -175,10 +175,9 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
                 </div>
               </div>
             )}
-          </div>
+          </Section>
 
-          <div className="rounded-lg border border-line p-4">
-            <div className="mb-3 font-medium">Database</div>
+          <Section title="Database" desc="Where the agent checks the current state of records.">
             <div className="mb-3 flex flex-wrap gap-4 text-sm">
               {[["none", "No database"], ["metabase", "Metabase"]].map(([k, l]) => (
                 <label key={k} className="inline-flex items-center gap-1.5"><input type="radio" checked={form.dbKind === k} onChange={() => set({ dbKind: k as Form["dbKind"] })} /> {l}</label>
@@ -203,20 +202,15 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
                 <Switch on={form.shared} onChange={(v) => set({ shared: v })} label="This database is shared by several clients (the agent must filter every query to this client)" />
               </div>
             )}
-          </div>
+          </Section>
 
-          <div className="rounded-lg border border-line p-4">
-            <div className="mb-1 flex items-center gap-3">
-              <span className="font-medium">Other sources</span>
-              <button type="button" className={`${btn} ml-auto`} onClick={() => set({ extra: [...form.extra, { name: "", url: "", notes: "" }] })}>+ Add source</button>
-            </div>
-            <p className="mb-3 text-xs text-muted">Anything else that helps with this client&apos;s tickets — a dashboard, portal, runbook or contact. The agent gets the name, link and notes as reference (it can&apos;t sign in to them).</p>
+          <Section title="Other sources" desc="Dashboards, portals, runbooks or contacts. The agent gets them as reference only — it can't sign in.">
             {!form.extra.length && <p className="text-sm text-muted">None yet.</p>}
             <div className="space-y-3">
               {form.extra.map((x, i) => {
                 const upd = (p: Partial<typeof x>) => set({ extra: form.extra.map((y, j) => (j === i ? { ...y, ...p } : y)) });
                 return (
-                  <div key={i} className="grid gap-2 rounded-lg bg-bg p-3 sm:grid-cols-[1fr_1.5fr_auto]">
+                  <div key={i} className="grid gap-2 border-b border-dashed border-line pb-3 sm:grid-cols-[1fr_1.5fr_auto]">
                     <input className={input} placeholder="Name, e.g. SAP IDoc monitor" value={x.name} onChange={(e) => upd({ name: e.target.value })} />
                     <input className={input} placeholder="Link (optional)" value={x.url} onChange={(e) => upd({ url: e.target.value })} />
                     <button type="button" aria-label="Remove source" className={`${btn} text-bad`} onClick={() => set({ extra: form.extra.filter((_, j) => j !== i) })}>Remove</button>
@@ -225,11 +219,13 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
                 );
               })}
             </div>
-          </div>
+            <button type="button" className="mt-3 text-xs font-medium text-accent-strong hover:underline" onClick={() => set({ extra: [...form.extra, { name: "", url: "", notes: "" }] })}>+ Add source</button>
+          </Section>
 
-          <div className="flex gap-2">
+          <div className="sticky bottom-0 flex items-center gap-3 border-t border-line bg-panel px-4 py-3 sm:px-6">
+            {!form.devrev.length && <span className="text-xs text-muted">Add at least one DevRev account to save.</span>}
+            <button className={`${btn} ml-auto`} onClick={() => setForm(null)}>Cancel</button>
             <button className={btnPrimary} disabled={busy || !form.name || !form.devrev.length} onClick={save}>{busy ? "Saving…" : "Save client"}</button>
-            {!form.devrev.length && <span className="self-center text-xs text-muted">Add at least one DevRev account to save.</span>}
           </div>
           </div>
         </SlideSheet>
@@ -249,5 +245,18 @@ function RepoPicker({ known, value, onChange }: { known: string[]; value: string
     <MultiSelect value={value.map((r) => ({ value: r, label: r, mono: true }))} onChange={(v) => onChange(v.map((o) => o.value))}
       options={all.map((r) => ({ value: r, label: r, mono: true }))} placeholder="Choose repos…" searchPlaceholder="Search connected repos…"
       emptyText="No repos connected yet (Connections → GitHub)" />
+  );
+}
+
+/** One block of the client form: what it is on the left, the controls on the right. */
+function Section({ title, desc, children }: { title: string; desc: string; children: React.ReactNode }) {
+  return (
+    <section className="grid gap-3 border-b border-line px-4 py-5 sm:grid-cols-[11rem_1fr] sm:gap-6 sm:px-6">
+      <div>
+        <h3 className="text-sm font-semibold">{title}</h3>
+        <p className="mt-1 text-xs leading-relaxed text-muted">{desc}</p>
+      </div>
+      <div className="min-w-0 space-y-4">{children}</div>
+    </section>
   );
 }

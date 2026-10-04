@@ -5,6 +5,7 @@ import type { AdminConfig, Conn } from "./types";
 import { btn, btnPrimary, Field, input, Note, post, Rows, Switch } from "./ui";
 import { SourceCodeCard } from "./SourceCodeCard";
 import { ServiceCard } from "./ServiceCard";
+import { usePaged } from "@/components/TableTools";
 
 type Kind = "opensearch" | "metabase";
 interface Form {
@@ -72,6 +73,7 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
   ]);
   const rows = allRows.filter((r) => r.kind === sub);
   const appLogs = sub === "opensearch" ? cfg.connections.filter((c) => c.appLog) : [];
+  const paged = usePaged(rows, { noun: "connections", reset: sub });
   const TABS: [Sub, string, number | null][] = [
     ["github", "GitHub", null], ["opensearch", "OpenSearch", allRows.filter((r) => r.kind === "opensearch").length + cfg.connections.filter((c) => c.appLog).length],
     ["metabase", "Metabase", allRows.filter((r) => r.kind === "metabase").length], ["claude", "Claude", null], ["devrev", "DevRev", null],
@@ -81,7 +83,7 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
   return (
     <div className="space-y-4">
       {msg && <Note ok={msg.ok}>{msg.text}</Note>}
-      {!form && (
+      {(
         <div role="tablist" aria-label="Connection types" className="inline-flex flex-wrap rounded-xl border border-line bg-panel p-1 text-sm font-medium">
           {TABS.map(([k, l, n]) => (
             <button key={k} role="tab" aria-selected={sub === k} onClick={() => setSub(k)}
@@ -91,9 +93,9 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
           ))}
         </div>
       )}
-      {!form && sub === "github" && <SourceCodeCard />}
-      {!form && (sub === "claude" || sub === "devrev") && <ServiceCard key={sub} which={sub} />}
-      {!form && (sub === "opensearch" || sub === "metabase") && (
+      {sub === "github" && <SourceCodeCard />}
+      {(sub === "claude" || sub === "devrev") && <ServiceCard key={sub} which={sub} />}
+      {(sub === "opensearch" || sub === "metabase") && (
         <>
           <div className="flex gap-2">
             <button className={btnPrimary} onClick={() => { setForm(toForm(null, sub)); setTest(null); }}>{sub === "metabase" ? "+ Metabase" : "+ OpenSearch logs"}</button>
@@ -104,7 +106,7 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
                 <tr><th className="px-4 py-3">Connection</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Host</th><th className="px-4 py-3">VPN</th><th className="px-4 py-3">Sign-in</th><th className="px-4 py-3 text-right">Clients</th><th className="px-4 py-3">Connection</th><th className="px-4 py-3" /></tr>
               </thead>
               <tbody className="divide-y divide-line">
-                {rows.map(({ c, kind, x, what, detail }) => (
+                {paged.rows.map(({ c, kind, x, what, detail }) => (
                   <tr key={`${c.name}-${kind}`}>
                     <td className="px-4 py-3"><div className="font-medium">{c.name}</div><div className="max-w-xs truncate text-xs text-muted">{c.label}</div></td>
                     <td className="px-4 py-3 text-xs">{what}<div className="text-muted">{detail}</div></td>
@@ -131,12 +133,13 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
               </tbody>
             </table>
           </div>
+          {paged.pager}
         </>
       )}
 
       {form && (
         <SlideSheet title={form.originalName ? `Edit ${form.originalName}` : `New ${form.kind === "metabase" ? "Metabase" : "OpenSearch logs"} connection`} onClose={() => setForm(null)}>
-          <div className="card space-y-4 p-5">
+          <div className="card mb-10 space-y-4 p-5">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Name" hint={form.originalName ? "Can't be renamed (clients point to it)" : "Short id, e.g. acme_metabase"}>
               <input className={input} value={form.name} disabled={!!form.originalName} onChange={(e) => set({ name: e.target.value })} />

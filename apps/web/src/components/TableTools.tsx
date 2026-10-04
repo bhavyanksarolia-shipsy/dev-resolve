@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Select } from "./admin/ui";
 
 /**
@@ -92,9 +92,9 @@ export function ColumnMenu({ label, values, selected, text, sort, onSort, onSele
 }
 
 /** Footer pager, right-aligned and small: "Rows 25 ▾ · 51–75 of 129 · ‹ ›". */
-export function Pager({ where, from, to, total, all, page, pages, onPage, disabled, size, onSize }: {
+export function Pager({ where, from, to, total, all, page, pages, onPage, disabled, size, onSize, noun = "tickets" }: {
   where: "top" | "bottom"; from: number; to: number; total: number; all: number; page: number; pages: number; onPage: (n: number) => void; disabled?: boolean;
-  size?: number; onSize?: (n: number) => void;
+  size?: number; onSize?: (n: number) => void; noun?: string;
 }) {
   const go = (n: number) => { onPage(n); if (where === "bottom") { window.scrollTo({ top: 0, behavior: "smooth" }); document.querySelector("[data-scroll-table]")?.scrollTo({ top: 0, behavior: "smooth" }); } };
   const arrow = (dir: -1 | 1) => (
@@ -112,10 +112,36 @@ export function Pager({ where, from, to, total, all, page, pages, onPage, disabl
         </label>
       )}
       <span>
-        {total ? <><b className="font-semibold text-fg tabular-nums">{from}–{to}</b> of <b className="font-semibold text-fg tabular-nums">{total}</b></> : "No tickets"}
+        {total ? <><b className="font-semibold text-fg tabular-nums">{from}–{to}</b> of <b className="font-semibold text-fg tabular-nums">{total}</b></> : `No ${noun}`}
         {total !== all && <> · filtered from {all}</>}
       </span>
       {pages > 1 && <nav aria-label="Pages" className="flex items-center">{arrow(-1)}{arrow(1)}</nav>}
     </div>
   );
+}
+
+/**
+ * Client-side paging for any list: returns the rows for the current page and the pager to render under it.
+ * The pager stays hidden while everything fits on the smallest page (10), and the page resets when `reset` changes
+ * (e.g. the filter text) or the list shrinks below it.
+ */
+export function usePaged<T>(items: T[], { size: initial = 25, noun = "rows", reset = "" }: { size?: number; noun?: string; reset?: string } = {}): { rows: T[]; pager: ReactNode } {
+  const [size, setSize] = useState(initial);
+  const [state, setState] = useState({ page: 1, reset });
+  const pages = Math.max(1, Math.ceil(items.length / size));
+  const page = state.reset !== reset ? 1 : Math.min(state.page, pages);
+  const rows = items.slice((page - 1) * size, page * size);
+  const pager = items.length > 10 ? (
+    <div className="px-1 py-2">
+      <Pager where="top" noun={noun} from={(page - 1) * size + 1} to={Math.min(page * size, items.length)} total={items.length} all={items.length}
+        page={page} pages={pages} onPage={(n) => setState({ page: n, reset })} size={size} onSize={(n) => { setSize(n); setState({ page: 1, reset }); }} />
+    </div>
+  ) : null;
+  return { rows, pager };
+}
+
+/** usePaged as a component, for places that return early before their list (hooks can't sit after those returns). */
+export function Paged<T>({ items, noun, size, reset, children }: { items: T[]; noun?: string; size?: number; reset?: string; children: (rows: T[], pager: ReactNode) => ReactNode }) {
+  const { rows, pager } = usePaged(items, { noun, size, reset });
+  return <>{children(rows, pager)}</>;
 }

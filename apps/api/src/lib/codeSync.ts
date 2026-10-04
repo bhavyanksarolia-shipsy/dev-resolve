@@ -116,7 +116,7 @@ export async function ensureRepos(repos: string[]) {
 export function codeStatus() {
   return {
     base: base(), branch: branch(), tokenSet: !!githubToken(), tokenSource: tokenSource(), tokenPreview: mask(githubToken()), connected: connectedRepos(), root: CODE_ROOT, syncing: !!running, last,
-    repos: codeRepos().map((r) => ({ repo: r, present: existsSync(path.join(CODE_ROOT, r, ".git")) || existsSync(path.join(CODE_ROOT, r)), head: headOf(r) })),
+    repos: codeRepos().map((r) => ({ repo: r, present: existsSync(path.join(CODE_ROOT, r, ".git")) || existsSync(path.join(CODE_ROOT, r)), head: headOf(r), clients: getAccounts().filter((a) => (a.code_repos ?? []).includes(r)).map((a) => a.name).sort() })),
   };
 }
 
