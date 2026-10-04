@@ -227,8 +227,8 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
               </Field>
               <Field label="Link"><input className={input} value={form.url} placeholder="https://" onChange={(e) => set({ url: e.target.value })} /></Field>
             </div>
-            <Switch on={form.vpn || !!form.vpnSuffix} disabled={!!form.vpnSuffix} onChange={(v) => set({ vpn: v })}
-              label={<span>Reachable only on the VPN{form.vpnSuffix && <span className="ml-1 text-xs text-muted">(covered by {form.vpnSuffix})</span>}</span>} />
+            <Switch on={form.vpn} onChange={(v) => set({ vpn: v })}
+              label={<span>Reachable only on the VPN{form.vpn && form.vpnSuffix && <span className="ml-1 text-xs text-muted">(covered by {form.vpnSuffix})</span>}</span>} />
             {newHostNeedsExt && <p className="text-xs text-warn">New VPN domain: everyone&apos;s connector needs updating to reach it (Connector page → download again).</p>}
           </section>
 
@@ -255,6 +255,10 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
               <Field label="API key"><SecretInput field="apiKey" kind={form.kind} conn={form.originalName} saved={form.secretsSet.apiKey} value={form.apiKey} onChange={(v) => set({ apiKey: v })} /></Field>
             )}
             {form.auth === "google" && <p className="text-xs text-muted">Each person signs in with their own Google account on the Connector page.</p>}
+            {form.kind === "opensearch" && !form.gateway && (
+              <p className="text-xs text-muted">Google login isn&apos;t available here: for OpenSearch it only works through the Shipsy app-log gateway (the Google-login connection). This link signs in with no auth or a username + password.</p>
+            )}
+            {form.gateway && <p className="text-xs text-muted">This is the Shipsy app-log gateway, which only supports Google login.</p>}
           </section>
 
           <section className="card space-y-3 p-4">

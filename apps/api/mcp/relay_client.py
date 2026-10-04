@@ -19,6 +19,8 @@ def needs_relay(url: str) -> bool:
     if os.environ.get("DEV_RESOLVE_CONNECTOR") != "on" or not os.environ.get("DEV_RESOLVE_RELAY_URL"):
         return False
     host = (urllib.parse.urlparse(url).hostname or "").lower()
+    if host in [h for h in os.environ.get("DEV_RESOLVE_RELAY_EXCLUDE", "").split(",") if h]:
+        return False  # switched off in Admin → Connections: reachable without the VPN
     return any(host.endswith(s) for s in os.environ.get("DEV_RESOLVE_RELAY_SUFFIXES", "").split(",") if s)
 
 

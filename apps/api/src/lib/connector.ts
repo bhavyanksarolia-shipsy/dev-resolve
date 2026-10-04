@@ -19,11 +19,19 @@ export const connectorMode = () => ["on", "1", "true"].includes((process.env.DEV
 export const relaySuffixes = () =>
   (cfgValue("VPN_HOST_SUFFIXES") || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 
+/** Hosts switched off in Admin → Connections although a VPN suffix covers them (reachable without the VPN). */
+export const vpnExcluded = () => (cfgValue("VPN_HOST_EXCLUDE") || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+
+/** Is this host reachable only on the client VPN? (Covered by VPN_HOST_SUFFIXES and not excluded.) */
+export const isVpnOnlyHost = (host?: string | null) => {
+  const h = (host || "").split(":")[0].toLowerCase();
+  return !!h && !vpnExcluded().includes(h) && relaySuffixes().some((s) => h.endsWith(s));
+};
+
 export const needsRelay = (url: string) => {
   if (!connectorMode()) return false;
   try {
-    const host = new URL(url).hostname.toLowerCase();
-    return relaySuffixes().some((s) => host.endsWith(s));
+    return isVpnOnlyHost(new URL(url).hostname);
   } catch {
     return false;
   }
@@ -181,6 +189,7 @@ export function userToolEnv(user?: string | null): Record<string, string> {
     DEV_RESOLVE_RELAY_SECRET: relaySecret(),
     DEV_RESOLVE_RELAY_USER: user || "",
     DEV_RESOLVE_RELAY_SUFFIXES: relaySuffixes().join(","),
+    DEV_RESOLVE_RELAY_EXCLUDE: vpnExcluded().join(","),
     DEV_RESOLVE_PER_USER_SESSIONS: "1",
   };
   for (const [name, p] of Object.entries(getConnectionProjects())) {

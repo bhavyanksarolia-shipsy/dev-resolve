@@ -4,7 +4,7 @@ import http from "node:http";
 import https from "node:https";
 import path from "node:path";
 import { Account, CONFIG_DIR, cfgValue, getConnectionProjects, loadProjectsFile, readConfigEnv } from "./config";
-import { ConnectorOffline, connectorMode, relay } from "./connector";
+import { ConnectorOffline, connectorMode, isVpnOnlyHost, relay, vpnExcluded } from "./connector";
 import { appLogProjects, ensureAppLogAuth } from "./applog";
 import { savePrivate } from "./privateStore";
 
@@ -55,19 +55,24 @@ const clean = (v: unknown) => String(v ?? "").replace(/[\r\n]/g, "").trim();
 // ── VPN ───────────────────────────────────────────────────────────────────────────────────────────────────
 export const vpnSuffixes = () => (cfgValue("VPN_HOST_SUFFIXES") || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 const hostOf = (u?: string) => { try { return u ? new URL(u).hostname.toLowerCase() : ""; } catch { return ""; } };
-export const isVpnHost = (host: string) => !!host && vpnSuffixes().some((s) => host.endsWith(s));
+export const isVpnHost = (host: string) => isVpnOnlyHost(host);
 /** The suffix that covers this host, or null. */
 const coveringSuffix = (host: string) => vpnSuffixes().find((s) => host.endsWith(s)) ?? null;
 
+/**
+ * Switch one host's VPN flag. On: covered by a suffix, or added as its own entry. Off: its own entry is removed, and if a
+ * shared suffix (.example.com) still covers it, the host goes on the exception list instead of dropping the suffix.
+ */
 async function setVpn(host: string, on: boolean, by: string) {
   if (!host) return;
-  const list = vpnSuffixes();
+  const list = vpnSuffixes(), skip = vpnExcluded().filter((h) => h !== host);
   if (on && !coveringSuffix(host)) list.push(host);
   if (!on) {
-    const i = list.indexOf(host); // only an exact-host entry can be switched off here; a shared suffix (.example.com) stays
+    const i = list.indexOf(host);
     if (i >= 0) list.splice(i, 1);
+    if (list.some((s) => host.endsWith(s))) skip.push(host);
   }
-  await writeEnv({ VPN_HOST_SUFFIXES: list.join(",") }, by);
+  await writeEnv({ VPN_HOST_SUFFIXES: list.join(","), VPN_HOST_EXCLUDE: skip.length ? skip.join(",") : null }, by);
 }
 
 // ── read model for the admin UI ───────────────────────────────────────────────────────────────────────────

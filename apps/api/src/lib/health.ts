@@ -6,7 +6,7 @@ import path from "node:path";
 import { adminSetting, cfgValue, getAccounts, getConnectionProjects, projectsFileExists, ROOT } from "./config";
 import { getPool } from "./db";
 import { settings } from "./settings";
-import { ConnectorOffline, connectorMode, metabaseSession, needsRelay, relay, userToolEnv } from "./connector";
+import { ConnectorOffline, connectorMode, isVpnOnlyHost, metabaseSession, needsRelay, relay, userToolEnv } from "./connector";
 import { whoAmI, DevrevError } from "./devrev";
 import { appLogProjects, ensureAppLogAuth } from "./applog";
 
@@ -36,10 +36,7 @@ function hostOf(url?: string) {
   }
 }
 
-function looksVpnOnly(host?: string) {
-  const suffixes = (cfgValue("VPN_HOST_SUFFIXES") || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
-  return !!host && suffixes.some((s) => host.split(":")[0].toLowerCase().endsWith(s));
-}
+const looksVpnOnly = (host?: string) => isVpnOnlyHost(host);
 
 /** Minimal HTTPS POST that tolerates the self-signed certs some client hosts use (same as the Python tools' verify=False). */
 function rawPost(url: string, body: unknown, headers: Record<string, string>, auth?: { user: string; pass: string }) {
