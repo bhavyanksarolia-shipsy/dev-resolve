@@ -70,7 +70,21 @@ export function SourceCodeCard() {
       {s.last && !s.last.ok && s.last.repos.some((r) => !r.ok) && (
         <p className="mt-2 text-xs text-bad">{s.last.repos.filter((r) => !r.ok).map((r) => `${r.repo}: ${r.error}`).join(" · ")}</p>
       )}
+      <AvailableNote using={s.repos.length} />
       {s.last && <p className="mt-2 text-xs text-muted">Last sync {new Date(s.last.at).toLocaleString("en-IN")} · refreshes every 30 min</p>}
     </div>
+  );
+}
+
+/** "The token can read 37 repos — 2 are used by clients": explains why only some repos are downloaded. */
+function AvailableNote({ using }: { using: number }) {
+  const [n, setN] = useState<number | null>(null);
+  useEffect(() => { fetch("/api/admin/code?repos=1").then((r) => (r.ok ? r.json() : null)).then((d) => setN(d?.repos?.length ?? null)).catch(() => {}); }, []);
+  if (!n) return null;
+  return (
+    <p className="mt-2 text-xs text-muted">
+      The token can read <b className="text-fg">{n}</b> repos; <b className="text-fg">{using}</b> {using === 1 ? "is" : "are"} downloaded because clients use them.
+      To add one, tick it under <b className="text-fg">Admin → Clients → Edit → Code the agent reads</b>.
+    </p>
   );
 }
