@@ -43,7 +43,7 @@ export function SourceCodeCard() {
           <button className={btnPrimary} onClick={() => setEdit({ base: s.base, branch: s.branch, token: "" })}>{s.base ? "Edit" : "Set up"}</button>
         </div>
       </div>
-      {msg && <div className="mb-3"><Note ok={msg.ok}>{msg.text}</Note></div>}
+      {msg && (msg.ok || !s.last?.repos.some((r) => !r.ok)) && <div className="mb-3"><Note ok={msg.ok}>{msg.text}</Note></div>}
       {edit && (
         <div className="mb-3 grid gap-3 rounded-lg bg-bg p-3 sm:grid-cols-3">
           <Field label="GitHub address" hint="https://github.com/<org>"><input className={input} value={edit.base} onChange={(e) => setEdit({ ...edit, base: e.target.value })} /></Field>

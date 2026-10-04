@@ -36,7 +36,13 @@ async function syncOne(repo: string, token?: string): Promise<RepoResult> {
     }
     return { repo, ok: true, commit: await git(["-C", dir, "log", "-1", "--format=%h · %cd", "--date=short"]) };
   } catch (e) {
-    return { repo, ok: false, error: (e as Error).message };
+    const m = (e as Error).message;
+    // GitHub says "Write access … not granted" / 403 even for a read when the token can't see the repo.
+    const error = /403|access to repository not granted|Authentication failed|could not read Username/i.test(m)
+      ? "the token can't read this repo (give it Contents: Read on it, and approve it for the organisation / authorise SSO)"
+      : /not found|404/i.test(m) ? "repo or branch not found — check the GitHub address and branch"
+      : m;
+    return { repo, ok: false, error };
   }
 }
 
