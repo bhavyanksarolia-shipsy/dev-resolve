@@ -26,7 +26,7 @@ export function appLogInfo() {
 
 /** Which of this person's sign-ins are missing (the connector offers to do them). */
 export function signinsFor(user: string) {
-  const metabase = ssoMetabaseProjects().map((p) => ({ project: p.name, baseUrl: p.baseUrl, signedIn: !!metabaseSession(user, p.name) }));
+  const metabase = ssoMetabaseProjects().map((p) => ({ project: p.name, label: getConnectionProjects()[p.name]?.metabase?.display_name || p.name, baseUrl: p.baseUrl, signedIn: !!metabaseSession(user, p.name) }));
   const dir = path.join(appLogUserConfigDir(user), "mcp-remote-v1");
   const appLog = appLogInfo() && { ...appLogInfo()!, signedIn: existsSync(dir) && readdirSync(dir).some((f) => f.endsWith("_tokens.json")) };
   return { metabase, appLog };

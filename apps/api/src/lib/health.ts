@@ -83,7 +83,7 @@ async function checkOpenSearch(project: string, cfg: NonNullable<ReturnType<type
   const base: Omit<ConnectionHealth, "status" | "message"> = {
     id: `opensearch:${project}`,
     kind: "opensearch",
-    label: `OpenSearch logs · ${project}`,
+    label: `OpenSearch logs · ${cfg.display_name || project}`,
     host,
     used_by: usersOf((a) => logTypes.includes(a.opensearch_log_type || "") || Object.values(a.opensearch_log_types).some((l) => logTypes.includes(l))),
   };
@@ -133,7 +133,7 @@ function checkMetabase(project: string, cfg: NonNullable<ReturnType<typeof getCo
   const base: Omit<ConnectionHealth, "status" | "message"> = {
     id: `metabase:${project}`,
     kind: "metabase",
-    label: `Metabase DB · ${project}`,
+    label: `Metabase DB · ${cfg.display_name || project}`,
     host,
     used_by: usersOf((a) => a.metabase_project === project),
   };
@@ -253,7 +253,7 @@ export async function checkAll(filter?: { accountSlug?: string; force?: boolean;
     if (acc && acc.app_log?.project !== p.name) continue;
     checks.push(cached(per(`opensearch_mcp:${p.name}`, true), force, () =>
       ensureAppLogAuth(p, viewer).then((r): ConnectionHealth => ({
-        id: `opensearch_mcp:${p.name}`, kind: "opensearch_mcp", label: "Shipsy app logs (MCP)", host: hostOf(p.args.find((a) => a.startsWith("https://"))),
+        id: `opensearch_mcp:${p.name}`, kind: "opensearch_mcp", label: p.display_name || "Shipsy app logs (MCP)", host: hostOf(p.args.find((a) => a.startsWith("https://"))),
         used_by: getAccounts().filter((a) => a.status === "active" && a.app_log?.project === p.name).map((a) => a.name),
         status: r.ok ? "ok" : r.status, message: r.message,
         ...(r.ok ? {} : { fix: connectorMode() ? "Sign in to app logs from your local connector (Connector page)" : `Run in a terminal: ${p.login_command}  (signs in with your Shipsy Google account)` }),

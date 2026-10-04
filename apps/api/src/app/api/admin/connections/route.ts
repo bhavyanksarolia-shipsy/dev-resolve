@@ -9,7 +9,7 @@ export async function POST(req: Request) {
   if (!b.connection) return Response.json({ error: "connection required" }, { status: 400 });
   try {
     const name = await saveConnection(b.connection, b.originalName ?? null, g.user.name);
-    return Response.json({ ok: true, name, message: `Connection "${name}" saved` });
+    return Response.json({ ok: true, name, message: `Connection "${b.connection.display_name?.trim() || name}" saved` });
   } catch (e) {
     return Response.json({ error: (e as Error).message }, { status: 400 });
   }

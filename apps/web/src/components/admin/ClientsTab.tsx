@@ -103,8 +103,8 @@ export function ClientsTab({ cfg, reload }: { cfg: AdminConfig; reload: () => vo
                       <td className="px-4 py-3 font-medium">{a.name}{vpn && <span className="ml-2 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] text-warn ring-1 ring-amber-200">VPN</span>}</td>
                       <td className="px-4 py-3"><ClientActiveToggle slug={a.slug} name={a.name} initial={a.client_active !== false} changed={(a as Acc & { client_active_changed?: { by: string; at: string } }).client_active_changed} onChanged={reload} /></td>
                       <td className="px-4 py-3 text-xs text-muted">{a.devrev.names.slice(0, 2).join(", ")}{a.devrev.names.length > 2 && ` +${a.devrev.names.length - 2}`}</td>
-                      <td className="px-4 py-3 text-xs">{a.app_log ? `app logs · ${[a.app_log.company].flat().filter(Boolean).join(", ") || "own indices"}` : osC ? `${osC.name} · ${Object.keys(a.opensearch_log_types).join("/")}` : <span className="text-muted">—</span>}</td>
-                      <td className="px-4 py-3 text-xs">{a.metabase_project ? `${a.metabase_project} · db ${a.metabase_database}` : <span className="text-muted">—</span>}</td>
+                      <td className="px-4 py-3 text-xs">{a.app_log ? `app logs · ${[a.app_log.company].flat().filter(Boolean).join(", ") || "own indices"}` : osC ? `${osC.opensearch?.displayName ?? osC.name} · ${Object.keys(a.opensearch_log_types).join("/")}` : <span className="text-muted">—</span>}</td>
+                      <td className="px-4 py-3 text-xs">{a.metabase_project ? `${conn(a.metabase_project)?.metabase?.displayName ?? a.metabase_project} · db ${a.metabase_database}` : <span className="text-muted">—</span>}</td>
                       <td className="px-4 py-3 text-xs">{a.status === "active" ? <span className="text-ok">connected</span> : <span className="text-warn">{a.status.replace("_", " ")}</span>}</td>
                       <td className="px-4 py-3"><button className={btn} onClick={() => setForm(toForm(a, cfg))}>Edit</button></td>
                     </tr>

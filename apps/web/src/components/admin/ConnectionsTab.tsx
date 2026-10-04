@@ -217,7 +217,7 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
               <tbody className="divide-y divide-line">
                 {paged.rows.map(({ c, x, kind, list, clients }) => (
                   <tr key={`${c.name}-${kind}`}>
-                    <td className="px-4 py-3"><div className="font-medium">{x.displayName}</div>{x.displayName !== c.name && <div className="font-mono text-[11px] text-muted">{c.name}</div>}</td>
+                    <td className="px-4 py-3 font-medium">{x.displayName}</td>
                     <td className="max-w-72 truncate px-4 py-3 font-mono text-xs" title={x.url}>{x.host || <span className="text-bad">no link</span>}</td>
                     <td className="px-4 py-3 text-xs">{x.vpn ? <span className="rounded-full bg-amber-50 px-2 py-0.5 text-warn ring-1 ring-amber-200">VPN</span> : <span className="text-muted">—</span>}</td>
                     <td className="px-4 py-3 text-xs">{AUTH_LABEL[x.auth]}

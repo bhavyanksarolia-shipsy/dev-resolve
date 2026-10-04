@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 interface Status {
   mode: boolean; user: string; online: boolean; vpnUp: boolean; lastSeen: string | null; version?: string; storeUrl?: string | null;
   vpn: Record<string, boolean>; vpnHosts: string[];
-  signins: { metabase: { project: string; baseUrl?: string; signedIn: boolean }[]; appLog: { project: string; signedIn: boolean } | null };
+  signins: { metabase: { project: string; label?: string; baseUrl?: string; signedIn: boolean }[]; appLog: { project: string; signedIn: boolean } | null };
 }
 type Tone = "ok" | "bad" | "wait";
 
@@ -86,7 +86,7 @@ export default function ConnectorPage() {
   const viaExt = s.online && s.version?.startsWith("ext-");
   const running = s.online;
   const installedHere = !!ext || viaExt;
-  const signins = [...s.signins.metabase.map((m) => ({ key: m.project, label: `Metabase · ${m.project}`, ok: m.signedIn })),
+  const signins = [...s.signins.metabase.map((m) => ({ key: m.project, label: `Metabase · ${m.label ?? m.project}`, ok: m.signedIn })),
     ...(s.signins.appLog ? [{ key: "app_log", label: "App logs", ok: s.signins.appLog.signedIn }] : [])];
   const signedIn = signins.filter((x) => x.ok).length;
   const vpnOkCount = s.vpnHosts.filter((h) => s.vpn[h]).length;
