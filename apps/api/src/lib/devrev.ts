@@ -216,10 +216,41 @@ export async function whoAmI() {
 }
 
 /** DevRev accounts matching a name (admin: picking a client's DevRev accounts). */
+/** Every DevRev account (id + name), cached 1 h — DevRev's search only matches whole words ("relia" finds nothing). */
+let accountList: { at: number; value: Promise<{ id: string; display_name: string }[]> } | null = null;
+function allAccounts() {
+  if (accountList && Date.now() - accountList.at < 60 * 60 * 1000) return accountList.value;
+  const value = (async () => {
+    const out: { id: string; display_name: string }[] = [];
+    let cursor: string | undefined;
+    for (let i = 0; i < 100; i++) {
+      const r = await call<{ accounts: { id: string; display_name: string }[]; next_cursor?: string }>("/accounts.list", { limit: 100, ...(cursor && { cursor }) });
+      out.push(...r.accounts.map((a) => ({ id: a.id, display_name: a.display_name })));
+      cursor = r.next_cursor;
+      if (!cursor) break;
+    }
+    return out;
+  })();
+  value.catch(() => { accountList = null; });
+  accountList = { at: Date.now(), value };
+  return value;
+}
+
+/** Start loading the account list early (e.g. when a ticket page opens) so the first search is instant. */
+export const warmAccounts = () => { void allAccounts().catch(() => {}); };
+
+/** Accounts whose name contains the text (those starting with it first), plus DevRev's own word search. */
 export async function searchAccounts(query: string) {
-  const r = await call<{ results?: { account?: { id: string; display_name: string; external_refs?: string[] } }[] }>(
-    "/search.hybrid", { query, namespace: "account", limit: 15 });
-  return (r.results || []).map((x) => x.account).filter((a): a is { id: string; display_name: string } => !!a?.id);
+  const needle = query.trim().toLowerCase();
+  const [all, hybrid] = await Promise.all([
+    allAccounts().catch(() => [] as { id: string; display_name: string }[]),
+    call<{ results?: { account?: { id: string; display_name: string } }[] }>("/search.hybrid", { query, namespace: "account", limit: 15 })
+      .then((r) => (r.results || []).map((x) => x.account).filter((a): a is { id: string; display_name: string } => !!a?.id)).catch(() => []),
+  ]);
+  const name = (a: { display_name: string }) => (a.display_name || "").toLowerCase();
+  const hits = all.filter((a) => name(a).includes(needle)).sort((x, y) => Number(!name(x).startsWith(needle)) - Number(!name(y).startsWith(needle)) || name(x).localeCompare(name(y)));
+  const seen = new Set<string>();
+  return [...hits, ...hybrid].filter((a) => (seen.has(a.id) ? false : (seen.add(a.id), true))).slice(0, 25);
 }
 
 export interface StageOption { id: string; name: string; final: boolean }
@@ -266,13 +297,14 @@ export async function podValues(sample: TicketSummary): Promise<string[]> {
 }
 
 /** Moves a ticket to another stage, sets its Pod (null clears it) and/or other custom fields (keys with their tnt__/ctype__ prefix). */
-export async function updateTicket(id: string, change: { stageId?: string; pod?: string | null; partId?: string; ownerId?: string; fields?: Record<string, unknown> }, subtype?: string) {
+export async function updateTicket(id: string, change: { stageId?: string; pod?: string | null; partId?: string; ownerId?: string; accountId?: string; fields?: Record<string, unknown> }, subtype?: string) {
   const custom = { ...(change.fields ?? {}), ...(change.pod !== undefined && { tnt__pod: change.pod }) };
   clearListCache(); // the dashboard / counts must show this change right away
   const r = await call<{ work: TicketSummary }>("/works.update", {
     id, type: "ticket",
     ...(change.stageId && { stage: { stage: change.stageId } }),
     ...(change.partId && { applies_to_part: change.partId }),
+    ...(change.accountId && { account: change.accountId }),
     ...(change.ownerId && { owned_by: { set: [change.ownerId] } }),
     // Custom fields must name the schemas they belong to: tnt__ = the org's tenant fields, ctype__ = the ticket's subtype.
     ...(Object.keys(custom).length && { custom_fields: custom, custom_schema_spec: { tenant_fragment: true, ...(subtype && { subtype }) } }),

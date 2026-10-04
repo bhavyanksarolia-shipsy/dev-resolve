@@ -6,6 +6,7 @@ export interface StageOption { id: string; name: string; final: boolean }
 interface Options {
   stage: { id: string | null; name: string | null }; pod: string | null; stages: StageOption[]; pods: string[];
   part: { id: string; name: string } | null; parts: { id: string; name: string; type?: string; product?: string }[];
+  account: { id: string; name: string } | null;
 }
 interface UpdateResult { ok: boolean; updated: number; failed: { ticket: string; error?: string }[]; warnings?: { ticket: string; warning: string }[]; error?: string }
 
@@ -29,8 +30,9 @@ export function useTicketOptions(ticket: string | null, reload = 0) {
 }
 
 /** Changes Stage and/or Pod on DevRev tickets after a confirm, and reports what DevRev accepted. */
-export async function updateTickets(tickets: string[], change: { stage?: string; pod?: string | null }) {
-  const what = [change.stage && `stage → ${stageLabel(change.stage)}`, change.pod !== undefined && `Pod → ${change.pod ?? "none"}`].filter(Boolean).join(" and ");
+export async function updateTickets(tickets: string[], change: { stage?: string; pod?: string | null; account?: { id: string; name: string } }) {
+  const what = [change.stage && `stage → ${stageLabel(change.stage)}`, change.pod !== undefined && `Pod → ${change.pod ?? "none"}`,
+    change.account && `account → ${change.account.name}`].filter(Boolean).join(" and ");
   const many = tickets.length > 1;
   // Resolve is one click (empty resolve fields get the defaults on the server); other changes are confirmed first.
   const ok = change.stage === "resolved" || await confirmDialog({
@@ -39,7 +41,7 @@ export async function updateTickets(tickets: string[], change: { stage?: string;
     confirmLabel: change.stage === "resolved" ? (many ? `Resolve ${tickets.length} tickets` : "Mark resolved") : "Update",
   });
   if (!ok) return null;
-  const r = await fetch("/api/tickets/update", { method: "POST", body: JSON.stringify({ tickets, ...change }) });
+  const r = await fetch("/api/tickets/update", { method: "POST", body: JSON.stringify({ tickets, ...change, account: change.account?.id }) });
   const d: UpdateResult = await r.json().catch(() => ({ ok: false, updated: 0, failed: [], error: `HTTP ${r.status}` }));
   if (d.warnings?.length) notify({ title: "Check in DevRev", message: d.warnings.slice(0, 4).map((w) => `${w.ticket}: ${w.warning}`).join(" · "), tone: "error" });
   if (d.error) notify({ title: "Not updated", message: d.error, tone: "error" });
@@ -88,12 +90,64 @@ function PillMenu({ label, value, tone = "plain", items, disabled, onPick }: {
   );
 }
 
+/** Account pill: search DevRev accounts (2+ letters) and move the ticket to one; shows which client each belongs to. */
+function AccountPill({ current, disabled, onPick }: { current: { id: string; name: string } | null; disabled?: boolean; onPick: (a: { id: string; name: string }) => void }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [found, setFound] = useState<{ id: string; name: string; client: string | null }[] | null>(null);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } };
+    document.addEventListener("mousedown", away); document.addEventListener("keydown", esc, true);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc, true); };
+  }, [open]);
+  useEffect(() => {
+    const needle = q.trim();
+    if (!open || needle.length < 2) return;
+    let live = true;
+    const t = setTimeout(() => fetch(`/api/devrev-accounts?q=${encodeURIComponent(needle)}`).then((r) => r.json())
+      .then((d) => { if (live) setFound(d.results ?? []); }).catch(() => live && setFound([])), 250);
+    return () => { live = false; clearTimeout(t); };
+  }, [q, open]);
+  const rows = q.trim().length >= 2 ? (found ?? []).filter((a) => a.id !== current?.id) : [];
+  return (
+    <div ref={box} className="relative">
+      <button type="button" disabled={disabled} onClick={() => { setOpen((o) => !o); setQ(""); setFound(null); }} aria-haspopup="dialog" aria-expanded={open}
+        title={current?.name} className="inline-flex max-w-72 items-center gap-1.5 rounded-full bg-panel px-3 py-1 text-xs font-medium ring-1 ring-line transition hover:ring-accent disabled:opacity-50">
+        <span className="text-muted">Account</span><span className="truncate">{current?.name ?? "not set"}</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden><path d="m6 9 6 6 6-6" /></svg>
+      </button>
+      {open && (
+        <div role="dialog" aria-label="Change account" className="absolute left-0 z-40 mt-1.5 w-80 overflow-hidden rounded-xl border border-line bg-panel text-sm shadow-lg">
+          <div className="border-b border-line p-2">
+            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search DevRev accounts…"
+              className="w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent-soft" />
+          </div>
+          <ul className="max-h-72 overflow-auto py-1">
+            {q.trim().length < 2 && <li className="px-3 py-2 text-xs text-muted">Type at least 2 letters</li>}
+            {q.trim().length >= 2 && found === null && <li className="px-3 py-2 text-xs text-muted">Searching…</li>}
+            {q.trim().length >= 2 && found !== null && !rows.length && <li className="px-3 py-2 text-xs text-muted">No account matches “{q.trim()}”</li>}
+            {rows.map((a) => (
+              <li key={a.id} role="menuitem" onClick={() => { setOpen(false); onPick({ id: a.id, name: a.name }); }} className="cursor-pointer px-3 py-1.5 hover:bg-accent-soft">
+                <span className="break-words [overflow-wrap:anywhere]">{a.name}</span>
+                <span className={`block text-xs ${a.client ? "text-muted" : "text-warn"}`}>{a.client ? `Client: ${a.client}` : "Not set up on a client"}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Ticket page: Stage and Pod as small pills, plus Resolve. */
 export function TicketControls({ ticket, onChanged }: { ticket: string; onChanged: () => void }) {
   const [reload, setReload] = useState(0);
   const opts = useTicketOptions(ticket, reload);
   const [busy, setBusy] = useState(false);
-  async function apply(change: { stage?: string; pod?: string | null }) {
+  async function apply(change: { stage?: string; pod?: string | null; account?: { id: string; name: string } }) {
     setBusy(true);
     const d = await updateTickets([ticket], change);
     setBusy(false);
@@ -116,6 +170,7 @@ export function TicketControls({ ticket, onChanged }: { ticket: string; onChange
       <PillMenu label="Pod" value={opts.pod ?? "not set"} tone={opts.pod ? "accent" : "muted"} disabled={busy}
         items={[...opts.pods.filter((p) => p !== opts.pod).map((p) => ({ value: p, label: p })), ...(opts.pod ? [{ value: CLEAR_POD, label: "Clear Pod" }] : [])]}
         onPick={(v) => apply({ pod: v === CLEAR_POD ? null : v })} />
+      <AccountPill current={opts.account} disabled={busy} onPick={(a) => apply({ account: a })} />
       {canResolve && (
         <button onClick={() => apply({ stage: "resolved" })} disabled={busy}
           className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium text-ok ring-1 ring-ok/40 transition hover:bg-ok hover:text-white disabled:opacity-50">

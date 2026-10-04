@@ -2,7 +2,7 @@ import "server-only";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import { adminSetting, Account, ROOT, getAccount, projectForLogType, resolveDevrevAccount } from "../config";
+import { adminSetting, Account, ROOT, getAccount, getAccounts, projectForLogType, resolveDevrevAccount } from "../config";
 import { userToolEnv } from "../connector";
 import { LockedError, q } from "../db";
 import { getTicket, listTimeline } from "../devrev";
@@ -59,7 +59,7 @@ function systemPrompt(account: Account, candidates: Account[]) {
 Work like an investigator: evidence first, conclusions second. Never guess.
 
 # Account scope
-${candidates.length > 1 ? `The ticket's DevRev account is ambiguous. Work out which of these tenants it belongs to FIRST (warehouse codes, identifiers — probe each one's logs/DB), then set resolved_account_slug in submit_rca.\n` : ""}${conn}
+${candidates.length > 1 ? `The ticket is filed under **${account.name}**, but every tenant below is in your scope (same company / possible clients). If the evidence (warehouse codes, order or document ids that don't exist here, a known misrouting pattern) points to another tenant below, INVESTIGATE THERE YOURSELF with that tenant's log types and database, and set resolved_account_slug in submit_rca. Never end with "re-check it in tenant X" or "re-map the ticket" when X is listed below — you can check it, so check it.\n` : ""}${conn}
 
 # Tools
 - mcp__${OS_SERVER}__search_logs — OpenSearch logs. ALWAYS pass log_type explicitly, only from the log types above.
@@ -174,6 +174,18 @@ function connectionFor(toolName: string, input: Record<string, unknown>, account
   return toolName;
 }
 
+/**
+ * The client's group (e.g. one company's several products) is in scope too: tickets are often filed under the wrong
+ * product account, and the agent must be able to check the right one itself instead of telling a person to.
+ */
+function withGroup(account: Account, candidates: Account[]) {
+  const out = candidates.length ? [...candidates] : [account];
+  if (account.group) for (const a of getAccounts()) {
+    if (a.group === account.group && a.client_active !== false && !out.some((x) => x.slug === a.slug)) out.push(a);
+  }
+  return out.length > 1 ? out : [];
+}
+
 function resolveScope(accountId: string | undefined, displayId: string, accountName?: string) {
   const res = resolveDevrevAccount(accountId);
   let account: Account | undefined;
@@ -186,7 +198,7 @@ function resolveScope(accountId: string | undefined, displayId: string, accountN
     account = candidates[0];
   }
   if (!account) throw new Error(`Ticket ${displayId}'s DevRev account (${accountName ?? "none"}) is not mapped in config/projects.json`);
-  return { account, candidates };
+  return { account, candidates: withGroup(account, candidates) };
 }
 
 export async function startInvestigation(ticketRef: string, startedBy = "unknown"): Promise<number> {
@@ -278,16 +290,25 @@ export async function sendChatMessage(id: number, text: string, by = "unknown", 
   }>(`SELECT * FROM investigations WHERE id=$1`, [id]);
   if (!inv) throw new Error("investigation not found");
   if (inv.status === "running" || inv.chat_running) throw new LockedError("The agent is still working on this ticket — wait for it to finish.");
-  const account = getAccount(inv.account_slug);
+  let account = getAccount(inv.account_slug);
+  let candidates = (inv.candidate_slugs || []).map((s) => getAccount(s)).filter(Boolean) as Account[];
+  // The ticket's DevRev account may have been changed since (e.g. moved from VF to QC): follow it.
+  let switched: string | null = null;
+  const nowScope = await getTicket(inv.ticket_id).then((t) => resolveScope(t.account?.id, inv.ticket_display, t.account?.display_name)).catch(() => null);
+  if (nowScope && (nowScope.account.slug !== inv.account_slug || nowScope.candidates.map((c) => c.slug).join() !== (inv.candidate_slugs || []).join())) {
+    if (nowScope.account.slug !== inv.account_slug) switched = `${account?.name ?? inv.account_slug} → ${nowScope.account.name}`;
+    account = nowScope.account; candidates = nowScope.candidates;
+    await q(`UPDATE investigations SET account_slug=$2, candidate_slugs=$3 WHERE id=$1`, [id, account.slug, candidates.map((c) => c.slug)]);
+  }
   if (!account) throw new Error(`account ${inv.account_slug} is no longer in config`);
   if (account.client_active === false) throw new Error(`${account.name} is an inactive client — turn it on in Admin → Clients to investigate its tickets`);
-  const candidates = (inv.candidate_slugs || []).map((s) => getAccount(s)).filter(Boolean) as Account[];
 
   const [{ next }] = await q<{ next: number }>(`SELECT COALESCE(max(seq), -1) + 1 AS next FROM investigation_steps WHERE investigation_id=$1`, [id]);
   // Claim the chat in one step (two messages at once can't both start the agent).
   const claimed = await q(`UPDATE investigations SET chat_running=true WHERE id=$1 AND status <> 'running' AND NOT chat_running RETURNING id`, [id]);
   if (!claimed.length) throw new LockedError("The agent is still working on this ticket — wait for it to finish.");
   await step(id, next, "user_message", null, { by, files: files.map(({ id, name, type, size }) => ({ id, name, type, size })) }, text);
+  if (switched) await step(id, next + 1, "system", null, { account: account.slug }, `Ticket account changed (${switched}) — the agent now uses ${account.name}'s logs and database`).catch(() => {});
   const fileBlocks = files.length ? await uploadedFileBlocks(files) : [];
   // Replies (and their attachments) added to the ticket since the agent last looked: the investigation read the
   // ticket once, so without this a chat would answer from an outdated conversation.
@@ -305,6 +326,7 @@ export async function sendChatMessage(id: number, text: string, by = "unknown", 
     : "";
 
   const followUp =
+    (switched ? `NOTE: the ticket's account was changed (${switched}). Your connections are now ${account.name}'s${candidates.length > 1 ? ` (plus ${candidates.filter((c) => c.slug !== account!.slug).map((c) => c.name).join(", ")})` : ""} — see the updated Account scope. Re-run the checks there.\n\n` : "") +
     `Follow-up from reviewer "${by}" on ${inv.ticket_display}:\n\n${text || "(no message — see the attached files)"}\n\n` +
     (files.length ? `They attached ${files.length} file(s): ${files.map((f) => f.name).join(", ")} — included below; read them.\n\n` : "") +
     (freshText ? freshText.trim() + "\n\n" : "") +
@@ -325,7 +347,7 @@ export async function sendChatMessage(id: number, text: string, by = "unknown", 
   }
   void (async () => {
     try {
-      await runSession({ id, account, candidates, seq: next + 1, message, resume: inv.session_id ?? undefined, kind: "chat", by });
+      await runSession({ id, account: account!, candidates, seq: next + (switched ? 2 : 1), message, resume: inv.session_id ?? undefined, kind: "chat", by });
     } catch (e) {
       await step(id, next + 1, "system", null, { error: true }, `Chat failed: ${(e as Error).message}`).catch(() => {});
     } finally {

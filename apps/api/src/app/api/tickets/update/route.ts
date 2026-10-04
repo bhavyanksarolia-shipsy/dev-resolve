@@ -14,11 +14,11 @@ const blank = (v: unknown) => v == null || (typeof v === "string" && !v.trim());
 export async function POST(req: Request) {
   const by = await currentUser(req);
   // fields: resolve-time custom fields (same for every ticket); perTicket: per-ticket overrides (e.g. each ticket's root cause).
-  const b = (await req.json().catch(() => ({}))) as { tickets?: string[]; stage?: string; pod?: string | null; part?: string; owner?: string;
+  const b = (await req.json().catch(() => ({}))) as { tickets?: string[]; stage?: string; pod?: string | null; part?: string; owner?: string; account?: string;
     fields?: Record<string, unknown>; perTicket?: Record<string, Record<string, unknown>> };
   const tickets = Array.from(new Set((b.tickets || []).map(String).filter((t) => /^TKT-\d+$/.test(t)))).slice(0, 200);
   if (!tickets.length) return Response.json({ error: "Pick at least one ticket" }, { status: 400 });
-  if (!b.stage && b.pod === undefined && !b.part && !b.owner && !b.fields && !b.perTicket) return Response.json({ error: "Nothing to change" }, { status: 400 });
+  if (!b.stage && b.pod === undefined && !b.part && !b.owner && !b.account && !b.fields && !b.perTicket) return Response.json({ error: "Nothing to change" }, { status: 400 });
 
   // The signed-in person's DevRev user — the CX Lead when a resolved ticket has none.
   let me: string | null | undefined;
@@ -34,7 +34,7 @@ export async function POST(req: Request) {
   const queue = [...tickets];
   async function worker() {
     for (let t = queue.shift(); t; t = queue.shift()) {
-      const change: { stageId?: string; pod?: string | null; partId?: string; ownerId?: string; fields?: Record<string, unknown> } = {};
+      const change: { stageId?: string; pod?: string | null; partId?: string; ownerId?: string; accountId?: string; fields?: Record<string, unknown> } = {};
       const tk = t;
       // One update at a time per ticket (two people changing it together, or a double click).
       try { await withLock(`ticket-update:${tk}`, `${tk} is being updated by someone else — try again in a moment`, async () => {
@@ -81,6 +81,11 @@ export async function POST(req: Request) {
         if (b.owner) {
           if (!(await devUsers()).some((u) => u.id === b.owner)) throw new Error("unknown DevRev user");
           change.ownerId = b.owner;
+        }
+        if (b.account) {
+          if (!/^don:identity:[^:]+:devo\/[^:]+:account\/[A-Za-z0-9]+$/.test(b.account)) throw new Error("that isn't a DevRev account id");
+          if (cur.account?.id === b.account) throw new Error("already on that account");
+          change.accountId = b.account;
         }
         if (b.part) {
           if (!(await partChoices()).some((p) => p.id === b.part)) throw new Error("that part isn't in DevRev's product list");
