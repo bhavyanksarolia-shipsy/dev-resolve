@@ -46,7 +46,7 @@ function DevrevPicker({ value, onChange }: { value: Form["devrev"]; onChange: (v
 }
 
 /** Clients: which DevRev accounts belong to them and which logs / database their investigations use. */
-export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig; reload: () => void; openConnections: () => void }) {
+export function ClientsTab({ cfg, reload }: { cfg: AdminConfig; reload: () => void }) {
   const [form, setForm] = useState<Form | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [filter, setFilter] = useState("");
@@ -115,25 +115,28 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
 
       {form && (
         <SlideSheet title={form.originalSlug ? `Edit ${form.name}` : "New client"} onClose={() => setForm(null)}>
-          <div className="-mx-4 border-t border-line sm:-mx-6">
+          <div className="space-y-3">
 
-          <Section title="Client" desc="How this client shows up across Dev Resolve.">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Client name"><input className={input} value={form.name} placeholder="e.g. Acme Retail" onChange={(e) => set({ name: e.target.value })} /></Field>
-            <Field label="Group (optional)" hint="Clients sharing a group (e.g. one company's several products)"><input className={input} value={form.group} onChange={(e) => set({ group: e.target.value })} /></Field>
+          <Section title="Client">
+          <div className="grid gap-3 sm:grid-cols-[1.4fr_1fr_10rem]">
+            <Field label="Name"><input className={input} value={form.name} placeholder="e.g. Acme Retail" onChange={(e) => set({ name: e.target.value })} /></Field>
+            <Field label="Group (optional)"><input className={input} value={form.group} placeholder="e.g. acme" onChange={(e) => set({ group: e.target.value })} /></Field>
+            <Field label="Status">
+              <Select value={form.client_active ? "active" : "inactive"} onChange={(v) => set({ client_active: v === "active" })}
+                options={[{ value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }]} />
+            </Field>
           </div>
-          <Switch on={form.client_active} onChange={(v) => set({ client_active: v })} label="Client is active with us" />
           </Section>
 
-          <Section title="DevRev accounts" desc="Tickets from these accounts are investigated as this client.">
+          <Section title="DevRev accounts">
             <DevrevPicker value={form.devrev} onChange={(v) => set({ devrev: v })} />
           </Section>
 
-          <Section title="Code" desc="Repos the agent searches, from the ones connected under Connections → GitHub.">
+          <Section title="Code">
             <RepoPicker known={cfg.repos} value={form.code_repos} onChange={(v) => set({ code_repos: v })} />
           </Section>
 
-          <Section title="Logs" desc="Where the agent looks for this client's request and error trail.">
+          <Section title="Logs">
             <div className="mb-3 flex flex-wrap gap-4 text-sm">
               {[["none", "No logs"], ["opensearch", "OpenSearch cluster"], ["app_log", "Shared app logs"]].map(([k, l]) => (
                 <label key={k} className="inline-flex items-center gap-1.5"><input type="radio" checked={form.logsKind === k} onChange={() => set({ logsKind: k as Form["logsKind"] })} /> {l}</label>
@@ -141,7 +144,7 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
             </div>
             {form.logsKind === "opensearch" && (
               <div className="space-y-3">
-                <Field label="Cluster" hint={<>Not listed? <button type="button" className="text-accent-strong underline" onClick={openConnections}>Add it under Connections</button>.</>}>
+                <Field label="Cluster">
                   <Select value={form.osProject} onChange={(v) => set({ osProject: v, logTypes: {} })}
                     options={osConns.map((c) => ({ value: c.name, label: c.name, hint: [c.opensearch?.host, c.opensearch?.vpn && "needs VPN"].filter(Boolean).join(" · ") }))} />
                 </Field>
@@ -177,7 +180,7 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
             )}
           </Section>
 
-          <Section title="Database" desc="Where the agent checks the current state of records.">
+          <Section title="Database">
             <div className="mb-3 flex flex-wrap gap-4 text-sm">
               {[["none", "No database"], ["metabase", "Metabase"]].map(([k, l]) => (
                 <label key={k} className="inline-flex items-center gap-1.5"><input type="radio" checked={form.dbKind === k} onChange={() => set({ dbKind: k as Form["dbKind"] })} /> {l}</label>
@@ -185,7 +188,7 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
             </div>
             {form.dbKind === "metabase" && (
               <div className="space-y-3">
-                <Field label="Metabase instance" hint={<>Not listed? <button type="button" className="text-accent-strong underline" onClick={openConnections}>Add it under Connections</button>.</>}>
+                <Field label="Metabase instance">
                   <Select value={form.mbProject} onChange={(v) => set({ mbProject: v, database: String(conn(v)?.metabase?.defaultDatabase ?? "") })}
                     options={mbConns.map((c) => ({ value: c.name, label: c.name, hint: [c.metabase?.host, c.metabase?.vpn && "needs VPN", c.metabase?.auth === "google" && "each person's Google sign-in"].filter(Boolean).join(" · ") }))} />
                 </Field>
@@ -204,7 +207,7 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
             )}
           </Section>
 
-          <Section title="Other sources" desc="Dashboards, portals, runbooks or contacts. The agent gets them as reference only — it can't sign in.">
+          <Section title="Other sources">
             {!form.extra.length && <p className="text-sm text-muted">None yet.</p>}
             <div className="space-y-3">
               {form.extra.map((x, i) => {
@@ -222,7 +225,7 @@ export function ClientsTab({ cfg, reload, openConnections }: { cfg: AdminConfig;
             <button type="button" className="mt-3 text-xs font-medium text-accent-strong hover:underline" onClick={() => set({ extra: [...form.extra, { name: "", url: "", notes: "" }] })}>+ Add source</button>
           </Section>
 
-          <div className="sticky bottom-0 flex items-center gap-3 border-t border-line bg-panel px-4 py-3 sm:px-6">
+          <div className="sticky bottom-0 -mx-4 flex items-center gap-3 border-t border-line bg-panel px-4 py-3 sm:-mx-6 sm:px-6">
             {!form.devrev.length && <span className="text-xs text-muted">Add at least one DevRev account to save.</span>}
             <button className={`${btn} ml-auto`} onClick={() => setForm(null)}>Cancel</button>
             <button className={btnPrimary} disabled={busy || !form.name || !form.devrev.length} onClick={save}>{busy ? "Saving…" : "Save client"}</button>
@@ -248,15 +251,12 @@ function RepoPicker({ known, value, onChange }: { known: string[]; value: string
   );
 }
 
-/** One block of the client form: what it is on the left, the controls on the right. */
-function Section({ title, desc, children }: { title: string; desc: string; children: React.ReactNode }) {
+/** One card of the client form: a small header, then its fields. */
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="grid gap-3 border-b border-line px-4 py-5 sm:grid-cols-[11rem_1fr] sm:gap-6 sm:px-6">
-      <div>
-        <h3 className="text-sm font-semibold">{title}</h3>
-        <p className="mt-1 text-xs leading-relaxed text-muted">{desc}</p>
-      </div>
-      <div className="min-w-0 space-y-4">{children}</div>
+    <section className="card space-y-3 p-4">
+      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">{title}</h3>
+      {children}
     </section>
   );
 }

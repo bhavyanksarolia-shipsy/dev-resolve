@@ -37,7 +37,7 @@ function Admin() {
       {tab === "users" && <UsersTab />}
       {tab === "files" && <FilesTab />}
       {(tab === "clients" || tab === "connections") && !cfg && <div className="skeleton h-64 w-full rounded-xl" />}
-      {tab === "clients" && cfg && <ClientsTab cfg={cfg} reload={reload} openConnections={() => go("connections")} />}
+      {tab === "clients" && cfg && <ClientsTab cfg={cfg} reload={reload} />}
       {tab === "connections" && cfg && <ConnectionsTab cfg={cfg} reload={reload} />}
     </div>
   );
