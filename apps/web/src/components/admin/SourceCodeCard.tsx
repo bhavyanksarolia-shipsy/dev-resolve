@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { btn, btnPrimary, Field, input, Note, post } from "./ui";
 
 interface Status {
-  base: string; branch: string; tokenSet: boolean; syncing: boolean;
+  base: string; branch: string; tokenSet: boolean; tokenSource?: string | null; syncing: boolean;
   last: { at: string; ok: boolean; error?: string; repos: { repo: string; ok: boolean; commit?: string; error?: string }[] } | null;
   repos: { repo: string; present: boolean }[];
 }
@@ -37,7 +37,7 @@ export function SourceCodeCard() {
         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${local ? "bg-accent-soft text-accent-strong" : !s.base ? "bg-red-50 text-bad" : missing.length ? "bg-amber-50 text-warn" : "bg-accent-soft text-accent-strong"}`}>
           {local ? "using the local copy" : !s.base ? "not set up" : missing.length ? `${missing.length} of ${s.repos.length} repos missing` : `${s.repos.length} repos ready`}
         </span>
-        <span className="text-xs text-muted">{s.base ? `${s.base} · ${s.branch} · token ${s.tokenSet ? "set" : "not set"}` : local ? "Repos are already on this machine; no GitHub sync needed." : "The agent can't check code conditions until this is set."}</span>
+        <span className="text-xs text-muted">{s.base ? `${s.base} · ${s.branch} · token ${s.tokenSet ? `set (${s.tokenSource ?? "saved"})` : "not set"}` : local ? "Repos are already on this machine; no GitHub sync needed." : "The agent can't check code conditions until this is set."}</span>
         <div className="ml-auto flex gap-2">
           {s.base && <button className={btn} disabled={busy || s.syncing} onClick={() => act({ action: "sync" })}>{busy || s.syncing ? "Syncing…" : "Sync now"}</button>}
           <button className={btnPrimary} onClick={() => setEdit({ base: s.base, branch: s.branch, token: "" })}>{s.base ? "Edit" : "Set up"}</button>

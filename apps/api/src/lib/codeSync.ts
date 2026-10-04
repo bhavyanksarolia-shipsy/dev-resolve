@@ -2,7 +2,7 @@ import "server-only";
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { CODE_ROOT, cfgValue, getAccounts } from "./config";
+import { CODE_ROOT, cfgValue, getAccounts, readConfigEnv } from "./config";
 
 /**
  * Keeps the code the agent reads (CODE_ROOT/<repo>) in sync with GitHub: shallow, read-only, one branch.
@@ -15,8 +15,14 @@ let last: SyncResult | null = null;
 let running: Promise<SyncResult> | null = null;
 
 export const codeRepos = () => Array.from(new Set(getAccounts().flatMap((a) => a.code_repos ?? []))).sort();
-const base = () => (cfgValue("CODE_GIT_BASE") || "").replace(/\/+$/, "");
-const branch = () => cfgValue("CODE_GIT_BRANCH") || "main";
+// Values saved in Admin → Connections → Source code win over the service's variables (Railway), so changing the
+// token in the UI actually takes effect even when an older GITHUB_TOKEN variable is still set.
+const saved = (k: string) => readConfigEnv()[k] || undefined;
+const pick = (k: string) => saved(k) || cfgValue(k);
+const base = () => (pick("CODE_GIT_BASE") || "").replace(/\/+$/, "");
+const branch = () => pick("CODE_GIT_BRANCH") || "main";
+const githubToken = () => pick("GITHUB_TOKEN");
+const tokenSource = () => (saved("GITHUB_TOKEN") ? "saved in Admin" : process.env.GITHUB_TOKEN ? "server variable" : null);
 
 function git(args: string[], token?: string): Promise<string> {
   const auth = token ? ["-c", `http.extraHeader=Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`] : [];
@@ -72,7 +78,7 @@ export function syncCode(): Promise<SyncResult> {
       return last;
     }
     mkdirSync(CODE_ROOT, { recursive: true });
-    const token = cfgValue("GITHUB_TOKEN");
+    const token = githubToken();
     const repos: RepoResult[] = [];
     for (const r of codeRepos()) repos.push(await syncOne(r, token));
     last = { at: new Date().toISOString(), ok: repos.every((r) => r.ok), repos };
@@ -93,7 +99,7 @@ export async function ensureRepos(repos: string[]) {
 
 export function codeStatus() {
   return {
-    base: base(), branch: branch(), tokenSet: !!cfgValue("GITHUB_TOKEN"), root: CODE_ROOT, syncing: !!running, last,
+    base: base(), branch: branch(), tokenSet: !!githubToken(), tokenSource: tokenSource(), root: CODE_ROOT, syncing: !!running, last,
     repos: codeRepos().map((r) => ({ repo: r, present: existsSync(path.join(CODE_ROOT, r, ".git")) || existsSync(path.join(CODE_ROOT, r)) })),
   };
 }
