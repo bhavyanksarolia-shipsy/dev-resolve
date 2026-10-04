@@ -265,7 +265,7 @@ async function runAgent(id: number, ticket: Awaited<ReturnType<typeof getTicket>
  */
 /** How chat answers read: one finished explanation, like a senior engineer briefing a colleague — not a log dump. */
 const CHAT_REPLY_STYLE = `How to write your reply (the reviewer sees ONLY your last message, so it must stand on its own):
-- Do all the checks first, then write ONE complete answer at the end. No "let me check…" text in the answer.
+- Do any NEW checks first (see "How to handle this message"), then write ONE complete answer at the end. No "let me check…" text in the answer.
 - Start with the answer in 1–2 plain sentences (bold the key fact). What happened, and why.
 - Then explain it simply. Any timeline or sequence of events MUST be a markdown table (the "no tables" rule is only for
   the RCA posted to DevRev — chat replies are shown in Dev Resolve, where tables render well):
@@ -330,8 +330,11 @@ export async function sendChatMessage(id: number, text: string, by = "unknown", 
     `Follow-up from reviewer "${by}" on ${inv.ticket_display}:\n\n${text || "(no message — see the attached files)"}\n\n` +
     (files.length ? `They attached ${files.length} file(s): ${files.map((f) => f.name).join(", ")} — included below; read them.\n\n` : "") +
     (freshText ? freshText.trim() + "\n\n" : "") +
-    `Run any log / DB / code checks needed to verify — don't answer from memory when the data can be checked. ` +
-    `If the findings change the RCA (including Current status), call submit_rca again with the FULL revised RCA.\n\n` +
+    `How to handle this message:\n` +
+    `- Facts you already established in this conversation (with their request ids / query results) stay established — reuse them; don't re-run those checks.\n` +
+    `- Run NEW log / DB / code checks only for what isn't verified yet: a new question, something you marked "still open", new comments or files above, or something the reviewer explicitly asks you to re-check ("re-check", "verify again", "is it still…").\n` +
+    `- If the message is an acknowledgement or asks you to confirm what you found, answer straight away from the evidence you already have (quote it) — no new checks.\n` +
+    `- Only if the findings change the RCA (including Current status), call submit_rca again with the FULL revised RCA.\n\n` +
     CHAT_REPLY_STYLE;
   let message: SDKUserMessage;
   if (inv.session_id) {
