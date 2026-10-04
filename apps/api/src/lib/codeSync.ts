@@ -25,8 +25,26 @@ function git(args: string[], token?: string): Promise<string> {
       err ? reject(new Error((errOut || err.message).replace(/Authorization: Basic \S+/g, "Authorization: ***").trim().split("\n").slice(-2).join(" "))) : resolve(out.trim())));
 }
 
+/** Ask GitHub's API why a token can't read a repo — far clearer than git's errors. null = looks fine. */
+async function tokenProblem(repo: string, token?: string): Promise<string | null> {
+  const m = base().match(/^https:\/\/github\.com\/([^/]+)$/i);
+  if (!m) return null; // not github.com/<org> — let git report
+  const res = await fetch(`https://api.github.com/repos/${m[1]}/${repo}`, {
+    headers: { Accept: "application/vnd.github+json", ...(token && { Authorization: `Bearer ${token}` }) },
+  }).catch(() => null);
+  if (!res || res.ok) return null;
+  const sso = res.headers.get("x-github-sso");
+  if (res.status === 401) return token ? "GitHub rejected the token (wrong, expired or not fully copied) — paste a fresh one" : "no token set — this repo is private";
+  if (res.status === 403 && sso) return "the token isn't authorised for the organisation's SSO — on GitHub: Configure SSO → Authorize";
+  if (res.status === 403) return "the token isn't allowed to read this repo yet (fine-grained tokens need the organisation's approval)";
+  if (res.status === 404) return `the token can't see ${m[1]}/${repo} — create it with Resource owner = ${m[1]} and give it Contents: Read on this repo (or check the name)`;
+  return `GitHub answered ${res.status}`;
+}
+
 async function syncOne(repo: string, token?: string): Promise<RepoResult> {
   const dir = path.join(CODE_ROOT, repo);
+  const problem = await tokenProblem(repo, token);
+  if (problem) return { repo, ok: false, error: problem };
   try {
     if (existsSync(path.join(dir, ".git"))) {
       await git(["-C", dir, "fetch", "--quiet", "--depth", "1", "origin", branch()], token);
