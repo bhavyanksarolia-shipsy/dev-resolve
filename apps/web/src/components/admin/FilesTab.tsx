@@ -59,7 +59,7 @@ export function FilesTab() {
         </ol>
         <Field label="Chrome Web Store link" hint="When set, the Connector page shows “Add to Chrome” instead of the manual install.">
           <div className="flex gap-2">
-            <input className={input} value={store} placeholder="https://chromewebstore.google.com/detail/…" onChange={(e) => setStore(e.target.value)} />
+            <input className={input} value={store} placeholder="https://chromewebstore.google.com/detail/dev-resolve/abcdefghijklmnopabcdefghijklmnop" onChange={(e) => setStore(e.target.value)} />
             <button className={btnPrimary} disabled={busy === "store" || store === (settings?.EXTENSION_STORE_URL?.value ?? "")}
               onClick={async () => { setBusy("store"); const r = await post("/api/admin/settings", { EXTENSION_STORE_URL: store }); setBusy(null); toast({ ok: !r.error, text: r.error || "Saved — the Connector page now shows Add to Chrome" }); }}>Save</button>
           </div>

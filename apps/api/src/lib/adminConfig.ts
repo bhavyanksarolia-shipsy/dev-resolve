@@ -272,7 +272,7 @@ export async function saveConnection(input: ConnectionInput, originalName: strin
     if (using.length) throw new Error(`Can't remove ${gone.join(", ")} — used by ${using.map((a) => a.name).join(", ")}. Change those clients first.`);
     g.index_patterns = patterns;
     if (input.display_name !== undefined) g.display_name = clean(input.display_name) || undefined;
-    env[gatewayUrlEnv(g)] = url;
+    env[gatewayUrlEnv(g)] = clean(input.url); // as typed: the gateway's address ends in "/mcp/" and needs that last "/"
   } else if (input.kind === "opensearch") {
     const cur = (proj.opensearch as Record<string, unknown>) ?? {};
     const urlEnv = (cur.url_env as string) || `${P}_OS_URL`;

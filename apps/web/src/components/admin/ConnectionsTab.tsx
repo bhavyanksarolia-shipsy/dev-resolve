@@ -93,6 +93,20 @@ function saveChecks(c: Checks) {
 }
 const ago = (t: number) => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? "just now" : `${m} min ago`; };
 
+/** Example link per kind of connection, so it's clear how much of the address to paste and whether it ends in "/". */
+type LinkKind = "metabase" | "opensearch" | "gateway";
+const linkKind = (f: { kind: Kind; gateway: boolean }): LinkKind => (f.kind === "metabase" ? "metabase" : f.gateway ? "gateway" : "opensearch");
+const LINK_EXAMPLE: Record<LinkKind, string> = {
+  metabase: "https://metabase.example.com",
+  opensearch: "https://logs.example.com/internal/search/opensearch-with-long-numerals",
+  gateway: "https://app-log.example.com/mcp/",
+};
+const LINK_HINT: Record<LinkKind, string> = {
+  metabase: "Just the site address, no / at the end",
+  opensearch: "The full search address from OpenSearch Dashboards, no / at the end",
+  gateway: "Keep the / at the end",
+};
+
 const AUTH_LABEL: Record<Auth, string> = { none: "No auth", password: "Username + password", api_key: "API key", google: "Google login" };
 
 /** Index patterns as removable chips plus an input to add more (Enter or comma adds). */
@@ -241,7 +255,9 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
               <Field label="Name">
                 <input className={input} value={form.displayName} placeholder={form.kind === "metabase" ? "Acme production Metabase" : "Acme logs"} onChange={(e) => set({ displayName: e.target.value })} />
               </Field>
-              <Field label="Link"><input className={input} value={form.url} placeholder="https://" onChange={(e) => set({ url: e.target.value })} /></Field>
+              <Field label="Link" hint={LINK_HINT[linkKind(form)]}>
+                <input className={`${input} font-mono text-[13px]`} value={form.url} placeholder={LINK_EXAMPLE[linkKind(form)]} onChange={(e) => set({ url: e.target.value })} />
+              </Field>
             </div>
             <Switch on={form.vpn} onChange={(v) => set({ vpn: v })}
               label={<span>Reachable only on the VPN{form.vpn && form.vpnSuffix && <span className="ml-1 text-xs text-muted">(covered by {form.vpnSuffix})</span>}</span>} />

@@ -188,7 +188,7 @@ export function ClientsTab({ cfg, reload }: { cfg: AdminConfig; reload: () => vo
                 return (
                   <div key={i} className="grid gap-2 border-b border-dashed border-line pb-3 sm:grid-cols-[1fr_1.5fr_auto]">
                     <input className={input} placeholder="Name, e.g. SAP IDoc monitor" value={x.name} onChange={(e) => upd({ name: e.target.value })} />
-                    <input className={input} placeholder="Link (optional)" value={x.url} onChange={(e) => upd({ url: e.target.value })} />
+                    <input className={input} placeholder="Link (optional), e.g. https://dashboard.example.com/orders" value={x.url} onChange={(e) => upd({ url: e.target.value })} />
                     <button type="button" aria-label="Remove source" className={`${btn} text-bad`} onClick={() => set({ extra: form.extra.filter((_, j) => j !== i) })}>Remove</button>
                     <textarea className={`${input} sm:col-span-3`} rows={2} placeholder="Notes for the agent: what's there, when to check it, who owns it" value={x.notes} onChange={(e) => upd({ notes: e.target.value })} />
                   </div>
