@@ -131,6 +131,7 @@ function PatternList({ value, onChange }: { value: string[]; onChange: (v: strin
 /** Systems clients use: OpenSearch log clusters and Metabase instances (URL, sign-in, VPN). */
 export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () => void }) {
   const [form, setForm] = useState<Form | null>(null);
+  const [found, setFound] = useState<{ pattern: string; docs: number }[] | null>(null);
   const setTest = (t: { ok: boolean; message: string } | null) => toast(t && { ok: t.ok, text: t.message });
   const setMsg = toast;
   const [busy, setBusy] = useState(false);
@@ -166,10 +167,17 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
     setForm(null); reload();
   }
   /** Check the connection; for Metabase it also brings back the database list, merged into the form. */
-  async function runTest() {
+  async function runTest(fetchPatterns = false) {
     if (!form) return;
     setBusy(true); setTest(null);
-    const r = await post<{ ok: boolean; message: string; databases?: { id: number; name: string }[] }>("/api/admin/connections/test", { ...payload(form), existing: form.originalName ?? undefined });
+    const r = await post<{ ok: boolean; message: string; databases?: { id: number; name: string }[]; patterns?: { pattern: string; docs: number }[]; patternsError?: string; patternsPartial?: boolean }>("/api/admin/connections/test", { ...payload(form), existing: form.originalName ?? undefined, fetchPatterns });
+    if (fetchPatterns) {
+      setBusy(false);
+      if (r.error || !r.ok) return setTest({ ok: false, message: r.error || r.message });
+      if (!r.patterns) return setTest({ ok: false, message: `Connected, but couldn't list the indices${r.patternsError ? ` — ${r.patternsError}` : ""}` });
+      setFound(r.patterns);
+      return setTest({ ok: true, message: `${r.message} · ${r.patterns.length} index patterns with logs in the last day${r.patternsPartial ? " (this login can only read some indices, so only those are listed)" : ""}` });
+    }
     setBusy(false);
     const found = r.databases ?? [];
     const added = found.filter((d) => !form.databases.some(([k]) => Number(k) === d.id));
@@ -187,7 +195,6 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
     ["metabase", "Metabase", cfg.connections.filter((c) => c.metabase).length], ["claude", "Claude", null], ["devrev", "DevRev", null],
   ];
   const newHostNeedsExt = form && form.vpn && !form.vpnSuffix && (() => { try { const h = new URL(form.url).hostname; return !cfg.vpnSuffixes.some((s) => h.endsWith(s)); } catch { return false; } })();
-  const gatewayName = cfg.connections.find((c) => c.appLog)?.opensearch?.displayName;
   const authChoices: Auth[] = form?.kind === "metabase" ? ["password", "api_key", "google"] : ["none", "password", "google"];
 
   return (
@@ -208,7 +215,7 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
         <>
           <TableCard title={sub === "metabase" ? "Metabase connections" : "OpenSearch connections"} pager={paged.pager}
             search={connQ} onSearch={setConnQ} searchPlaceholder="Search connections…"
-            actions={<button className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-accent-strong" onClick={() => { setForm(toForm(null, sub as Kind)); setTest(null); }}>{sub === "metabase" ? "+ Metabase" : "+ OpenSearch"}</button>}>
+            actions={<button className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-accent-strong" onClick={() => { setForm(toForm(null, sub as Kind)); setTest(null); setFound(null); }}>{sub === "metabase" ? "+ Metabase" : "+ OpenSearch"}</button>}>
             <table className="w-full text-sm">
               <thead className="bg-head text-left text-xs font-semibold uppercase tracking-wide text-head-fg">
                 <tr><th className="px-4 py-3">Name</th><th className="px-4 py-3">Link</th><th className="px-4 py-3">VPN</th><th className="px-4 py-3">Auth</th>
@@ -231,7 +238,7 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
                           : r ? <button type="button" onClick={() => checkRow(c, kind)} title={`${r.message} — click to check again`} className={`line-clamp-2 text-left ${r.ok ? "text-ok" : "text-bad"}`}>{r.ok ? "● connected" : `○ ${r.message}`}<span className="ml-1 text-muted">· {ago(r.at)}</span></button>
                           : <button className={btn} onClick={() => checkRow(c, kind)}>Check</button>; })()}
                     </td>
-                    <td className="px-4 py-3"><button className={btn} onClick={() => { setForm(toForm(c, kind)); setTest(null); }}>Edit</button></td>
+                    <td className="px-4 py-3"><button className={btn} onClick={() => { setForm(toForm(c, kind)); setTest(null); setFound(null); }}>Edit</button></td>
                   </tr>
                 ))}
                 {!paged.rows.length && <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-muted">{connQ ? `No connections match “${connQ}”.` : "No connections yet."}</td></tr>}
@@ -282,9 +289,6 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
               <Field label="API key"><SecretInput field="apiKey" kind={form.kind} conn={form.originalName} saved={form.secretsSet.apiKey} value={form.apiKey} onChange={(v) => set({ apiKey: v })} /></Field>
             )}
             {form.auth === "google" && <p className="text-xs text-muted">Each person signs in with their own Google account on the Connector page.</p>}
-            {form.kind === "opensearch" && !form.gateway && (
-              <p className="text-xs text-muted">Google login is only for the Shipsy app logs, which already have a connection{gatewayName ? <> (<b className="font-medium text-fg">{gatewayName}</b>)</> : null}. To add index patterns there, edit that connection.</p>
-            )}
             {form.gateway && <p className="text-xs text-muted">This is the Shipsy app-log gateway, which only supports Google login.</p>}
           </section>
 
@@ -292,16 +296,41 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
             <div className="flex items-center gap-3">
               <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">{form.kind === "metabase" ? `Databases · ${form.databases.length}` : `Index patterns · ${form.patterns.length}`}</h3>
               {form.kind === "metabase" && form.auth !== "google" && (
-                <button type="button" className="ml-auto text-xs font-medium text-accent-strong hover:underline disabled:opacity-50" disabled={busy || !form.url} onClick={runTest}>Fetch from Metabase</button>
+                <button type="button" className="ml-auto text-xs font-medium text-accent-strong hover:underline disabled:opacity-50" disabled={busy || !form.url} onClick={() => runTest()}>Fetch from Metabase</button>
+              )}
+              {form.kind === "opensearch" && form.auth !== "google" && (
+                <button type="button" className="ml-auto text-xs font-medium text-accent-strong hover:underline disabled:opacity-50" disabled={busy || !form.url} onClick={() => runTest(true)}>{busy ? "Fetching…" : "Fetch from OpenSearch"}</button>
               )}
             </div>
             {form.kind === "metabase"
               ? <Rows rows={form.databases.length ? form.databases : [["", ""]]} onChange={(r) => set({ databases: r })} keyLabel="ID" valueLabel="Name" keyPlaceholder="7" valuePlaceholder="Production Postgres replica" />
               : <PatternList value={form.patterns} onChange={(v) => set({ patterns: v })} />}
+            {form.kind === "opensearch" && found && (() => {
+              const fresh = found.filter((f) => !form.patterns.includes(f.pattern));
+              return (
+                <div className="space-y-2 border-t border-dashed border-line pt-3">
+                  <div className="flex items-center gap-3 text-xs text-muted">
+                    <span>Found in OpenSearch · click to add</span>
+                    {fresh.length > 1 && <button type="button" className="font-medium text-accent-strong hover:underline" onClick={() => set({ patterns: [...form.patterns, ...fresh.map((f) => f.pattern)] })}>Add all {fresh.length}</button>}
+                    <button type="button" className="ml-auto hover:text-fg" onClick={() => setFound(null)}>Hide</button>
+                  </div>
+                  {fresh.length ? (
+                    <ul className="flex max-h-48 flex-wrap gap-1.5 overflow-auto">
+                      {fresh.map((f) => (
+                        <li key={f.pattern}>
+                          <button type="button" title={`${f.docs.toLocaleString()} log lines in the last day`} onClick={() => set({ patterns: [...form.patterns, f.pattern] })}
+                            className="rounded border border-dashed border-line px-2 py-0.5 font-mono text-xs text-muted hover:border-accent hover:bg-accent-soft hover:text-accent-strong">+ {f.pattern}</button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : <p className="text-xs text-muted">All of them are already added.</p>}
+                </div>
+              );
+            })()}
           </section>
 
           <div className="sticky bottom-0 -mx-4 mt-auto flex items-center gap-3 border-t border-line bg-panel px-4 py-3 sm:-mx-6 sm:px-6">
-            <button className={btn} disabled={busy || !form.url} onClick={runTest}>{busy ? "Checking…" : "Check connection"}</button>
+            <button className={btn} disabled={busy || !form.url} onClick={() => runTest(form.kind === "opensearch" && form.auth !== "google")}>{busy ? "Checking…" : "Check connection"}</button>
             <button className={`${btn} ml-auto`} onClick={() => setForm(null)}>Cancel</button>
             <button className={btnPrimary} disabled={busy || !form.url || (!form.originalName && !form.displayName.trim())} onClick={save}>Save</button>
           </div>

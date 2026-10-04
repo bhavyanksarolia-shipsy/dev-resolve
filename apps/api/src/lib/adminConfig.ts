@@ -243,6 +243,7 @@ export interface ConnectionInput {
   username?: string; password?: string; apiKey?: string; // empty = keep what's stored
   log_types?: Record<string, string>;                      // opensearch (older form): log type → index pattern
   patterns?: string[];                                     // opensearch: the index patterns clients pick from
+  fetchPatterns?: boolean;                                 // test: also list the index patterns with recent logs
   databases?: Record<string, string>; default_database?: number | null; // metabase: id → label
 }
 
@@ -356,6 +357,56 @@ function request(viewer: string, opt: { method: string; url: string; headers: Re
   });
 }
 
+/** "app-logs-acme-2026.10.04" → "app-logs-acme-*": dated / numbered index names folded into the pattern they belong to. */
+export function indexPattern(name: string) {
+  return name
+    .replace(/\d{4}[._-]\d{2}[._-]\d{2}/g, "*")
+    .replace(/\d{4}[._-]\d{2}(?=$|[._-])/g, "*")
+    .replace(/([._-])\d{3,}(?=$|[._-])/g, "$1*")
+    .replace(/\*([._-]?\*)+/g, "*");
+}
+
+/**
+ * Index patterns with logs in the last day (read-only: a search with an aggregation on the index name). A login that
+ * may only read some indices is refused for "*", so then each known family (app-logs-*, audit-logs-*, …) is tried.
+ */
+async function opensearchPatterns(viewer: string, url: string, cred: { user: string; pass: string } | null, known: string[]) {
+  const search = async (index: string) => {
+    const r = await request(viewer, {
+      method: "POST", url,
+      headers: { "Content-Type": "application/json", "osd-xsrf": "osd-fetch", "osd-version": "2.19.3",
+        ...(cred ? { Authorization: "Basic " + Buffer.from(`${cred.user}:${cred.pass}`).toString("base64") } : {}) },
+      body: JSON.stringify({ params: { index, ignore_unavailable: true, body: {
+        size: 0, track_total_hits: false,
+        query: { bool: { minimum_should_match: 1, should: [{ range: { timestamp: { gte: "now-1d" } } }, { range: { "@timestamp": { gte: "now-1d" } } }] } },
+        aggs: { idx: { terms: { field: "_index", size: 2000 } } },
+      } } }),
+    });
+    if (r.status !== 200) return { error: `HTTP ${r.status}: ${r.text.slice(0, 160)}` };
+    return { buckets: (JSON.parse(r.text)?.rawResponse?.aggregations?.idx?.buckets ?? []) as { key: string; doc_count: number }[] };
+  };
+  try {
+    let res = [await search("*")];
+    let partial = false;
+    if (!("buckets" in res[0])) {
+      // Families from the patterns already saved: the text before the first "*" ("app-logs-", "audit-logs-", …).
+      // (plus the usual families, so a brand-new connection with nothing saved yet still finds something).
+      const families = Array.from(new Set([...known.map((k) => k.split("*")[0]).filter((f) => f.length >= 3).map((f) => `${f}*`),
+        "app-logs-*", "audit-logs-*", "api-logger-logs-*", "logs-*"]));
+      res = await Promise.all([...families, ...known].map(search));
+      partial = true;
+    }
+    const byPattern = new Map<string, number>();
+    for (const r of res) if ("buckets" in r) for (const b of r.buckets!) {
+      if (b.key.startsWith(".")) continue;
+      const pat = indexPattern(b.key);
+      byPattern.set(pat, (byPattern.get(pat) ?? 0) + b.doc_count);
+    }
+    if (!res.some((r) => "buckets" in r)) return { error: (res[0] as { error: string }).error };
+    return { patterns: [...byPattern].sort((a, b) => b[1] - a[1]).map(([pattern, docs]) => ({ pattern, docs })), partial };
+  } catch (e) { return { error: (e as Error).message }; }
+}
+
 /** The databases a Metabase instance has (id + name), so admins pick them instead of typing ids. */
 async function metabaseDatabases(viewer: string, url: string, headers: Record<string, string>) {
   try {
@@ -387,10 +438,17 @@ export async function testConnection(input: ConnectionInput & { existing?: strin
           ...(input.auth === "password" && user && pass ? { Authorization: "Basic " + Buffer.from(`${user}:${pass}`).toString("base64") } : {}) },
         body: JSON.stringify({ params: { index, body: { size: 0, query: { range: { timestamp: { gte: "now-1h" } } } } } }),
       });
-      if (r.status === 401 || r.status === 403) return { ok: false, message: `Reached it, but the username/password were refused (HTTP ${r.status})` };
-      if (r.status >= 400) return { ok: false, message: `HTTP ${r.status}: ${r.text.slice(0, 160)}` };
-      const total = JSON.parse(r.text)?.rawResponse?.hits?.total;
-      return { ok: true, message: `Connected · ${typeof total === "object" ? total.value : total ?? "?"} log lines in the last hour for "${index}"` };
+      // 401 = the login itself was refused; 403 "no permissions" = signed in, just not allowed to read this index.
+      const noAccess = r.status === 403 && /security_exception|no permissions/i.test(r.text);
+      if (r.status === 401 || (r.status === 403 && !noAccess)) return { ok: false, message: `Reached it, but the username/password were refused (HTTP ${r.status})` };
+      if (r.status >= 400 && !noAccess) return { ok: false, message: `HTTP ${r.status}: ${r.text.slice(0, 160)}` };
+      if (noAccess && input.patterns?.length) return { ok: false, message: `Signed in, but this login can't read "${index}"` };
+      const total = noAccess ? null : JSON.parse(r.text)?.rawResponse?.hits?.total;
+      const message = noAccess ? "Connected · signed in (this login can only read some indices)"
+        : `Connected · ${typeof total === "object" ? total.value : total ?? "?"} log lines in the last hour for "${index}"`;
+      if (!input.fetchPatterns) return { ok: true, message };
+      const found = await opensearchPatterns(viewer, url, input.auth === "password" && user && pass ? { user, pass } : null, input.patterns ?? []);
+      return { ok: true, message, patterns: found.patterns, patternsError: found.error, patternsPartial: found.partial };
     }
     if (input.auth === "google") {
       const r = await request(viewer, { method: "GET", url: `${url}/api/health`, headers: {} });
