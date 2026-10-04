@@ -1,6 +1,6 @@
 import { requireAdmin } from "@/lib/adminGuard";
 import { writeEnv } from "@/lib/adminConfig";
-import { availableRepos, codeStatus, syncCode } from "@/lib/codeSync";
+import { availableRepos, checkAccess, codeStatus, syncCode } from "@/lib/codeSync";
 
 /** Admin → Connections → Source code: where the agent's code comes from, and whether it's on this server. */
 export async function GET(req: Request) {
@@ -20,6 +20,9 @@ export async function POST(req: Request) {
     const updates: Record<string, string | null> = { CODE_GIT_BASE: url || null, CODE_GIT_BRANCH: String(b.branch ?? "").trim() || null };
     if (b.token) updates.GITHUB_TOKEN = String(b.token).replace(/[\r\n]/g, "").trim(); // empty = keep the stored token
     await writeEnv(updates, g.user.name);
+  } else if (b.action === "check") {
+    const r = await checkAccess();
+    return Response.json(r.ok ? { ok: true, message: r.message } : { error: r.message });
   } else if (b.action !== "sync") return Response.json({ error: "unknown action" }, { status: 400 });
   const r = await syncCode();
   return Response.json({ ok: r.ok, message: r.ok ? `Code synced (${r.repos.length} repos)` : undefined, error: r.ok ? undefined : r.error || r.repos.filter((x) => !x.ok).map((x) => `${x.repo}: ${x.error}`).join(" · "), status: codeStatus() });

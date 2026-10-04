@@ -200,3 +200,8 @@ export function ticketScope(slug: string | null | undefined): { slug: string; na
   const a = slug ? getAccount(slug) : undefined;
   return a ? { slug: a.slug, name: a.name, ids: a.devrev.account_ids, slugs: [a.slug], inactive: a.client_active === false } : null;
 }
+
+/** A setting an admin may change in the UI: the value saved in Admin (config.env) wins over the server variable. */
+export function adminSetting(key: string): string | undefined {
+  return readConfigEnv()[key] || process.env[key] || undefined;
+}

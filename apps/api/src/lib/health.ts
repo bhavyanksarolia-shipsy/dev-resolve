@@ -3,7 +3,7 @@ import https from "node:https";
 import http from "node:http";
 import { execFile } from "node:child_process";
 import path from "node:path";
-import { cfgValue, getAccounts, getConnectionProjects, projectsFileExists, ROOT } from "./config";
+import { adminSetting, cfgValue, getAccounts, getConnectionProjects, projectsFileExists, ROOT } from "./config";
 import { getPool } from "./db";
 import { settings } from "./settings";
 import { ConnectorOffline, connectorMode, metabaseSession, needsRelay, relay, userToolEnv } from "./connector";
@@ -178,7 +178,7 @@ export async function checkDevrev(): Promise<ConnectionHealth> {
     return { ...base, status: "ok", message: `Authenticated as ${me.dev_user.display_name}` };
   } catch (e) {
     const err = e as DevrevError;
-    if (err.tag === "AUTH_FAILED") return { ...base, status: "auth_failed", message: err.message, fix: "Update DEVREV_TOKEN in .env.local and restart `npm run dev`" };
+    if (err.tag === "AUTH_FAILED") return { ...base, status: "auth_failed", message: err.message, fix: "Paste a new token in Admin → Connections → DevRev" };
     return { ...base, status: "error", message: err.message };
   }
 }
@@ -195,19 +195,19 @@ async function checkPostgres(): Promise<ConnectionHealth> {
 
 export async function checkClaude(): Promise<ConnectionHealth> {
   const base = { id: "claude", kind: "claude" as const, label: "Claude (investigation agent)", host: new URL(settings.anthropicApiUrl()).host, used_by: ["all accounts"] };
-  const key = process.env.ANTHROPIC_API_KEY;
+  const key = adminSetting("ANTHROPIC_API_KEY");
   if (!key) {
     // Server without an API key: a long-lived token from `claude setup-token` (your Claude subscription login).
-    if (process.env.CLAUDE_CODE_OAUTH_TOKEN) return { ...base, status: "ok", message: "Using your Claude login token (CLAUDE_CODE_OAUTH_TOKEN)" };
+    if (adminSetting("CLAUDE_CODE_OAUTH_TOKEN")) return { ...base, status: "ok", message: "Using your Claude login token (CLAUDE_CODE_OAUTH_TOKEN)" };
     if (process.env.NODE_ENV === "production") {
       return { ...base, status: "auth_failed", message: "No Claude login on this server",
-        fix: "Run `claude setup-token` on your laptop and set CLAUDE_CODE_OAUTH_TOKEN (or ANTHROPIC_API_KEY) in the server's secrets" };
+        fix: "Add an API key (or a `claude setup-token` login token) in Admin → Connections → Claude" };
     }
     return { ...base, status: "ok", message: "Using your local Claude Code login (no ANTHROPIC_API_KEY set)" };
   }
   try {
     const res = await fetch(`${settings.anthropicApiUrl()}/v1/models?limit=1`, { headers: { "x-api-key": key, "anthropic-version": "2023-06-01" }, cache: "no-store" });
-    if (res.status === 401 || res.status === 403) return { ...base, status: "auth_failed", message: `HTTP ${res.status}`, fix: "Fix ANTHROPIC_API_KEY in .env.local" };
+    if (res.status === 401 || res.status === 403) return { ...base, status: "auth_failed", message: `HTTP ${res.status}`, fix: "Paste a valid key in Admin → Connections → Claude" };
     if (!res.ok) return { ...base, status: "error", message: `HTTP ${res.status}` };
     return { ...base, status: "ok", message: "API key valid" };
   } catch (e) {

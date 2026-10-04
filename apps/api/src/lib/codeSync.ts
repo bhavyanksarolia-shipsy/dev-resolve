@@ -151,3 +151,14 @@ function localRepos(): string[] {
     return [];
   }
 }
+
+/** "Check connection": can the token read each configured repo? (asks GitHub, no download) */
+export async function checkAccess(): Promise<{ ok: boolean; message: string }> {
+  if (!base()) return { ok: false, message: "GitHub isn't set up — add the address and token" };
+  const token = githubToken();
+  const repos = codeRepos();
+  const problems = (await Promise.all(repos.map(async (r) => [r, await tokenProblem(r, token)] as const))).filter(([, p]) => p);
+  return problems.length
+    ? { ok: false, message: problems.map(([r, p]) => `${r}: ${p}`).join(" · ") }
+    : { ok: true, message: `Connected — the token can read all ${repos.length} repo${repos.length === 1 ? "" : "s"}` };
+}

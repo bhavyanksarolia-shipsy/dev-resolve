@@ -1,5 +1,5 @@
 import "server-only";
-import { getDevrevView } from "./config";
+import { adminSetting, getDevrevView } from "./config";
 import { settings } from "./settings";
 
 const BASE = () => settings.devrevApiUrl();
@@ -11,8 +11,8 @@ export class DevrevError extends Error {
 }
 
 async function call<T>(path: string, body?: unknown): Promise<T> {
-  const token = process.env.DEVREV_TOKEN?.trim();
-  if (!token) throw new DevrevError(0, "AUTH_FAILED", "DEVREV_TOKEN is not set in .env.local");
+  const token = adminSetting("DEVREV_TOKEN")?.trim();
+  if (!token) throw new DevrevError(0, "AUTH_FAILED", "DevRev token isn't set — Admin → Connections → DevRev");
   let res: Response;
   try {
     res = await fetch(`${BASE()}${path}`, {
@@ -25,7 +25,7 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
     throw new DevrevError(0, "NETWORK", `Could not reach ${BASE()}: ${(e as Error).message}`);
   }
   if (res.status === 401 || res.status === 403) {
-    throw new DevrevError(res.status, "AUTH_FAILED", `DevRev rejected DEVREV_TOKEN (HTTP ${res.status})`);
+    throw new DevrevError(res.status, "AUTH_FAILED", `DevRev rejected the token (HTTP ${res.status}) — update it in Admin → Connections → DevRev`);
   }
   if (!res.ok) throw new DevrevError(res.status, "HTTP_ERROR", `DevRev ${path} HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
   return res.json() as Promise<T>;

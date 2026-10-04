@@ -2,7 +2,7 @@ import "server-only";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import { Account, ROOT, getAccount, projectForLogType, resolveDevrevAccount } from "../config";
+import { adminSetting, Account, ROOT, getAccount, projectForLogType, resolveDevrevAccount } from "../config";
 import { userToolEnv } from "../connector";
 import { LockedError, q } from "../db";
 import { getTicket, listTimeline } from "../devrev";
@@ -11,7 +11,13 @@ import { agentAttachmentBlocks, listAttachments, uploadedFileBlocks, withEmailSe
 import { buildToolServer } from "./tools";
 import { appLogConfigDir, appLogProjects, ensureAppLogAuth, indexAllowed } from "../applog";
 
-const MODEL = process.env.DEV_RESOLVE_MODEL || "claude-opus-5-5";
+export const DEFAULT_MODEL = "claude-opus-5-5";
+/** Model and Claude sign-in: values saved in Admin → Connections → Claude win over the server variables. */
+export const agentModel = () => adminSetting("DEV_RESOLVE_MODEL") || DEFAULT_MODEL;
+function claudeEnv(): Record<string, string | undefined> {
+  const key = adminSetting("ANTHROPIC_API_KEY"), oauth = adminSetting("CLAUDE_CODE_OAUTH_TOKEN");
+  return { ...process.env, ...(key ? { ANTHROPIC_API_KEY: key, CLAUDE_CODE_OAUTH_TOKEN: undefined } : oauth ? { CLAUDE_CODE_OAUTH_TOKEN: oauth } : {}) };
+}
 const OS_SERVER = "opensearch-logs";
 const APP_LOG = "shipsy-app-log";
 const running = new Map<number, AbortController>();
@@ -218,7 +224,7 @@ async function runAgent(id: number, ticket: Awaited<ReturnType<typeof getTicket>
       "\nImages, PDFs, emails and the contents of Excel / Word / text files are included below — read them: they often hold the exact error screen, identifiers (invoice, order, SKU lists) and times."
     : "";
   let seq = 0;
-  await step(id, seq++, "system", null, { model: MODEL, account: account.slug, candidates: candidates.map((c) => c.slug) }, `Investigating ${ticket.display_id} as ${account.name}`);
+  await step(id, seq++, "system", null, { model: agentModel(), account: account.slug, candidates: candidates.map((c) => c.slug) }, `Investigating ${ticket.display_id} as ${account.name}`);
   if (attachments.length) {
     const imgs = attachmentBlocks.filter((b) => b.type === "image").length;
     const emails = attachmentBlocks.filter((b) => b.type === "text" && b.text.startsWith("Attached email")).length;
@@ -350,7 +356,7 @@ async function runSession(opts: { id: number; account: Account; candidates: Acco
   const stream = query({
     prompt: prompt(),
     options: {
-      model: MODEL,
+      model: agentModel(),
       cwd: ROOT,
       ...(opts.resume && { resume: opts.resume }),
       systemPrompt: systemPrompt(account, candidates),
@@ -395,7 +401,7 @@ async function runSession(opts: { id: number; account: Account; candidates: Acco
       },
       maxTurns: 60,
       abortController: abort,
-      env: { ...userToolEnv(opts.by), CLAUDE_AGENT_SDK_CLIENT_APP: "dev-resolve/0.1.0" },
+      env: { ...userToolEnv(opts.by), ...claudeEnv(), CLAUDE_AGENT_SDK_CLIENT_APP: "dev-resolve/0.1.0" },
     },
   });
 

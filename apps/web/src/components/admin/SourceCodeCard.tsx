@@ -39,6 +39,7 @@ export function SourceCodeCard() {
         </span>
         <span className="text-xs text-muted">{s.base ? `${s.base} · ${s.branch} · token ${s.tokenSet ? `set (${s.tokenSource ?? "saved"})` : "not set"}` : local ? "Repos are already on this machine; no GitHub sync needed." : "The agent can't check code conditions until this is set."}</span>
         <div className="ml-auto flex gap-2">
+          {s.base && <button className={btn} disabled={busy} onClick={() => act({ action: "check" })}>Check connection</button>}
           {s.base && <button className={btn} disabled={busy || s.syncing} onClick={() => act({ action: "sync" })}>{busy || s.syncing ? "Syncing…" : "Sync now"}</button>}
           <button className={btnPrimary} onClick={() => setEdit({ base: s.base, branch: s.branch, token: "" })}>{s.base ? "Edit" : "Set up"}</button>
         </div>

@@ -32,6 +32,13 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
   const [test, setTest] = useState<{ ok: boolean; message: string } | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [checks, setChecks] = useState<Record<string, { ok: boolean; message: string } | "…">>({});
+  async function checkRow(c: Conn, kind: Kind) {
+    const key = `${c.name}-${kind}`;
+    setChecks((m) => ({ ...m, [key]: "…" }));
+    const r = await post<{ ok: boolean; message: string }>("/api/admin/connections/test", { ...payload(toForm(c, kind)), existing: c.name });
+    setChecks((m) => ({ ...m, [key]: { ok: !r.error && r.ok, message: r.error || r.message } }));
+  }
   type Sub = "github" | "opensearch" | "metabase" | "claude" | "devrev";
   const [sub, setSub] = useState<Sub>("github");
   const usedBy = (name: string) => cfg.accounts.filter((a) => a.metabase_project === name || a.app_log?.project === name ||
@@ -93,7 +100,7 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
           <div className="card overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-head text-left text-xs font-semibold uppercase tracking-wide text-head-fg">
-                <tr><th className="px-4 py-3">Connection</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Host</th><th className="px-4 py-3">VPN</th><th className="px-4 py-3">Sign-in</th><th className="px-4 py-3 text-right">Clients</th><th className="px-4 py-3" /></tr>
+                <tr><th className="px-4 py-3">Connection</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Host</th><th className="px-4 py-3">VPN</th><th className="px-4 py-3">Sign-in</th><th className="px-4 py-3 text-right">Clients</th><th className="px-4 py-3">Connection</th><th className="px-4 py-3" /></tr>
               </thead>
               <tbody className="divide-y divide-line">
                 {rows.map(({ c, kind, x, what, detail }) => (
@@ -104,6 +111,12 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
                     <td className="px-4 py-3 text-xs">{x.vpn ? <span className="rounded-full bg-amber-50 px-2 py-0.5 text-warn ring-1 ring-amber-200">VPN</span> : "—"}</td>
                     <td className="px-4 py-3 text-xs">{x.auth === "google" ? "Google (per person)" : x.auth === "api_key" ? "API key ✓" : x.auth === "none" ? "none" : `${x.usernameSet ? "user ✓" : "user ✗"} · ${x.passwordSet ? "password ✓" : "password ✗"}`}</td>
                     <td className="px-4 py-3 text-right tabular-nums">{usedBy(c.name)}</td>
+                    <td className="max-w-56 px-4 py-3 text-xs">
+                      {(() => { const r = checks[`${c.name}-${kind}`];
+                        return r === "…" ? <span className="text-muted">checking…</span>
+                          : r ? <span title={r.message} className={`line-clamp-2 ${r.ok ? "text-ok" : "text-bad"}`}>{r.ok ? "● connected" : `○ ${r.message}`}</span>
+                          : <button className={btn} onClick={() => checkRow(c, kind)}>Check</button>; })()}
+                    </td>
                     <td className="px-4 py-3"><button className={btn} onClick={() => { setForm(toForm(c, kind)); setTest(null); }}>Edit</button></td>
                   </tr>
                 ))}
@@ -111,7 +124,7 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
                   <tr key={`${c.name}-applog`} className="text-muted">
                     <td className="px-4 py-3"><div className="font-medium text-fg">{c.name}</div><div className="text-xs">{c.label}</div></td>
                     <td className="px-4 py-3 text-xs">Shared app logs</td><td className="px-4 py-3 text-xs" colSpan={3}>Each person signs in with Google (Connector page)</td>
-                    <td className="px-4 py-3 text-right tabular-nums">{cfg.accounts.filter((a) => a.app_log?.project === c.name).length}</td><td />
+                    <td className="px-4 py-3 text-right tabular-nums">{cfg.accounts.filter((a) => a.app_log?.project === c.name).length}</td><td className="px-4 py-3 text-xs">per person</td><td />
                   </tr>
                 ))}
               </tbody>
