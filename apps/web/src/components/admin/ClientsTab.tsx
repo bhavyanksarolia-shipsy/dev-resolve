@@ -11,26 +11,27 @@ interface Form {
   originalSlug: string | null; name: string; group: string; client_active: boolean; code_repos: string[];
   extra: { name: string; url: string; notes: string }[];
   devrev: { id: string; name: string }[];
-  logsKind: "none" | "opensearch" | "app_log"; osProject: string; logTypes: Record<string, string>;
-  appProject: string; indices: Record<string, string>; company: string; warehouses: string;
-  dbKind: "none" | "metabase"; mbProject: string; database: string; databases: Record<string, string>; shared: boolean;
+  /** Logs: the OpenSearch connection ("" = none) and the index pattern picked for each slot. */
+  logConn: string; patterns: Record<string, string>; company: string; warehouses: string;
+  /** Database: the Metabase connection ("" = none), its main database id and optional extra ones (postgres / mongo). */
+  dbConn: string; database: string; databases: Record<string, string>; shared: boolean;
 }
 
 function toForm(a: Acc | null, cfg: AdminConfig): Form {
-  const osProject = a ? cfg.connections.find((c) => c.opensearch && Object.values(a.opensearch_log_types).some((lt) => lt in c.opensearch!.logTypes))?.name ?? "" : "";
+  // A client's logs are either on the Google-login gateway (app_log: patterns stored directly) or on a cluster
+  // (log type names, which map to that cluster's patterns).
+  const osConn = a ? cfg.connections.find((c) => c.opensearch && Object.values(a.opensearch_log_types).some((lt) => lt in c.opensearch!.logTypes)) : undefined;
+  const patterns: Record<string, string> = a?.app_log ? { ...a.app_log.indices }
+    : Object.fromEntries(Object.entries(a?.opensearch_log_types ?? {}).map(([slot, lt]) => [slot, osConn?.opensearch?.logTypes[lt] ?? ""]).filter(([, v]) => v));
   const comp = a?.app_log?.company;
   return {
     originalSlug: a?.slug ?? null, name: a?.name ?? "", group: a?.group ?? "", client_active: a?.client_active !== false,
     code_repos: a?.code_repos ?? ["stockone-neo"],
     extra: (a?.extra_sources ?? []).map((x) => ({ name: x.name, url: x.url ?? "", notes: x.notes ?? "" })),
     devrev: (a?.devrev.account_ids ?? []).map((id, i) => ({ id, name: a!.devrev.names[i] ?? id.slice(-8) })),
-    logsKind: a?.app_log ? "app_log" : Object.keys(a?.opensearch_log_types ?? {}).length ? "opensearch" : "none",
-    osProject, logTypes: { ...(a?.opensearch_log_types ?? {}) },
-    appProject: a?.app_log?.project ?? cfg.connections.find((c) => c.appLog)?.name ?? "",
-    indices: { ...(a?.app_log?.indices ?? {}) },
+    logConn: a?.app_log?.project ?? osConn?.name ?? "", patterns,
     company: Array.isArray(comp) ? comp.join(", ") : comp ?? "", warehouses: (a?.app_log?.warehouses ?? []).join(", "),
-    dbKind: a?.metabase_project ? "metabase" : "none", mbProject: a?.metabase_project ?? "",
-    database: a?.metabase_database ? String(a.metabase_database) : "",
+    dbConn: a?.metabase_project ?? "", database: a?.metabase_database ? String(a.metabase_database) : "",
     databases: Object.fromEntries(Object.entries(a?.metabase_databases ?? {}).map(([k, v]) => [k, String(v)])), shared: !!a?._shared_db_note,
   };
 }
@@ -52,8 +53,18 @@ export function ClientsTab({ cfg, reload }: { cfg: AdminConfig; reload: () => vo
   const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState(false);
   const set = (p: Partial<Form>) => form && setForm({ ...form, ...p });
-  const osConns = cfg.connections.filter((c) => c.opensearch), mbConns = cfg.connections.filter((c) => c.metabase), appConns = cfg.connections.filter((c) => c.appLog);
+  const osConns = cfg.connections.filter((c) => c.opensearch), mbConns = cfg.connections.filter((c) => c.metabase);
   const conn = (name: string) => cfg.connections.find((c) => c.name === name);
+
+  /** Gateway (Google login) clients keep their patterns directly; cluster clients point at the pattern's log type name. */
+  function logsPayload() {
+    if (!form?.logConn) return { kind: "none" };
+    const c = conn(form.logConn), picked = Object.fromEntries(Object.entries(form.patterns).filter(([, v]) => v));
+    if (c?.appLog) return { kind: "app_log", project: c.name, indices: picked,
+      company: form.company.split(",").map((s) => s.trim()).filter(Boolean), warehouses: form.warehouses.split(",").map((s) => s.trim()).filter(Boolean) };
+    const keyOf = (pat: string) => Object.entries(c?.opensearch?.logTypes ?? {}).find(([, v]) => v === pat)?.[0] ?? "";
+    return { kind: "opensearch", project: form.logConn, log_types: Object.fromEntries(Object.entries(picked).map(([slot, pat]) => [slot, keyOf(pat)]).filter(([, k]) => k)) };
+  }
 
   async function save() {
     if (!form) return;
@@ -61,11 +72,8 @@ export function ClientsTab({ cfg, reload }: { cfg: AdminConfig; reload: () => vo
     const account = {
       name: form.name, group: form.group || null, client_active: form.client_active, code_repos: form.code_repos, extra_sources: form.extra.filter((x) => x.name.trim()),
       devrev: { account_ids: form.devrev.map((d) => d.id), names: form.devrev.map((d) => d.name) },
-      logs: form.logsKind === "opensearch" ? { kind: "opensearch", project: form.osProject, log_types: form.logTypes }
-        : form.logsKind === "app_log" ? { kind: "app_log", project: form.appProject, indices: form.indices,
-          company: form.company.split(",").map((s) => s.trim()).filter(Boolean), warehouses: form.warehouses.split(",").map((s) => s.trim()).filter(Boolean) }
-        : { kind: "none" },
-      db: form.dbKind === "metabase" ? { kind: "metabase", project: form.mbProject, database: Number(form.database), shared: form.shared,
+      logs: logsPayload(),
+      db: form.dbConn ? { kind: "metabase", project: form.dbConn, database: Number(form.database), shared: form.shared,
         databases: Object.fromEntries(Object.entries(form.databases).filter(([k, v]) => k && v).map(([k, v]) => [k, Number(v)])) } : { kind: "none" },
     };
     const r = await post("/api/admin/accounts", { originalSlug: form.originalSlug, account });
@@ -130,74 +138,46 @@ export function ClientsTab({ cfg, reload }: { cfg: AdminConfig; reload: () => vo
           </Section>
 
           <Section title="Logs">
-            <div className="mb-3 flex flex-wrap gap-4 text-sm">
-              {[["none", "No logs"], ["opensearch", "OpenSearch cluster"], ["app_log", "Shared app logs"]].map(([k, l]) => (
-                <label key={k} className="inline-flex items-center gap-1.5"><input type="radio" checked={form.logsKind === k} onChange={() => set({ logsKind: k as Form["logsKind"] })} /> {l}</label>
-              ))}
-            </div>
-            {form.logsKind === "opensearch" && (
-              <div className="space-y-3">
-                <Field label="Cluster">
-                  <Select value={form.osProject} onChange={(v) => set({ osProject: v, logTypes: {} })}
-                    options={osConns.map((c) => ({ value: c.name, label: c.name, hint: [c.opensearch?.host, c.opensearch?.vpn && "needs VPN"].filter(Boolean).join(" · ") }))} />
-                </Field>
-                {form.osProject && (
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    {SLOTS.map((slot) => (
-                      <Field key={slot} label={`${slot[0].toUpperCase()}${slot.slice(1)} logs`}>
-                        <Select value={form.logTypes[slot] ?? ""} placeholder="—" onChange={(v) => set({ logTypes: { ...form.logTypes, [slot]: v } })}
-                          options={[{ value: "", label: "—", hint: "not used" }, ...Object.entries(conn(form.osProject)?.opensearch?.logTypes ?? {}).map(([lt, idx]) => ({ value: lt, label: lt, hint: idx }))]} />
-                      </Field>
-                    ))}
-                  </div>
-                )}
+            <Field label="Connection">
+              <Select value={form.logConn} onChange={(v) => set({ logConn: v, patterns: v === form.logConn ? form.patterns : {} })}
+                options={[{ value: "", label: "No logs" }, ...osConns.map((c) => ({ value: c.name, label: c.name, hint: [c.opensearch?.host, c.opensearch?.auth === "google" && "Google login", c.opensearch?.vpn && "VPN"].filter(Boolean).join(" · ") }))]} />
+            </Field>
+            {form.logConn && (
+              <div className="grid gap-3 sm:grid-cols-3">
+                {SLOTS.map((slot) => (
+                  <Field key={slot} label={`${slot[0].toUpperCase()}${slot.slice(1)} logs`}>
+                    <Select value={form.patterns[slot] ?? ""} placeholder="—" onChange={(v) => set({ patterns: { ...form.patterns, [slot]: v } })}
+                      options={[{ value: "", label: "—", hint: "not used" }, ...(conn(form.logConn)?.opensearch?.patterns ?? []).map((p) => ({ value: p, label: p }))]} />
+                  </Field>
+                ))}
               </div>
             )}
-            {form.logsKind === "app_log" && (
-              <div className="space-y-3">
-                {appConns.length > 1 && (
-                  <Field label="App-logs connection"><Select value={form.appProject} onChange={(v) => set({ appProject: v })} options={appConns.map((c) => ({ value: c.name, label: c.name, hint: c.label }))} /></Field>
-                )}
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {SLOTS.map((slot) => (
-                    <Field key={slot} label={`${slot[0].toUpperCase()}${slot.slice(1)} index pattern`}>
-                      <input className={input} value={form.indices[slot] ?? ""} placeholder={slot === "app" ? "app-logs-neo-xyz-*" : ""} onChange={(e) => set({ indices: { ...form.indices, [slot]: e.target.value } })} />
-                    </Field>
-                  ))}
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Company filter" hint="Required when the indices are shared by several clients (comma-separated company names)."><input className={input} value={form.company} onChange={(e) => set({ company: e.target.value })} /></Field>
-                  <Field label="Warehouses (optional)" hint="Comma-separated warehouse codes, if the company name isn't enough"><input className={input} value={form.warehouses} onChange={(e) => set({ warehouses: e.target.value })} /></Field>
-                </div>
+            {conn(form.logConn)?.appLog && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Company filter"><input className={input} value={form.company} placeholder="Company names, comma-separated" onChange={(e) => set({ company: e.target.value })} /></Field>
+                <Field label="Warehouses (optional)"><input className={input} value={form.warehouses} placeholder="Warehouse codes, comma-separated" onChange={(e) => set({ warehouses: e.target.value })} /></Field>
               </div>
             )}
           </Section>
 
           <Section title="Database">
-            <div className="mb-3 flex flex-wrap gap-4 text-sm">
-              {[["none", "No database"], ["metabase", "Metabase"]].map(([k, l]) => (
-                <label key={k} className="inline-flex items-center gap-1.5"><input type="radio" checked={form.dbKind === k} onChange={() => set({ dbKind: k as Form["dbKind"] })} /> {l}</label>
-              ))}
-            </div>
-            {form.dbKind === "metabase" && (
-              <div className="space-y-3">
-                <Field label="Metabase instance">
-                  <Select value={form.mbProject} onChange={(v) => set({ mbProject: v, database: String(conn(v)?.metabase?.defaultDatabase ?? "") })}
-                    options={mbConns.map((c) => ({ value: c.name, label: c.name, hint: [c.metabase?.host, c.metabase?.vpn && "needs VPN", c.metabase?.auth === "google" && "each person's Google sign-in"].filter(Boolean).join(" · ") }))} />
-                </Field>
-                {form.mbProject && (
+            <Field label="Connection">
+              <Select value={form.dbConn} onChange={(v) => set({ dbConn: v, database: v === form.dbConn ? form.database : String(conn(v)?.metabase?.defaultDatabase ?? ""), databases: v === form.dbConn ? form.databases : {} })}
+                options={[{ value: "", label: "No database" }, ...mbConns.map((c) => ({ value: c.name, label: c.name, hint: [c.metabase?.host, c.metabase?.auth === "google" && "Google login", c.metabase?.vpn && "VPN"].filter(Boolean).join(" · ") }))]} />
+            </Field>
+            {form.dbConn && (() => {
+              const dbs = Object.entries(conn(form.dbConn)?.metabase?.databases ?? {}).map(([id, n]) => ({ value: id, label: n || `Database ${id}`, hint: `id ${id}` }));
+              return (
+                <>
                   <div className="grid gap-3 sm:grid-cols-3">
-                    <Field label="Main database">
-                      <Select value={form.database} onChange={(v) => set({ database: v })}
-                        options={Object.entries(conn(form.mbProject)?.metabase?.databases ?? {}).map(([id, l]) => ({ value: id, label: `Database ${id}`, hint: l }))} />
-                    </Field>
-                    <Field label="Postgres db id (optional)"><input className={input} value={form.databases.postgres ?? ""} onChange={(e) => set({ databases: { ...form.databases, postgres: e.target.value } })} /></Field>
-                    <Field label="Mongo db id (optional)"><input className={input} value={form.databases.mongo ?? ""} onChange={(e) => set({ databases: { ...form.databases, mongo: e.target.value } })} /></Field>
+                    <Field label="Main database"><Select value={form.database} onChange={(v) => set({ database: v })} options={dbs} /></Field>
+                    <Field label="Postgres (optional)"><Select value={form.databases.postgres ?? ""} placeholder="—" onChange={(v) => set({ databases: { ...form.databases, postgres: v } })} options={[{ value: "", label: "—", hint: "not used" }, ...dbs]} /></Field>
+                    <Field label="Mongo (optional)"><Select value={form.databases.mongo ?? ""} placeholder="—" onChange={(v) => set({ databases: { ...form.databases, mongo: v } })} options={[{ value: "", label: "—", hint: "not used" }, ...dbs]} /></Field>
                   </div>
-                )}
-                <Switch on={form.shared} onChange={(v) => set({ shared: v })} label="This database is shared by several clients (the agent must filter every query to this client)" />
-              </div>
-            )}
+                  <Switch on={form.shared} onChange={(v) => set({ shared: v })} label="Shared by several clients (the agent filters every query to this client)" />
+                </>
+              );
+            })()}
           </Section>
 
           <Section title="Other sources">

@@ -59,15 +59,19 @@ export function Rows({ rows, onChange, keyLabel, valueLabel, keyPlaceholder, val
 
 export interface Option { value: string; label: string; hint?: string }
 
-/** Dropdown in the app's style (replaces the browser's <select>): keyboard, click-outside, checkmark, optional hint line. */
+/** Dropdown in the app's style (replaces the browser's <select>): keyboard, click-outside, checkmark, optional hint line; a search box once the list is long. */
 export function Select({ value, onChange, options, placeholder = "Choose…", disabled, up }: {
   value: string; onChange: (v: string) => void; options: Option[]; placeholder?: string; disabled?: boolean; up?: boolean; // up: list opens above
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
+  const [q, setQ] = useState("");
   const box = useRef<HTMLDivElement>(null);
   const id = useId();
   const current = options.find((o) => o.value === value);
+  const searchable = options.length > 6;
+  const needle = q.trim().toLowerCase();
+  const list = needle ? options.filter((o) => `${o.label} ${o.hint ?? ""}`.toLowerCase().includes(needle)) : options;
 
   useEffect(() => {
     if (!open) return;
@@ -76,16 +80,17 @@ export function Select({ value, onChange, options, placeholder = "Choose…", di
     return () => document.removeEventListener("mousedown", away);
   }, [open]);
 
-  const show = () => { setActive(Math.max(0, options.findIndex((o) => o.value === value))); setOpen(true); };
+  const show = () => { setQ(""); setActive(Math.max(0, options.findIndex((o) => o.value === value))); setOpen(true); };
   const pick = (o: Option) => { onChange(o.value); setOpen(false); };
   const onKey = (e: React.KeyboardEvent) => {
     if (disabled) return;
     if (!open && ["ArrowDown", "ArrowUp", "Enter", " "].includes(e.key)) { e.preventDefault(); show(); return; }
     if (!open) return;
+    const typing = (e.target as HTMLElement).tagName === "INPUT";
     if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setOpen(false); }
-    if (e.key === "ArrowDown") { e.preventDefault(); setActive((i) => Math.min(options.length - 1, i + 1)); }
+    if (e.key === "ArrowDown") { e.preventDefault(); setActive((i) => Math.min(list.length - 1, i + 1)); }
     if (e.key === "ArrowUp") { e.preventDefault(); setActive((i) => Math.max(0, i - 1)); }
-    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (options[active]) pick(options[active]); }
+    if (e.key === "Enter" || (e.key === " " && !typing)) { e.preventDefault(); if (list[active]) pick(list[active]); }
     if (e.key === "Tab") setOpen(false);
   };
 
@@ -100,9 +105,15 @@ export function Select({ value, onChange, options, placeholder = "Choose…", di
         </svg>
       </button>
       {open && (
-        <ul id={id} role="listbox" className={`absolute left-0 right-0 z-50 max-h-64 ${up ? "bottom-full mb-1" : "mt-1"} overflow-auto rounded-md border border-line bg-panel py-1 shadow-lg`}>
-          {options.length === 0 && <li className="px-3 py-2 text-sm text-muted">Nothing to choose yet</li>}
-          {options.map((o, i) => {
+        <div className={`absolute left-0 right-0 z-50 ${up ? "bottom-full mb-1" : "mt-1"} overflow-hidden rounded-md border border-line bg-panel shadow-lg`}>
+        {searchable && (
+          <div className="border-b border-line p-2">
+            <input autoFocus className={input} value={q} placeholder="Search…" onChange={(e) => { setQ(e.target.value); setActive(0); }} />
+          </div>
+        )}
+        <ul id={id} role="listbox" className="max-h-64 overflow-auto py-1">
+          {list.length === 0 && <li className="px-3 py-2 text-sm text-muted">{options.length ? "No matches" : "Nothing to choose yet"}</li>}
+          {list.map((o, i) => {
             const sel = o.value === value;
             return (
               <li key={o.value} role="option" aria-selected={sel} onMouseEnter={() => setActive(i)} onMouseDown={(e) => { e.preventDefault(); pick(o); }}
@@ -114,6 +125,7 @@ export function Select({ value, onChange, options, placeholder = "Choose…", di
             );
           })}
         </ul>
+        </div>
       )}
     </div>
   );

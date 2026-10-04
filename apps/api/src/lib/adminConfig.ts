@@ -5,6 +5,7 @@ import https from "node:https";
 import path from "node:path";
 import { Account, CONFIG_DIR, cfgValue, getConnectionProjects, loadProjectsFile, readConfigEnv } from "./config";
 import { ConnectorOffline, connectorMode, relay } from "./connector";
+import { appLogProjects, ensureAppLogAuth } from "./applog";
 import { savePrivate } from "./privateStore";
 
 /**
@@ -70,6 +71,20 @@ async function setVpn(host: string, on: boolean, by: string) {
 }
 
 // ── read model for the admin UI ───────────────────────────────────────────────────────────────────────────
+type Gateway = NonNullable<ReturnType<typeof getConnectionProjects>[string]["opensearch_mcp"]>;
+/** The env key holding the app-log gateway's address (the `${...}` URL argument in projects.json). */
+const gatewayUrlEnv = (g: Gateway) => g.args.map((a) => a.match(/^\$\{([A-Z0-9_]*URL[A-Z0-9_]*)\}$/)?.[1]).find(Boolean) ?? "APP_LOG_MCP_URL";
+/** Index patterns of a Google-login (gateway) connection: the saved list, else the ones its clients already use. */
+export function gatewayPatterns(name: string, g: Gateway) {
+  if (g.index_patterns?.length) return g.index_patterns;
+  return Array.from(new Set(loadProjectsFile().accounts.filter((a) => a.app_log?.project === name).flatMap((a) => Object.values(a.app_log!.indices)))).sort();
+}
+function gatewaySummary(name: string, g: Gateway, env: Record<string, string>) {
+  const url = env[gatewayUrlEnv(g)] ?? "";
+  return { url, host: hostOf(url), vpn: isVpnHost(hostOf(url)), vpnSuffix: coveringSuffix(hostOf(url)), auth: "google" as const,
+    usernameSet: false, passwordSet: false, logTypes: {} as Record<string, string>, patterns: gatewayPatterns(name, g) };
+}
+
 export function connectionsSummary() {
   const env = { ...readConfigEnv(), ...(process.env as Record<string, string>) };
   const isSet = (k?: string | null) => !!(k && env[k]);
@@ -82,8 +97,9 @@ export function connectionsSummary() {
       opensearch: os && {
         url: osUrl ?? "", host: hostOf(osUrl), vpn: isVpnHost(hostOf(osUrl)), vpnSuffix: coveringSuffix(hostOf(osUrl)),
         auth: os.username_env ? "password" : "none", usernameSet: isSet(os.username_env), passwordSet: isSet(os.password_env),
-        logTypes: os.log_types,
+        logTypes: os.log_types, patterns: Array.from(new Set(Object.values(os.log_types))),
       },
+      ...(p.opensearch_mcp && !os ? { opensearch: gatewaySummary(name, p.opensearch_mcp, env) } : {}),
       metabase: mb && {
         url: mbUrl ?? "", host: hostOf(mbUrl), vpn: isVpnHost(hostOf(mbUrl)), vpnSuffix: coveringSuffix(hostOf(mbUrl)),
         auth: mb.sso === "google" ? "google" : isSet(mbKey) ? "api_key" : "password",
@@ -149,6 +165,7 @@ export async function saveAccount(input: AccountInput, originalSlug: string | nu
     extra_sources: (input.extra_sources || []).map((x) => ({ name: clean(x.name), url: clean(x.url || ""), notes: String(x.notes || "").trim().slice(0, 2000) }))
       .filter((x) => x.name).slice(0, 20),
   } as Account;
+  const prevNote = existing?._shared_db_note;
   delete acc.app_log;
   delete acc._shared_db_note;
 
@@ -179,7 +196,7 @@ export async function saveAccount(input: AccountInput, originalSlug: string | nu
     acc.metabase_database = dbId;
     acc.metabase_databases = Object.fromEntries(
       Object.entries(input.db.databases || {}).map(([k, v]): [string, number] => [clean(k), Number(v)]).filter(([k, v]) => k && Number.isInteger(v)));
-    if (input.db.shared) acc._shared_db_note = "Shared database — restrict every query to this client's company / warehouses.";
+    if (input.db.shared) acc._shared_db_note = prevNote || "Shared database — restrict every query to this client's company / warehouses.";
   }
   if (acc.opensearch_log_type || acc.app_log || acc.metabase_project) acc.status = "active";
 
@@ -193,11 +210,33 @@ export async function saveAccount(input: AccountInput, originalSlug: string | nu
 }
 
 // ── save a connection ─────────────────────────────────────────────────────────────────────────────────────
+/**
+ * Admins only see index patterns; the agent still refers to each by a short name (log type). Keep the names of
+ * patterns that stay, make one up for new ones, and refuse to drop a pattern a client still uses.
+ */
+function patternKeys(conn: string, current: Record<string, string>, patterns: string[], accounts: Account[]) {
+  const want = Array.from(new Set(patterns.map(clean).filter(Boolean)));
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(current)) if (want.includes(v) && !Object.values(out).includes(v)) out[k] = v;
+  for (const pat of want) {
+    if (Object.values(out).includes(pat)) continue;
+    const base = `${conn}_${slugify(pat.replace(/\*/g, " ")).replace(/-/g, "_")}`.slice(0, 60).replace(/_+$/, "") || `${conn}_logs`;
+    let k = base, n = 2;
+    while (k in out || k in current) k = `${base}_${n++}`;
+    out[k] = pat;
+  }
+  const dropped = Object.keys(current).filter((k) => !(k in out));
+  const using = accounts.filter((a) => Object.values(a.opensearch_log_types ?? {}).some((k) => dropped.includes(k)));
+  if (using.length) throw new Error(`Can't remove ${dropped.map((k) => current[k]).join(", ")} — used by ${using.map((a) => a.name).join(", ")}. Change those clients first.`);
+  return out;
+}
+
 export interface ConnectionInput {
   name?: string; label?: string; kind: "opensearch" | "metabase"; url: string; vpn: boolean;
   auth: "none" | "password" | "api_key" | "google";
   username?: string; password?: string; apiKey?: string; // empty = keep what's stored
-  log_types?: Record<string, string>;                      // opensearch: log type → index pattern
+  log_types?: Record<string, string>;                      // opensearch (older form): log type → index pattern
+  patterns?: string[];                                     // opensearch: the index patterns clients pick from
   databases?: Record<string, string>; default_database?: number | null; // metabase: id → label
 }
 
@@ -215,12 +254,25 @@ export async function saveConnection(input: ConnectionInput, originalName: strin
   }
   const env: Record<string, string | null> = {};
 
-  if (input.kind === "opensearch") {
+  if (input.kind === "opensearch" && (proj.opensearch_mcp || input.auth === "google")) {
+    // Google login = the Shipsy app-log gateway: each person signs in with their own Google account.
+    const g = proj.opensearch_mcp as Gateway | undefined;
+    if (!g) throw new Error("Google login for OpenSearch works through the Shipsy app-log gateway only — pick No auth or Username + password");
+    if (input.auth !== "google") throw new Error("This connection is the Google-login app-log gateway — its sign-in can't be changed");
+    const patterns = Array.from(new Set((input.patterns ?? []).map(clean).filter(Boolean)));
+    if (!patterns.length) throw new Error("Add at least one index pattern");
+    const gone = gatewayPatterns(name, g).filter((x) => !patterns.includes(x));
+    const using = file.accounts.filter((a) => a.app_log?.project === name && Object.values(a.app_log.indices).some((i) => gone.includes(i)));
+    if (using.length) throw new Error(`Can't remove ${gone.join(", ")} — used by ${using.map((a) => a.name).join(", ")}. Change those clients first.`);
+    g.index_patterns = patterns;
+    env[gatewayUrlEnv(g)] = url;
+  } else if (input.kind === "opensearch") {
     const cur = (proj.opensearch as Record<string, unknown>) ?? {};
     const urlEnv = (cur.url_env as string) || `${P}_OS_URL`;
     const userEnv = (cur.username_env as string) || `${P}_OS_USERNAME`, passEnv = (cur.password_env as string) || `${P}_OS_PASSWORD`;
-    const lt = Object.fromEntries(Object.entries(input.log_types || {}).map(([k, v]) => [slugify(k).replace(/-/g, "_"), clean(v)]).filter(([k, v]) => k && v));
-    if (!Object.keys(lt).length) throw new Error("Add at least one log type → index pattern (e.g. acme_app → app-logs-acme-*)");
+    const lt = input.patterns ? patternKeys(name, (cur.log_types as Record<string, string>) ?? {}, input.patterns, file.accounts)
+      : Object.fromEntries(Object.entries(input.log_types || {}).map(([k, v]) => [slugify(k).replace(/-/g, "_"), clean(v)]).filter(([k, v]) => k && v));
+    if (!Object.keys(lt).length) throw new Error("Add at least one index pattern (e.g. app-logs-acme-*)");
     env[urlEnv] = url;
     if (input.auth === "password") {
       if (input.username) env[userEnv] = clean(input.username);
@@ -272,15 +324,31 @@ function request(viewer: string, opt: { method: string; url: string; headers: Re
   });
 }
 
+/** The databases a Metabase instance has (id + name), so admins pick them instead of typing ids. */
+async function metabaseDatabases(viewer: string, url: string, headers: Record<string, string>) {
+  try {
+    const r = await request(viewer, { method: "GET", url: `${url}/api/database`, headers });
+    if (r.status !== 200) return undefined;
+    const d = JSON.parse(r.text) as { data?: { id: number; name: string }[] } | { id: number; name: string }[];
+    return (Array.isArray(d) ? d : d.data ?? []).map((x) => ({ id: x.id, name: x.name }));
+  } catch { return undefined; }
+}
+
 export async function testConnection(input: ConnectionInput & { existing?: string }, viewer: string) {
   const env = { ...readConfigEnv(), ...(process.env as Record<string, string>) };
   const cur = input.existing ? getConnectionProjects()[input.existing] : undefined;
   const url = clean(input.url).replace(/\/+$/, "");
   try {
+    if (input.kind === "opensearch" && input.auth === "google") {
+      const g = appLogProjects().find((p) => p.name === input.existing);
+      if (!g) return { ok: false, message: "Google login works through the Shipsy app-log gateway only" };
+      const a = await ensureAppLogAuth(g, viewer);
+      return a.ok ? { ok: true, message: `Connected with your Google sign-in · ${a.message}` } : { ok: false, message: a.message };
+    }
     if (input.kind === "opensearch") {
       const user = input.username || (cur?.opensearch?.username_env ? env[cur.opensearch.username_env] : "");
       const pass = input.password || (cur?.opensearch?.password_env ? env[cur.opensearch.password_env] : "");
-      const index = Object.values(input.log_types || {})[0] || "*";
+      const index = input.patterns?.[0] || Object.values(input.log_types || {})[0] || "*";
       const r = await request(viewer, {
         method: "POST", url,
         headers: { "Content-Type": "application/json", "osd-xsrf": "osd-fetch", "osd-version": "2.19.3",
@@ -292,18 +360,25 @@ export async function testConnection(input: ConnectionInput & { existing?: strin
       const total = JSON.parse(r.text)?.rawResponse?.hits?.total;
       return { ok: true, message: `Connected · ${typeof total === "object" ? total.value : total ?? "?"} log lines in the last hour for "${index}"` };
     }
-    if (input.auth === "google") return { ok: true, message: "Uses each person's own Google sign-in — they sign in from the Connector page; nothing to test here" };
+    if (input.auth === "google") {
+      const r = await request(viewer, { method: "GET", url: `${url}/api/health`, headers: {} });
+      return r.status === 200 ? { ok: true, message: "Reachable · each person signs in with their own Google account (Connector page)" }
+        : { ok: false, message: `Not reachable (HTTP ${r.status})` };
+    }
     if (input.auth === "api_key") {
       const key = input.apiKey || (cur?.metabase ? env[(cur.metabase as { api_key_env?: string }).api_key_env || (cur.metabase.session_token_env || "").replace(/_SESSION_TOKEN$/, "_API_KEY")] : "");
       if (!key) return { ok: false, message: "Enter the API key" };
       const r = await request(viewer, { method: "GET", url: `${url}/api/user/current`, headers: { "X-API-Key": key } });
-      return r.status === 200 ? { ok: true, message: "Connected with the API key" } : { ok: false, message: `API key refused (HTTP ${r.status})` };
+      if (r.status !== 200) return { ok: false, message: `API key refused (HTTP ${r.status})` };
+      return { ok: true, message: "Connected with the API key", databases: await metabaseDatabases(viewer, url, { "X-API-Key": key }) };
     }
     const user = input.username || (cur?.metabase?.username_env ? env[cur.metabase.username_env] : "");
     const pass = input.password || (cur?.metabase?.password_env ? env[cur.metabase.password_env] : "");
     if (!user || !pass) return { ok: false, message: "Enter the username and password" };
     const r = await request(viewer, { method: "POST", url: `${url}/api/session`, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: user, password: pass }) });
-    return r.status === 200 ? { ok: true, message: `Signed in as ${user}` } : { ok: false, message: `Sign-in refused (HTTP ${r.status}): ${r.text.slice(0, 120)}` };
+    if (r.status !== 200) return { ok: false, message: `Sign-in refused (HTTP ${r.status}): ${r.text.slice(0, 120)}` };
+    const session = (JSON.parse(r.text) as { id?: string }).id;
+    return { ok: true, message: `Signed in as ${user}`, databases: session ? await metabaseDatabases(viewer, url, { "X-Metabase-Session": session }) : undefined };
   } catch (e) {
     if (e instanceof ConnectorOffline) return { ok: false, message: "This host needs the company VPN — your Chrome extension isn't running" };
     return { ok: false, message: `${(e as NodeJS.ErrnoException).code || ""} ${(e as Error).message}${isVpnHost(hostOf(url)) ? " — is the VPN connected?" : ""}`.trim() };

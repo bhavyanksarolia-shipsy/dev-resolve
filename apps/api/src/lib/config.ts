@@ -50,6 +50,8 @@ export interface ConnectionProject {
     config_dir: string;
     login_command: string;
     read_only_tools: string[];
+    /** Index patterns clients can pick from (Admin → Connections); unset = the ones clients already use. */
+    index_patterns?: string[];
   };
   opensearch?: {
     url_env: string;
