@@ -108,7 +108,7 @@ export function ClientsTab({ cfg, reload }: { cfg: AdminConfig; reload: () => vo
 
       {form && (
         <SlideSheet title={form.originalSlug ? `Edit ${form.name}` : "New client"} onClose={() => setForm(null)}>
-          <div className="space-y-3">
+          <div className="flex flex-1 flex-col gap-3">
 
           <Section title="Client">
           <div className="grid gap-3 sm:grid-cols-[1.4fr_1fr_10rem]">
@@ -218,7 +218,7 @@ export function ClientsTab({ cfg, reload }: { cfg: AdminConfig; reload: () => vo
             <button type="button" className="mt-3 text-xs font-medium text-accent-strong hover:underline" onClick={() => set({ extra: [...form.extra, { name: "", url: "", notes: "" }] })}>+ Add source</button>
           </Section>
 
-          <div className="sticky bottom-0 -mx-4 flex items-center gap-3 border-t border-line bg-panel px-4 py-3 sm:-mx-6 sm:px-6">
+          <div className="sticky bottom-0 -mx-4 mt-auto flex items-center gap-3 border-t border-line bg-panel px-4 py-3 sm:-mx-6 sm:px-6">
             {!form.devrev.length && <span className="text-xs text-muted">Add at least one DevRev account to save.</span>}
             <button className={`${btn} ml-auto`} onClick={() => setForm(null)}>Cancel</button>
             <button className={btnPrimary} disabled={busy || !form.name || !form.devrev.length} onClick={save}>{busy ? "Saving…" : "Save client"}</button>

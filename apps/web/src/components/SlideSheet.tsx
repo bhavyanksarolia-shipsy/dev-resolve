@@ -6,7 +6,7 @@ export function BackArrow({ onClick }: { onClick: () => void }) {
   return (
     <span className="group relative">
       <button type="button" onClick={onClick} aria-label="Back (Esc)"
-        className="grid h-7 w-8 place-items-center rounded-md bg-bad text-white shadow-sm transition hover:opacity-90">
+        className="grid h-7 w-8 place-items-center rounded-md bg-accent text-white shadow-sm transition hover:bg-accent-strong">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
       </button>
       <span role="tooltip" className="pointer-events-none absolute left-0 top-full z-50 mt-1.5 flex items-center gap-1.5 whitespace-nowrap rounded-md bg-fg px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
@@ -48,7 +48,7 @@ export function SlideSheet({ title, subtitle, onClose, children }: { title: Reac
     <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" data-slide-sheet>
       <div className={`absolute inset-0 bg-black/20 ${closing ? "sheet-fade-out" : "sheet-fade-in"}`} onClick={close} aria-hidden />
       <div className={`absolute inset-y-0 right-0 w-full max-w-3xl overflow-y-auto border-l border-line bg-bg shadow-2xl ${closing ? "drawer-out" : "drawer-in"}`}>
-        <div className="px-4 pt-5 sm:px-6">
+        <div className="flex min-h-full flex-col px-4 pt-5 sm:px-6">
           <div className="mb-5 flex items-center gap-3">
             <BackArrow onClick={close} />
             <div className="min-w-0">

@@ -71,7 +71,7 @@ export function UsersTab() {
       )}
 
       <Paged items={shown} noun="people" reset={`${query}|${show}`}>{(rows, pager) => (
-      <TableCard title="People" subtitle="Only people added here can sign in" pager={pager}
+      <TableCard title="People" pager={pager}
         toolbar={
       <div className="flex flex-wrap gap-1.5 text-xs">
         {([
