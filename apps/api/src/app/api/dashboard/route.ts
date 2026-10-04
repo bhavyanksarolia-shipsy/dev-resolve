@@ -1,4 +1,4 @@
-import { getAccount, getDevrevView, ticketScope } from "@/lib/config";
+import { accountRole, getAccount, getDevrevView, inTicketScope, ticketScope } from "@/lib/config";
 import { countClosed, countCreated, openTickets, ticketCounts, ticketsClosedSince, ticketsCreatedSince, devrevUrl, type WorkRow } from "@/lib/devrev";
 import { apiError } from "@/lib/apiError";
 import { q } from "@/lib/db";
@@ -30,17 +30,21 @@ export async function GET(req: Request) {
   if (from > to) from = to;
   if (+new Date(to) - +new Date(from) > 365 * DAY) from = istDay(+new Date(`${to}T00:00:00Z`) - 365 * DAY);
   const days = Math.round((+new Date(to) - +new Date(from)) / DAY) + 1;
-  if (account.inactive && sp.get("force") !== "1") return Response.json({ inactive: true });
   const ids = account.ids;
   const since = new Date(+new Date(`${from}T00:00:00Z`) - IST);          // from, 00:00 IST
   const until = new Date(+new Date(`${to}T00:00:00Z`) - IST + DAY - 1);  // to, 23:59:59 IST
   try {
     const [openedTotal, closedTotal] = await Promise.all([countCreated(ids, since.toISOString(), until.toISOString()), countClosed(ids, since.toISOString(), until.toISOString())]);
-    const [openAll, createdAll, closedAll, counts, invsAll] = await Promise.all([
+    const [openFetched, createdFetched, closedFetched, counts, invsAll] = await Promise.all([
       openTickets(ids), ticketsCreatedSince(ids, since.toISOString(), until.toISOString()), ticketsClosedSince(ids, since.toISOString(), until.toISOString()), ticketCounts(ids),
       q<{ status: string; confidence: string | null; created_at: string; finished_at: string | null; posted_at: string | null; ticket_display: string }>(
         `SELECT status, confidence, created_at, finished_at, posted_at, ticket_display FROM investigations WHERE account_slug = ANY($1) AND created_at BETWEEN $2 AND $3`, [account.slugs, since, until]),
     ]);
+    // All clients = DevRev's whole Support view, minus inactive clients / ignored orgs (dropped here).
+    const openAll = inTicketScope(openFetched, account), createdAll = inTicketScope(createdFetched, account), closedAll = inTicketScope(closedFetched, account);
+    // Exact DevRev totals only fit a plain account scope; with exclusions, count what was fetched.
+    const totalsExact = !account.exclude.size;
+    const openedN = totalsExact ? openedTotal : createdAll.length, closedN = totalsExact ? closedTotal : closedAll.length;
     // Pod filter: pod=A|B ("-" = not set) applies to everything below. The list of Pods (for the picker) is always complete.
     const podParam = sp.get("pod");
     const podWanted = podParam ? new Set(podParam.split("|").map((v) => (v === "-" ? "" : v))) : null;
@@ -90,17 +94,25 @@ export async function GET(req: Request) {
       },
       // Totals are exact (DevRev counts); the chart covers what was fetched — `partial` if a list hit its cap.
       // Per client: open tickets now (Pod filter applied) — adds up to the Open tickets card.
-      by_client: account.slugs.map((slug) => {
-        const a = getAccount(slug)!;
-        const mine = new Set(a.devrev.account_ids);
-        const n = open.filter((w) => w.account?.id && mine.has(w.account.id)).length; // same tickets as the Open tickets card
-        return { slug, name: a.name, open: n };
-      }).filter((c) => c.open).sort((x, y) => y.open - x.open || x.name.localeCompare(y.name)),
+      // Every open ticket lands in exactly one row, so the rows add up to the Open tickets card: one row per client,
+      // plus rows for accounts that map to several clients (not routed yet) or to none (not set up).
+      by_client: (() => {
+        const rows = new Map<string, { slug: string | null; name: string; open: number; note?: string }>();
+        for (const w of open) {
+          const r = accountRole(w.account?.id);
+          const key = r.kind === "client" ? `c:${r.slug}` : `a:${w.account?.id ?? "-"}`;
+          const row = rows.get(key) ?? (r.kind === "client" ? { slug: r.slug, name: r.name, open: 0, ...(getAccount(r.slug)?.client_active === false && { note: "inactive client" }) }
+            : { slug: null, name: w.account?.display_name || "No account", open: 0, note: r.kind === "ambiguous" ? "not routed — could be several clients" : "account not set up on a client" });
+          row.open++;
+          rows.set(key, row);
+        }
+        return [...rows.values()].sort((x, y) => Number(!x.slug) - Number(!y.slug) || y.open - x.open || x.name.localeCompare(y.name));
+      })(),
       pod: podWanted ? [...podWanted] : null, pod_status: { stages, rows: podRows },
       // Totals: exact DevRev counts for all Pods; with a Pod filter they're counted from the fetched tickets.
       flow: podWanted == null
-        ? { opened: openedTotal, closed: closedTotal, per_day: flow, partial: createdAll.length < openedTotal || closedAll.length < closedTotal }
-        : { opened: created.length, closed: closed.length, per_day: flow, partial: createdAll.length < openedTotal || closedAll.length < closedTotal },
+        ? { opened: openedN, closed: closedN, per_day: flow, partial: createdFetched.length < openedTotal || closedFetched.length < closedTotal }
+        : { opened: created.length, closed: closed.length, per_day: flow, partial: createdFetched.length < openedTotal || closedFetched.length < closedTotal },
       recently_closed: closed.slice(0, 8).map(brief),
       dev_resolve: {
         investigations: invs.length,

@@ -1,4 +1,4 @@
-import { getDevrevView, ticketScope } from "@/lib/config";
+import { getDevrevView, inTicketScope, ticketScope } from "@/lib/config";
 import { listTickets, ticketCounts, devrevUrl } from "@/lib/devrev";
 import { apiError } from "@/lib/apiError";
 import { q } from "@/lib/db";
@@ -7,10 +7,6 @@ export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
   const account = ticketScope(sp.get("account"));
   if (!account) return Response.json({ error: "unknown account" }, { status: 400 });
-  // Inactive client: don't call DevRev unless the user explicitly asks to load anyway.
-  if (account.inactive && sp.get("force") !== "1") {
-    return Response.json({ inactive: true, tickets: [], next_cursor: null, counts: null });
-  }
   try {
     // all=1: every open ticket of the account (the inbox sorts / filters / pages them itself). Capped at 1000.
     const all = sp.get("all") === "1";
@@ -25,10 +21,11 @@ export async function GET(req: Request) {
       }
       return { works, next_cursor: undefined as string | undefined };
     };
-    const [{ works, next_cursor }, counts] = await Promise.all([
+    const [{ works: fetched, next_cursor }, counts] = await Promise.all([
       all ? loadAll() : listTickets(account.ids, { limit: 25, cursor: sp.get("cursor") || undefined }),
       ticketCounts(account.ids),
     ]);
+    const works = inTicketScope(fetched, account); // All clients: minus inactive clients / ignored orgs
     const ids = works.map((w) => w.display_id);
     const invs = ids.length
       ? await q<{ ticket_display: string; id: number; status: string; confidence: string | null }>(

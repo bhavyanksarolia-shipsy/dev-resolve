@@ -351,10 +351,11 @@ export async function listAllWorks(body: Record<string, unknown>, max = 1000): P
 }
 
 /** Support tickets of these accounts created since `after` (any stage) — for "opened per day". */
+// No accounts = every account (All clients); the caller drops the ones its scope leaves out.
 const createdFilter = (accountIds: string[], after: string, before?: string) =>
-  ({ type: ["ticket"], ticket: { subtype: [getDevrevView().subtype], account: accountIds }, created_date: { type: "range", after, ...(before && { before }) } });
+  ({ type: ["ticket"], ticket: { subtype: [getDevrevView().subtype], ...(accountIds.length && { account: accountIds }) }, created_date: { type: "range", after, ...(before && { before }) } });
 const closedFilter = (accountIds: string[], after: string, before?: string) =>
-  ({ type: ["ticket"], ticket: { account: accountIds }, stage: { name: ["resolved", "canceled"] }, actual_close_date: { type: "range", after, ...(before && { before }) } });
+  ({ type: ["ticket"], ticket: { subtype: [getDevrevView().subtype], ...(accountIds.length && { account: accountIds }) }, stage: { name: ["resolved", "canceled"] }, actual_close_date: { type: "range", after, ...(before && { before }) } });
 /** Exact totals for a period (the lists below are capped). */
 export const countCreated = (accountIds: string[], after: string, before?: string) => count(createdFilter(accountIds, after, before));
 export const countClosed = (accountIds: string[], after: string, before?: string) => count(closedFilter(accountIds, after, before));

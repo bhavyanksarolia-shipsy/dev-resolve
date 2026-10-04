@@ -45,6 +45,7 @@ export default function Home() {
 function Inbox() {
   const router = useRouter();
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [allOpen, setAllOpen] = useState<number | null>(null);
   const [accountsLoaded, setAccountsLoaded] = useState(false);
   const params = useSearchParams();
   const account = params.get("account") || "all"; // all clients by default, like the dashboard
@@ -109,9 +110,9 @@ function Inbox() {
 
   useEffect(() => {
     let live = true; // only the latest request wins (see the dashboard)
-    fetch(`/api/accounts${scope.length ? `?pods=${encodeURIComponent(scope.join("|"))}` : ""}`).then((r) => r.json()).then((d) => { if (live) { setAccounts(d.accounts ?? []); setAccountsLoaded(true); } });
+    fetch(`/api/accounts${scope.length ? `?pods=${encodeURIComponent(scope.join("|"))}` : ""}`).then((r) => r.json()).then((d) => { if (live) { setAccounts(d.accounts ?? []); setAllOpen(d.all_open ?? null); setAccountsLoaded(true); } });
     // Ticket resolved / moved here → refresh the picker's per-client counts (they're cached on the server).
-    const onChange = () => setTimeout(() => fetch(`/api/accounts?refresh=1${scope.length ? `&pods=${encodeURIComponent(scope.join("|"))}` : ""}`).then((r) => r.json()).then((d) => live && d.accounts && setAccounts(d.accounts)).catch(() => {}), 2500);
+    const onChange = () => setTimeout(() => fetch(`/api/accounts?refresh=1${scope.length ? `&pods=${encodeURIComponent(scope.join("|"))}` : ""}`).then((r) => r.json()).then((d) => { if (live && d.accounts) { setAccounts(d.accounts); setAllOpen(d.all_open ?? null); } }).catch(() => {}), 2500);
     window.addEventListener("ticket-changed", onChange);
     window.addEventListener("tickets-refreshed", onChange);
     return () => { live = false; window.removeEventListener("ticket-changed", onChange); window.removeEventListener("tickets-refreshed", onChange); };
@@ -250,7 +251,7 @@ function Inbox() {
     setTick((n) => n + 1);
   }
 
-  const current = withAllClients(accounts).find((a) => a.slug === account);
+  const current = withAllClients(accounts, allOpen).find((a) => a.slug === account);
   const marked = newIds.account === account ? newIds.ids : new Set<string>();
 
   // Fresh server: no projects.json yet → say what to do instead of showing loading rows forever.
@@ -268,7 +269,7 @@ function Inbox() {
     <div className="space-y-5 lg:flex lg:h-[calc(100dvh-7.5rem)] lg:flex-col lg:space-y-0 lg:[&>*+*]:mt-3">
       {/* One compact toolbar: client · active filter chips · connection status · open a ticket by number. */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <AccountPicker label={false} accounts={withAllClients(accounts)} value={account} onChange={setAccount} />
+        <AccountPicker label={false} accounts={withAllClients(accounts, allOpen)} value={account} onChange={setAccount} />
         {onlyDefaultPart && (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent-strong">
             On DevRev&apos;s default part

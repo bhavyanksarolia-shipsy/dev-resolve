@@ -4,12 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 export interface PickerAccount { name: string; slug: string; status: string; devrev_names?: string[]; open_tickets?: number | null; wms_tickets?: number | null; client_active?: boolean }
 
 /** Searchable account dropdown: type to filter (matches name, slug or any mapped DevRev account name), ↑/↓ + Enter, Esc to close. */
-/** The picker's "All clients" entry: every active client together, with summed counts. */
-export function withAllClients(accounts: PickerAccount[]): PickerAccount[] {
+/**
+ * The picker's "All clients" entry: every Support ticket in DevRev's view. `allOpen` comes from the server — it also
+ * counts accounts that aren't (or can't be) mapped to one client, so it can be more than the sum of the clients.
+ */
+export function withAllClients(accounts: PickerAccount[], allOpen?: number | null): PickerAccount[] {
   if (!accounts.length) return accounts;
-  const live = accounts.filter((a) => a.client_active !== false);
-  const sum = (k: "open_tickets" | "wms_tickets") => (live.some((a) => a[k] != null) ? live.reduce((n, a) => n + (a[k] ?? 0), 0) : null);
-  return [{ name: "All clients", slug: "all", status: "active", client_active: true, devrev_names: [], open_tickets: sum("open_tickets"), wms_tickets: sum("wms_tickets") }, ...accounts];
+  const sum = (k: "open_tickets" | "wms_tickets") => (accounts.some((a) => a[k] != null) ? accounts.reduce((n, a) => n + (a[k] ?? 0), 0) : null);
+  return [{ name: "All clients", slug: "all", status: "active", client_active: true, devrev_names: [], open_tickets: allOpen ?? sum("open_tickets"), wms_tickets: sum("wms_tickets") }, ...accounts];
 }
 
 export function AccountPicker({ accounts, value, onChange, label = true }: { accounts: PickerAccount[]; value: string; onChange: (slug: string) => void; label?: boolean }) {
@@ -28,8 +30,8 @@ export function AccountPicker({ accounts, value, onChange, label = true }: { acc
     const live = (a: PickerAccount) => a.client_active !== false;
     const active = accounts.filter((a) => live(a) && a.status === "active" && match(a)).sort(byCount);
     const waiting = accounts.filter((a) => live(a) && a.status !== "active" && match(a)).sort(byCount);
-    // Inactive clients aren't offered (turn a client back on in Admin → Clients); the current one still shows if selected.
-    const inactive: PickerAccount[] = [];
+    // Inactive clients are listed last, under their own heading.
+    const inactive = accounts.filter((a) => !live(a) && match(a)).sort(byCount);
     return { active, waiting, inactive, flat: [...active, ...waiting, ...inactive] };
   }, [accounts, query]);
 

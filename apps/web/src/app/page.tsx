@@ -17,7 +17,7 @@ interface Dash {
     gaps: { default_part: number; no_pod: number; unassigned: number; not_investigated: number } };
   flow: { opened: number; closed: number; partial?: boolean; per_day: { day: string; opened: number; closed: number }[] };
   recently_closed: Brief[];
-  by_client: { slug: string; name: string; open: number }[];
+  by_client: { slug: string | null; name: string; open: number; note?: string }[];
   pod: string[] | null;
   pod_status: { stages: string[]; rows: { pod: string; open: number; by_stage: Record<string, number>; closed: number }[] };
   dev_resolve: { investigations: number; posted: number; draft_ready: number; failed: number; running: number; confidence: Count[]; avg_minutes: number | null; tickets: number };
@@ -39,6 +39,7 @@ function Dashboard() {
   const router = useRouter();
   const params = useSearchParams();
   const [accounts, setAccounts] = useState<PickerAccount[]>([]);
+  const [allOpen, setAllOpen] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
   const scope = usePodScope(); // header "My Pods"
   const scopeKey = scope.join("|");
@@ -46,16 +47,16 @@ function Dashboard() {
     // Only the latest request wins (an earlier, unscoped one can finish later and must not overwrite the counts).
     let live = true;
     fetch(`/api/accounts${scope.length ? `?pods=${encodeURIComponent(scope.join("|"))}` : ""}`).then((r) => r.json())
-      .then((d) => { if (live) { setAccounts(d.accounts ?? []); setLoaded(true); } }).catch(() => live && setLoaded(true));
+      .then((d) => { if (live) { setAccounts(d.accounts ?? []); setAllOpen(d.all_open ?? null); setLoaded(true); } }).catch(() => live && setLoaded(true));
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeKey]);
   const account = params.get("account") || "all"; // all clients by default; narrow down in the picker
   const range = resolveRange(params.get("range"), params.get("from"), params.get("to"));
-  // Header "My Pods" scope: those Pods + tickets with no Pod ("-"). Empty = every Pod.
+  // Header "My Pods" scope: exactly the ticked Pods ("-" = tickets with no Pod). Empty = every Pod.
   // Dashboard Pod filter: narrows inside the header scope (e.g. WMS team → just "WMS Inbound"). Empty = whole scope.
   const podPick = params.get("pod") ? params.get("pod")!.split("|") : null;
-  const podParam = podPick?.length ? podPick.join("|") : scope.length ? [...scope, "-"].join("|") : null;
+  const podParam = podPick?.length ? podPick.join("|") : scope.length ? scope.join("|") : null;
   const go = (patch: Record<string, string | null>) => {
     const sp = new URLSearchParams(params.toString());
     for (const [k, v] of Object.entries(patch)) { if (v == null) sp.delete(k); else sp.set(k, v); }
@@ -83,7 +84,7 @@ function Dashboard() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end gap-3">
-        <AccountPicker accounts={withAllClients(accounts)} value={account} onChange={(slug) => go({ account: slug })} />
+        <AccountPicker accounts={withAllClients(accounts, allOpen)} value={account} onChange={(slug) => go({ account: slug })} />
         <PodPicker allLabel={scope.length === 1 ? scope[0] : scope.length ? `${scope.length} Pods` : "All Pods"} value={podPick} choices={podChoices} onChange={(v) => go({ pod: v && v.length && v.length < podChoices.length ? v.join("|") : null })} />
         <DateRangePicker range={range} onChange={(r) => go(r.key === "custom" ? { range: "custom", from: r.from, to: r.to } : { range: r.key, from: null, to: null })} />
       </div>
@@ -456,9 +457,12 @@ function ClientTable({ rows, link }: { rows: Dash["by_client"]; link: (slug: str
           </thead>
           <tbody className="divide-y divide-line">
             {rows.map((r) => (
-              <tr key={r.slug} className="hover:bg-accent-soft/40">
-                <td className="px-5 py-2.5"><Link href={link(r.slug)} className="font-medium hover:text-accent-strong hover:underline">{r.name}</Link></td>
-                <td className="px-5 py-2.5 text-right font-semibold tabular-nums"><Link href={link(r.slug)} className="hover:underline">{r.open}</Link></td>
+              <tr key={r.slug ?? `acc:${r.name}`} className="hover:bg-accent-soft/40">
+                <td className="px-5 py-2.5">
+                  {r.slug ? <Link href={link(r.slug)} className="font-medium hover:text-accent-strong hover:underline">{r.name}</Link> : <span className="font-medium">{r.name}</span>}
+                  {r.note && <span className={`ml-2 text-xs ${r.slug ? "text-muted" : "text-warn"}`}>{r.note}</span>}
+                </td>
+                <td className="px-5 py-2.5 text-right font-semibold tabular-nums">{r.slug ? <Link href={link(r.slug)} className="hover:underline">{r.open}</Link> : r.open}</td>
               </tr>
             ))}
             {!rows.length && <tr><td colSpan={2} className="px-5 py-6 text-center text-muted">No open tickets.</td></tr>}

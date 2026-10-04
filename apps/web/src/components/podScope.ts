@@ -37,4 +37,5 @@ export function usePodScope(): string[] {
 }
 
 /** Is a ticket with this Pod visible under the scope? (no Pod = always) */
-export const inPodScope = (scope: string[], pod: string | null | undefined) => !scope.length || !pod || scope.includes(pod);
+/** Exactly the ticked Pods; "-" in the scope = tickets with no Pod. Empty scope = every Pod. */
+export const inPodScope = (scope: string[], pod: string | null | undefined) => !scope.length || scope.includes(pod || "-");

@@ -194,17 +194,42 @@ export function toolEnv(): Record<string, string> {
 export const CODE_ROOT = process.env.CODE_ROOT || path.join(process.env.HOME || "", "Documents", "Stockone");
 
 export const ALL_CLIENTS = "all";
+export interface TicketScope {
+  slug: string; name: string;
+  /** DevRev accounts to ask for; empty = every account (ALL_CLIENTS — the same tickets as DevRev's Support view). */
+  ids: string[];
+  /** ALL_CLIENTS only: accounts left out — the internal / test orgs on the ignore list. */
+  exclude: Set<string>;
+  slugs: string[]; inactive: boolean;
+}
 /**
- * The tickets a page is about: one client, or ALL_CLIENTS = every active client's DevRev accounts together
- * (inactive clients are left out, as everywhere else).
+ * The tickets a page is about: one client, or ALL_CLIENTS = every Support ticket in DevRev's view — inactive clients,
+ * accounts that map to several clients (ambiguous) and accounts not set up yet included — minus ignored test orgs.
  */
-export function ticketScope(slug: string | null | undefined): { slug: string; name: string; ids: string[]; slugs: string[]; inactive: boolean } | null {
+export function ticketScope(slug: string | null | undefined): TicketScope | null {
   if (slug === ALL_CLIENTS) {
-    const live = getAccounts().filter((a) => a.client_active !== false && a.devrev?.account_ids?.length);
-    return { slug: ALL_CLIENTS, name: "All clients", ids: [...new Set(live.flatMap((a) => a.devrev.account_ids))], slugs: live.map((a) => a.slug), inactive: false };
+    const clients = getAccounts().filter((a) => a.devrev?.account_ids?.length);
+    const exclude = new Set((loadProjectsFile().devrev_routing?.ignore ?? []).map((x) => x.account_id));
+    for (const a of clients) for (const id of a.devrev.account_ids) exclude.delete(id); // a client's account always counts
+    return { slug: ALL_CLIENTS, name: "All clients", ids: [], exclude, slugs: clients.map((a) => a.slug), inactive: false };
   }
   const a = slug ? getAccount(slug) : undefined;
-  return a ? { slug: a.slug, name: a.name, ids: a.devrev.account_ids, slugs: [a.slug], inactive: a.client_active === false } : null;
+  return a ? { slug: a.slug, name: a.name, ids: a.devrev.account_ids, exclude: new Set(), slugs: [a.slug], inactive: a.client_active === false } : null;
+}
+
+/** Drop tickets of accounts a scope leaves out (see TicketScope.exclude). */
+export const inTicketScope = <T extends { account?: { id?: string } | null }>(rows: T[], scope: Pick<TicketScope, "exclude">) =>
+  scope.exclude.size ? rows.filter((w) => !(w.account?.id && scope.exclude.has(w.account.id))) : rows;
+
+/** What a DevRev account is to Dev Resolve: a client, ambiguous (several possible clients), ignored, or not set up. */
+export function accountRole(accountId: string | undefined): { kind: "client"; slug: string; name: string } | { kind: "ambiguous" | "unknown" | "ignored" } {
+  if (!accountId) return { kind: "unknown" };
+  const a = getAccounts().find((x) => x.devrev?.account_ids?.includes(accountId));
+  if (a) return { kind: "client", slug: a.slug, name: a.name };
+  const r = loadProjectsFile().devrev_routing;
+  if (r?.ambiguous?.some((x) => x.account_id === accountId)) return { kind: "ambiguous" };
+  if (r?.ignore?.some((x) => x.account_id === accountId)) return { kind: "ignored" };
+  return { kind: "unknown" };
 }
 
 /** A setting an admin may change in the UI: the value saved in Admin (config.env) wins over the server variable. */
