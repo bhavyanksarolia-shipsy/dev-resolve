@@ -127,9 +127,10 @@ export function ChatPanel({ invId, steps, busy, rca, rcaVersion, confidence, onS
           </ul>
         )}
         <textarea value={text} onChange={(e) => setText(e.target.value)} disabled={busy} rows={2}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
+          // Enter sends · Shift+Enter adds a new line (and no send while an input method is still composing a word).
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }}
           onPaste={(e) => { const imgs = Array.from(e.clipboardData.files); if (imgs.length) { e.preventDefault(); add(imgs.map((f, i) => (f.name && f.name !== "image.png" ? f : new File([f], `pasted-${Date.now()}-${i}.png`, { type: f.type })))); } }}
-          placeholder={busy ? "Waiting for the agent…" : "Ask a follow-up, add context, or paste a screenshot… (Enter to send)"}
+          placeholder={busy ? "Waiting for the agent…" : "Ask a follow-up, add context, or paste a screenshot…"}
           className="block max-h-48 min-h-[2.75rem] w-full resize-y bg-transparent px-2 py-1 text-sm outline-none disabled:opacity-60" />
         <div className="mt-1 flex items-center gap-2">
           <input ref={picker} type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => { add(e.target.files); e.target.value = ""; }} />
@@ -139,8 +140,13 @@ export function ChatPanel({ invId, steps, busy, rca, rcaVersion, confidence, onS
             Attach
           </button>
           <span className="hidden text-xs text-muted sm:inline">Images, PDF, email, Excel, Word, CSV, text · drag &amp; drop or paste</span>
+          <span className="ml-auto hidden items-center gap-1.5 text-[11px] text-muted md:inline-flex">
+            <kbd className="rounded border border-line bg-bg px-1.5 py-0.5 font-sans">Enter</kbd> send
+            <span className="mx-1 text-line">·</span>
+            <kbd className="rounded border border-line bg-bg px-1.5 py-0.5 font-sans">Shift</kbd>+<kbd className="rounded border border-line bg-bg px-1.5 py-0.5 font-sans">Enter</kbd> new line
+          </span>
           <button onClick={submit} disabled={busy || sending || (!text.trim() && !files.length)}
-            className="ml-auto rounded-lg bg-accent px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-strong disabled:opacity-50">
+            className="ml-auto rounded-lg md:ml-2 bg-accent px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-strong disabled:opacity-50">
             {sending ? "Sending…" : "Send"}
           </button>
         </div>
