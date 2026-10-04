@@ -47,7 +47,7 @@ export function HealthBanner({ account, compact }: { account?: string; compact?:
   if (paused) return <div className="mb-4 text-xs text-muted">Connection checks paused — this client is marked inactive.</div>;
   const bad = checks.filter((c) => c.status !== "ok");
   // Compact: one quiet line while everything works; click it for a tidy list (no hosts or session details).
-  if (compact && !bad.length) return <CompactStatus checks={checks} loading={loading} onRecheck={load} />;
+  if (compact) return <CompactStatus checks={checks} loading={loading} onRecheck={load} auto={failing} />;
   return (
     <div className="mb-5">
       <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -73,32 +73,70 @@ export function HealthBanner({ account, compact }: { account?: string; compact?:
   );
 }
 
-function CompactStatus({ checks, loading, onRecheck }: { checks: Check[]; loading: boolean; onRecheck: () => void }) {
+const GROUP: Record<string, { title: string; tone: string }> = {
+  vpn_required: { title: "Need the company VPN", tone: "text-warn" },
+  auth_failed: { title: "Sign-in failed", tone: "text-bad" },
+  error: { title: "Not reachable", tone: "text-bad" },
+  not_configured: { title: "Not set up", tone: "text-muted" },
+};
+
+/** One quiet line ("● 7 OK · 4 need the VPN ▾"); click for a tidy panel grouped by what to do. */
+function CompactStatus({ checks, loading, onRecheck, auto }: { checks: Check[]; loading: boolean; onRecheck: () => void; auto?: boolean }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
     const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener("mousedown", away);
-    return () => document.removeEventListener("mousedown", away);
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", away); document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
   }, [open]);
+  const ok = checks.filter((c) => c.status === "ok");
+  const groups = (["vpn_required", "auth_failed", "error", "not_configured"] as const)
+    .map((st) => ({ st, items: checks.filter((c) => c.status === st) })).filter((g) => g.items.length);
+  const problems = groups.filter((g) => g.st !== "not_configured").reduce((n, g) => n + g.items.length, 0);
+  const summary = groups.filter((g) => g.st !== "not_configured").map((g) =>
+    g.st === "vpn_required" ? `${g.items.length} need the VPN` : g.st === "auth_failed" ? `${g.items.length} sign-in failed` : `${g.items.length} not reachable`).join(" · ");
   return (
-    <div ref={box} className="relative mb-4 flex items-center gap-2 text-xs text-muted">
-      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex items-center gap-2 hover:text-fg">
-        <span className="h-2 w-2 rounded-full bg-ok" aria-hidden />All connections OK
+    <div ref={box} className="relative mb-4 flex flex-wrap items-center gap-2 text-xs text-muted">
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
+        className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 transition ${problems ? "bg-amber-50 text-warn ring-1 ring-amber-200 hover:ring-amber-300" : "hover:text-fg"}`}>
+        <span className={`h-2 w-2 rounded-full ${problems ? "bg-warn" : "bg-ok"}`} aria-hidden />
+        {problems ? <><span className="text-muted">{ok.length} OK ·</span><b className="font-semibold">{summary}</b></> : "All connections OK"}
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden><path d={open ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} /></svg>
       </button>
-      <button onClick={onRecheck} disabled={loading} className="text-accent-strong hover:underline disabled:opacity-50">{loading ? "checking…" : "re-check"}</button>
+      <button onClick={onRecheck} disabled={loading} className="text-accent-strong hover:underline disabled:opacity-50">{loading ? "checking…" : auto ? "re-check (auto)" : "re-check"}</button>
       {open && (
-        <ul className="absolute left-0 top-6 z-40 w-96 max-w-[calc(100vw-2rem)] rounded-xl border border-line bg-panel py-2 text-sm text-fg shadow-xl">
-          {checks.map((c) => (
-            <li key={c.id} className="flex items-center gap-2.5 px-3 py-1">
-              <span className={`h-2 w-2 shrink-0 rounded-full ${c.status === "ok" ? "bg-ok" : c.status === "not_configured" ? "bg-warn" : "bg-bad"}`} aria-hidden />
-              <span className="min-w-0 flex-1 truncate">{c.label}</span>
-              <span className="text-xs text-muted">{c.status === "ok" ? "connected" : c.status === "not_configured" ? "not set up" : "down"}</span>
-            </li>
-          ))}
-        </ul>
+        <div className="absolute left-0 top-8 z-40 w-[28rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-line bg-panel text-sm text-fg shadow-xl">
+          {groups.map((g) => {
+            const fix = g.items.find((c) => c.fix)?.fix;
+            return (
+              <div key={g.st} className="border-b border-line px-4 py-3 last:border-0">
+                <div className={`mb-1.5 text-xs font-semibold uppercase tracking-wide ${GROUP[g.st].tone}`}>{GROUP[g.st].title} · {g.items.length}</div>
+                <ul className="space-y-1">
+                  {g.items.map((c) => (
+                    <li key={c.id} className="flex items-center gap-2" title={c.message}>
+                      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${g.st === "not_configured" ? "bg-line" : g.st === "vpn_required" ? "bg-warn" : "bg-bad"}`} aria-hidden />
+                      <span className="min-w-0 flex-1 truncate">{c.label}</span>
+                      {c.used_by.length > 0 && <span className="shrink-0 truncate text-xs text-muted">{c.used_by.slice(0, 2).join(", ")}{c.used_by.length > 2 ? ` +${c.used_by.length - 2}` : ""}</span>}
+                    </li>
+                  ))}
+                </ul>
+                {fix && g.st !== "not_configured" && (
+                  <p className="mt-2 rounded-lg bg-bg px-3 py-2 text-xs text-muted">
+                    {g.st === "vpn_required" ? <>Connect the company VPN on your laptop and keep the Dev Resolve extension on (<a href="/connector" className="text-accent-strong underline">Connector</a>). Re-checks run automatically.</> : fix}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+          {ok.length > 0 && (
+            <div className="px-4 py-3">
+              <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-ok">Connected · {ok.length}</div>
+              <p className="text-xs text-muted">{ok.map((c) => c.label).join(" · ")}</p>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

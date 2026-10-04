@@ -147,7 +147,7 @@ function checkMetabase(project: string, cfg: NonNullable<ReturnType<typeof getCo
       fix: `Sign in to ${project} with Google from your local connector (Connector page)` });
   }
   return new Promise((resolve) => {
-    execFile("python3", [script, "whoami", "--project", project], { env: userToolEnv(viewer) as NodeJS.ProcessEnv, timeout: 35000 }, (error, stdout, stderr) => {
+    execFile("python3", [script, "whoami", "--project", project], { env: userToolEnv(viewer) as NodeJS.ProcessEnv, timeout: TIMEOUT_MS + 3000 }, (error, stdout, stderr) => {
       const out = `${stdout}\n${stderr}`;
       if (!error) return resolve({ ...base, status: "ok", message: stdout.trim() });
       // Killed by our own timeout while the host is unreachable = the same VPN problem, not a mystery error.
