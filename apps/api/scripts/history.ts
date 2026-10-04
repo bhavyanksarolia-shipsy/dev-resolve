@@ -20,6 +20,9 @@ async function main() {
   const [cmd, url, ...rest] = process.argv.slice(2);
   const apply = rest.includes("--apply");
   if (cmd !== "push" || !url) throw new Error('Usage: npm run history -- push "<database URL>" [--apply]');
+  if (/\.railway\.internal\b/i.test(url)) throw new Error(
+    "That's Railway's INTERNAL address (works only inside Railway). Use DATABASE_PUBLIC_URL from the Postgres service's Variables — " +
+    'its host contains "proxy.rlwy.net".');
   if (!/^postgres(ql)?:\/\//i.test(url)) throw new Error(
     "That's not a database address. Use the Postgres one: Railway → the Postgres service → Variables → DATABASE_PUBLIC_URL " +
     '(it starts with "postgresql://" and contains "proxy.rlwy.net") — not the app\'s https:// web address.');
