@@ -5,8 +5,9 @@ import { btn, btnPrimary, Field, input, post, Select } from "./ui";
 
 interface Svc { status: string; message: string; fix?: string; host?: string }
 interface Data {
-  claude: Svc & { method: string; model: string; defaultModel: string; usage30: { runs: number; cost: number; tokens: number } };
-  devrev: Svc & { as: string | null; tokenSource: string | null };
+  claude: Svc & { method: string; model: string; defaultModel: string; usage30: { runs: number; cost: number; tokens: number };
+    tokenPreview: string | null; owner: string | null; ownerDetected: boolean; ownerNote: string };
+  devrev: Svc & { as: string | null; tokenSource: string | null; tokenPreview: string | null };
 }
 let cache: Promise<Data | null> | null = null;
 const load = (force = false) => {
@@ -23,6 +24,41 @@ function Status({ s }: { s: Svc }) {
   );
 }
 
+/** The current token, masked; the eye fetches the full value (admins only, logged) and the copy button copies it. */
+function TokenField({ which, preview }: { which: "claude" | "devrev"; preview: string | null }) {
+  const [full, setFull] = useState<string | null>(null);
+  const [shown, setShown] = useState(false);
+  const [busy, setBusy] = useState(false);
+  if (!preview) return <span className="text-muted">{which === "claude" ? "none saved — uses the local Claude Code login" : "not set"}</span>;
+  const toggle = async () => {
+    if (shown) return setShown(false);
+    if (!full) {
+      setBusy(true);
+      const r = await post<{ value?: string | null }>("/api/admin/services", { service: which, reveal: true });
+      setBusy(false);
+      if (!r.value) return;
+      setFull(r.value);
+    }
+    setShown(true);
+  };
+  const icon = "grid h-6 w-6 shrink-0 place-items-center rounded-md text-muted hover:bg-accent-soft hover:text-accent-strong";
+  return (
+    <span className="flex min-w-0 max-w-xl items-center gap-1 rounded-lg border border-line bg-bg py-0.5 pl-2.5 pr-1">
+      <span className="min-w-0 flex-1 truncate font-mono text-[13px]">{shown && full ? full : preview}</span>
+      <button type="button" onClick={toggle} disabled={busy} aria-label={shown ? "Hide token" : "Show token"} title={shown ? "Hide" : "Show"} className={icon}>
+        {shown
+          ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.1A10.6 10.6 0 0 1 12 5c5 0 9 4.5 10 7a13 13 0 0 1-2.9 4M6.1 6.1A13 13 0 0 0 2 12c1 2.5 5 7 10 7a10.6 10.6 0 0 0 4.1-.8" /></svg>
+          : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>}
+      </button>
+      {shown && full && (
+        <button type="button" onClick={() => navigator.clipboard?.writeText(full)} aria-label="Copy token" title="Copy" className={icon}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></svg>
+        </button>
+      )}
+    </span>
+  );
+}
+
 function Row({ k, v }: { k: string; v: React.ReactNode }) {
   return <div className="grid grid-cols-[9rem_1fr] gap-2 py-1.5 text-sm"><dt className="text-muted">{k}</dt><dd className="min-w-0 break-words">{v}</dd></div>;
 }
@@ -34,16 +70,16 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
   useEffect(() => { let live = true; load().then((x) => live && setD(x)); return () => { live = false; }; }, []);
   const recheck = async () => { setBusy(true); setD(await load(true)); setBusy(false); };
   const [edit, setEdit] = useState(false);
-  const [f, setF] = useState({ mode: "keep", secret: "", model: "" });
+  const [f, setF] = useState({ mode: "keep", secret: "", model: "", owner: "" });
   const setMsg = toast;
   const save = async () => {
     setBusy(true); setMsg(null);
     const body = which === "devrev" ? { service: "devrev", token: f.secret }
-      : { service: "claude", model: f.model, ...(f.mode === "api" ? { apiKey: f.secret } : f.mode === "oauth" ? { oauthToken: f.secret } : {}) };
+      : { service: "claude", model: f.model, owner: f.owner, ...(f.mode === "api" ? { apiKey: f.secret } : f.mode === "oauth" ? { oauthToken: f.secret } : {}) };
     const r = await post("/api/admin/services", body);
     setBusy(false);
     if (r.error) return setMsg({ ok: false, text: r.error });
-    setEdit(false); setF({ mode: "keep", secret: "", model: "" });
+    setEdit(false); setF({ mode: "keep", secret: "", model: "", owner: "" });
     setD(await load(true));
     setMsg({ ok: true, text: "Saved — used from the next investigation" });
   };
@@ -56,7 +92,7 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
         <h3 className="font-semibold">{which === "claude" ? "Claude — investigation agent" : "DevRev — tickets & comments"}</h3>
         <Status s={s} />
         <button className={`${btn} ml-auto`} disabled={busy} onClick={recheck}>{busy ? "Checking…" : "Check connection"}</button>
-        <button className={btnPrimary} onClick={() => { setF({ mode: "keep", secret: "", model: which === "claude" ? d.claude.model : "" }); setEdit((e) => !e); }}>{edit ? "Close" : "Edit"}</button>
+        <button className={btnPrimary} onClick={() => { setF({ mode: "keep", secret: "", model: which === "claude" ? d.claude.model : "", owner: which === "claude" ? d.claude.ownerNote : "" }); setEdit((e) => !e); }}>{edit ? "Close" : "Edit"}</button>
       </div>
       {edit && (
         <div className="mb-4 grid gap-3 rounded-lg bg-bg p-4 sm:grid-cols-2">
@@ -77,12 +113,15 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
               ]} />
             </Field>
             {f.mode !== "keep" && (
-              <Field label={f.mode === "api" ? "API key" : "Login token"} hint="Stored on the server only; never shown again">
+              <Field label={f.mode === "api" ? "New API key" : "New login token"} hint="Stored on the server; admins can reveal it with the eye">
                 <input className={input} type="password" autoComplete="off" value={f.secret} onChange={(e) => setF({ ...f, secret: e.target.value })} />
               </Field>
             )}
+            <Field label="Token owner" hint={d.claude.ownerDetected ? `Anthropic says: ${d.claude.owner}` : "Who generated this key / token — Anthropic doesn't tell us for API keys"}>
+              <input className={input} value={f.owner} placeholder="e.g. Bhavyank Sarolia (support team account)" onChange={(e) => setF({ ...f, owner: e.target.value })} />
+            </Field>
           </> : (
-            <Field label="DevRev token" hint="DevRev → Settings → Account → Personal access token. Posts and updates appear as this user.">
+            <Field label="New DevRev token" hint="DevRev → Settings → Account → Personal access token. Posts and updates appear as its owner.">
               <input className={input} type="password" autoComplete="off" value={f.secret} onChange={(e) => setF({ ...f, secret: e.target.value })} />
             </Field>
           )}
@@ -95,12 +134,16 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
       <dl className="divide-y divide-line">
         {which === "claude" ? <>
           <Row k="Signed in with" v={d.claude.method} />
+          <Row k="Token" v={<TokenField which="claude" preview={d.claude.tokenPreview} />} />
+          <Row k="Token owner" v={d.claude.owner
+            ? <>{d.claude.owner}{d.claude.ownerDetected && <span className="ml-2 text-xs text-muted">from Anthropic</span>}</>
+            : <span className="text-muted">not set — add it under Edit</span>} />
           <Row k="Model" v={<code className="text-xs">{d.claude.model}</code>} />
           <Row k="Status" v={d.claude.message} />
           <Row k="Last 30 days" v={`${d.claude.usage30.runs} agent runs · $${d.claude.usage30.cost.toFixed(2)} · ${Math.round(d.claude.usage30.tokens / 1000).toLocaleString("en-IN")}k tokens`} />
         </> : <>
-          <Row k="Acting as" v={d.devrev.as ?? "—"} />
-          <Row k="Token" v={d.devrev.tokenSource ?? "not set"} />
+          <Row k="Token" v={<span className="flex flex-wrap items-center gap-2"><TokenField which="devrev" preview={d.devrev.tokenPreview} />{d.devrev.tokenSource && <span className="text-xs text-muted">{d.devrev.tokenSource}</span>}</span>} />
+          <Row k="Token owner" v={d.devrev.as ? <>{d.devrev.as}<span className="ml-2 text-xs text-muted">from DevRev — posts and updates appear as this user</span></> : "—"} />
           <Row k="Status" v={d.devrev.message} />
           <Row k="Used for" v="Reading tickets, conversations and attachments; posting internal RCAs; Stage / Pod / Part / owner / resolve updates" />
         </>}
