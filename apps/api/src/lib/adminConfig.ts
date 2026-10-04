@@ -259,6 +259,20 @@ export async function saveConnection(input: ConnectionInput, originalName: strin
     if (has) throw new Error(`A connection named "${name}" already exists`);
   }
   const env: Record<string, string | null> = {};
+  // A sign-in type is only usable with its credentials: typed now, or already saved for this connection.
+  const saved = { ...readConfigEnv(), ...(process.env as Record<string, string>) };
+  const has = (typed: string | undefined, key: unknown) => !!clean(typed) || !!(typeof key === "string" && saved[key]);
+  const curOs = (proj.opensearch as Record<string, unknown>) ?? {}, curMb = (proj.metabase as Record<string, unknown>) ?? {};
+  if (input.auth === "password") {
+    const c = input.kind === "opensearch" ? curOs : curMb;
+    const uKey = (c.username_env as string) || `${P}_${input.kind === "opensearch" ? "OS" : "METABASE"}_USERNAME`;
+    const pKey = (c.password_env as string) || `${P}_${input.kind === "opensearch" ? "OS" : "METABASE"}_PASSWORD`;
+    if (!has(input.username, uKey) || !has(input.password, pKey)) throw new Error("Enter the username and password for this sign-in type");
+  }
+  if (input.auth === "api_key") {
+    const kKey = (curMb.api_key_env as string) || ((curMb.session_token_env as string) || `${P}_METABASE_SESSION_TOKEN`).replace(/_SESSION_TOKEN$/, "_API_KEY");
+    if (!has(input.apiKey, kKey)) throw new Error("Enter the API key");
+  }
 
   if (input.kind === "opensearch" && (proj.opensearch_mcp || input.auth === "google")) {
     // Google login = the Shipsy app-log gateway: each person signs in with their own Google account.
