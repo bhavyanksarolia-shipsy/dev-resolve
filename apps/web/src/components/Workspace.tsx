@@ -317,7 +317,7 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
         </div>
         {canChat && mode === "chat" ? (
           <ChatPanel invId={inv!.id} steps={steps} busy={!!inv!.chat_running} rca={inv!.draft_rca} rcaVersion={inv!.rca_version}
-            confidence={inv!.confidence} onSend={sendChat} onOpenRca={() => setMode("rca")} />
+            confidence={inv!.confidence} rcaAt={inv!.finished_at} onSend={sendChat} onOpenRca={() => setMode("rca")} />
         ) : (<>
         <div className="min-h-0 flex-1 lg:overflow-y-auto lg:pr-2">
         {inv?.error && inv.status === "failed" && <StoppedCard inv={inv} checks={steps.filter((x) => x.kind === "tool_call").length} />}

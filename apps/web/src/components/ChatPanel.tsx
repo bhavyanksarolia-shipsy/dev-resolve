@@ -30,8 +30,8 @@ function summaryOf(rca: string | null) {
  * Chat mode: the whole conversation with the agent about this ticket — earlier investigations' chats, the RCA it
  * wrote, and every follow-up — with a composer that takes text plus images, PDFs, emails, sheets and documents.
  */
-export function ChatPanel({ invId, steps, busy, rca, rcaVersion, confidence, onSend, onOpenRca }: {
-  invId: number; steps: Step[]; busy: boolean; rca: string | null; rcaVersion: number; confidence: string | null;
+export function ChatPanel({ invId, steps, busy, rca, rcaVersion, confidence, rcaAt, onSend, onOpenRca }: {
+  invId: number; steps: Step[]; busy: boolean; rca: string | null; rcaVersion: number; confidence: string | null; rcaAt?: string | null;
   onSend: (message: string, files: File[]) => Promise<boolean>; onOpenRca: () => void;
 }) {
   const [history, setHistory] = useState<HistoryGroup[]>([]);
@@ -100,7 +100,7 @@ export function ChatPanel({ invId, steps, busy, rca, rcaVersion, confidence, onS
         ))}
         {history.length > 0 && <Divider>This investigation</Divider>}
 
-        <Bot>
+        <Bot at={rcaAt}>
           <div className="mb-1.5 flex flex-wrap items-center gap-2 text-xs text-muted">
             <span className="rounded-full bg-accent-soft px-2 py-0.5 font-semibold text-accent-strong">RCA v{rcaVersion}</span>
             {confidence && <span>confidence {confidence}</span>}
@@ -140,13 +140,8 @@ export function ChatPanel({ invId, steps, busy, rca, rcaVersion, confidence, onS
             Attach
           </button>
           <span className="hidden text-xs text-muted sm:inline">Images, PDF, email, Excel, Word, CSV, text · drag &amp; drop or paste</span>
-          <span className="ml-auto hidden items-center gap-1.5 text-[11px] text-muted md:inline-flex">
-            <kbd className="rounded border border-line bg-bg px-1.5 py-0.5 font-sans">Enter</kbd> send
-            <span className="mx-1 text-line">·</span>
-            <kbd className="rounded border border-line bg-bg px-1.5 py-0.5 font-sans">Shift</kbd>+<kbd className="rounded border border-line bg-bg px-1.5 py-0.5 font-sans">Enter</kbd> new line
-          </span>
           <button onClick={submit} disabled={busy || sending || (!text.trim() && !files.length)}
-            className="ml-auto rounded-lg md:ml-2 bg-accent px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-strong disabled:opacity-50">
+            className="ml-auto rounded-lg bg-accent px-4 py-1.5 text-sm font-medium text-white hover:bg-accent-strong disabled:opacity-50">
             {sending ? "Sending…" : "Send"}
           </button>
         </div>
@@ -165,11 +160,14 @@ function Divider({ children }: { children: React.ReactNode }) {
   return <div className="flex items-center gap-3 py-1 text-xs text-muted"><span className="h-px flex-1 bg-line" />{children}<span className="h-px flex-1 bg-line" /></div>;
 }
 
-function Bot({ children, error }: { children: React.ReactNode; error?: boolean }) {
+function Bot({ children, error, at }: { children: React.ReactNode; error?: boolean; at?: string | null }) {
   return (
     <div className="flex gap-2.5">
       <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-accent text-[11px] font-bold text-white">DR</span>
-      <div className={`min-w-0 flex-1 rounded-2xl rounded-tl-sm border px-4 py-3 ${error ? "border-red-200 bg-red-50 text-bad" : "border-line bg-panel"}`}>{children}</div>
+      <div className="min-w-0 flex-1">
+        {at && <div className="mb-1 text-xs text-muted"><b className="text-fg">Dev Resolve</b> · {time(at)}</div>}
+        <div className={`rounded-2xl rounded-tl-sm border px-4 py-3 ${error ? "border-red-200 bg-red-50 text-bad" : "border-line bg-panel"}`}>{children}</div>
+      </div>
     </div>
   );
 }
@@ -216,15 +214,16 @@ function Message({ s, onOpenRca, animate, onTick }: { s: Step; onOpenRca?: () =>
       return (
         <div className="flex items-center gap-2 rounded-lg bg-accent-soft px-3 py-2 text-xs font-medium text-accent-strong">
           📝 Wrote a revised RCA draft
+          <span className="font-normal text-muted">· {time(s.created_at)}</span>
           {onOpenRca && <button onClick={onOpenRca} className="ml-auto underline">Open RCA</button>}
         </div>
       );
     }
-    return <div className={`flex gap-2 pl-10 text-xs text-muted ${animate ? "chat-pop" : ""}`}><span>{STEP_ICON[toolName(s.tool)] ?? "•"}</span>{describeCall(s.tool, s.input)}</div>;
+    return <div title={time(s.created_at)} className={`flex gap-2 pl-10 text-xs text-muted ${animate ? "chat-pop" : ""}`}><span>{STEP_ICON[toolName(s.tool)] ?? "•"}</span>{describeCall(s.tool, s.input)}</div>;
   }
   return (
     <div className={animate ? "chat-pop" : ""}>
-      <Bot error={s.kind === "system"}>
+      <Bot error={s.kind === "system"} at={s.created_at}>
         {animate && s.kind === "text" ? <Typewriter text={tidy(s.output)} onTick={onTick} /> : <Markdown compact>{tidy(s.output)}</Markdown>}
       </Bot>
     </div>
