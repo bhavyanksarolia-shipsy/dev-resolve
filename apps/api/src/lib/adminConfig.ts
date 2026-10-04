@@ -215,6 +215,11 @@ export async function saveAccount(input: AccountInput, originalSlug: string | nu
 }
 
 // ── save a connection ─────────────────────────────────────────────────────────────────────────────────────
+/** Same server and path, ignoring case in the host, http/https and a "/" at the end. */
+function sameUrl(a: string | undefined, b: string) {
+  const norm = (u: string) => { try { const x = new URL(u); return `${x.host.toLowerCase()}${x.pathname.replace(/\/+$/, "")}${x.search}`; } catch { return u.toLowerCase().replace(/\/+$/, ""); } };
+  return !!a && norm(a) === norm(b);
+}
 /**
  * Admins only see index patterns; the agent still refers to each by a short name (log type). Keep the names of
  * patterns that stay, make one up for new ones, and refuse to drop a pattern a client still uses.
@@ -249,16 +254,19 @@ export interface ConnectionInput {
 
 export async function saveConnection(input: ConnectionInput, originalName: string | null, by: string) {
   const file = loadProjectsFile() as Record<string, unknown> & ReturnType<typeof loadProjectsFile>;
-  const name = originalName || slugify(input.name || "").replace(/-/g, "_");
-  if (!name || ["accounts", "devrev_view", "devrev_routing"].includes(name) || name.startsWith("_")) throw new Error("Give the connection a name (letters, digits, _)");
+  // The hidden id: kept when editing; for a new connection made from its name, with a number added if it's taken
+  // (names don't have to be unique — the link does, below).
+  const reserved = ["accounts", "devrev_view", "devrev_routing"];
+  let name = originalName || slugify(input.display_name || input.name || "").replace(/-/g, "_") || `${input.kind}_connection`;
+  if (reserved.includes(name) || name.startsWith("_")) name = `${input.kind}_${name.replace(/^_+/, "")}`;
+  if (!originalName) { const base = name; let n = 2; while (file[name]) name = `${base}_${n++}`; }
   const url = clean(input.url).replace(/\/+$/, "");
   if (!/^https?:\/\/[^/]+/.test(url)) throw new Error("URL must start with https:// (or http://)");
+  // One connection per link (per type): the same server added twice would split its logins and patterns.
+  const sameLink = connectionsSummary().find((c) => c.name !== originalName && sameUrl((input.kind === "metabase" ? c.metabase : c.opensearch)?.url, url));
+  if (sameLink) throw new Error(`This link is already used by the ${input.kind === "metabase" ? "Metabase" : "OpenSearch"} connection "${(input.kind === "metabase" ? sameLink.metabase : sameLink.opensearch)?.displayName}"`);
   const P = envPrefix(name);
   const proj = ((file[name] as Record<string, unknown>) ?? {}) as Record<string, unknown>;
-  if (!originalName && file[name]) {
-    const has = (proj as { opensearch?: unknown; metabase?: unknown })[input.kind];
-    if (has) throw new Error(`A connection named "${name}" already exists`);
-  }
   const env: Record<string, string | null> = {};
   // A sign-in type is only usable with its credentials: typed now, or already saved for this connection.
   const saved = { ...readConfigEnv(), ...(process.env as Record<string, string>) };
