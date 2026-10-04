@@ -1,5 +1,5 @@
 import { getDevrevView, inTicketScope, investigable, ticketScope } from "@/lib/config";
-import { listTickets, ticketCounts, devrevUrl } from "@/lib/devrev";
+import { listTickets, devrevUrl } from "@/lib/devrev";
 import { apiError } from "@/lib/apiError";
 import { q } from "@/lib/db";
 
@@ -23,7 +23,7 @@ export async function GET(req: Request) {
     };
     const [{ works: fetched, next_cursor }, counts] = await Promise.all([
       all ? loadAll() : listTickets(account.ids, { limit: 25, cursor: sp.get("cursor") || undefined }),
-      ticketCounts(account.ids),
+      null, // per-account counts weren't shown anywhere — skipped (5 DevRev calls)
     ]);
     const works = inTicketScope(fetched, account); // All clients: minus inactive clients / ignored orgs
     const ids = works.map((w) => w.display_id);

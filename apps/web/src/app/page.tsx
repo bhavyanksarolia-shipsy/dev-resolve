@@ -474,16 +474,15 @@ function ClientTable({ rows, link, accountLink }: { rows: Dash["by_client"]; lin
             ))}
             {!rows.length && <tr><td colSpan={2} className="px-5 py-6 text-center text-muted">No open tickets.</td></tr>}
           </tbody>
-          {rows.length > 1 && (
-            <tfoot className="sticky bottom-0 bg-panel">
-              <tr className="border-t border-line font-semibold">
-                <td className="px-5 py-2.5">Total · {rows.length} clients</td>
-                <td className="px-5 py-2.5 text-right tabular-nums">{total}</td>
-              </tr>
-            </tfoot>
-          )}
         </table>
       </div>
+      {/* Total sits at the bottom of the card, however few rows there are. */}
+      {rows.length > 1 && (
+        <div className="flex border-t border-line px-5 py-2.5 text-sm font-semibold">
+          <span>Total · {rows.length} {rows.length === 1 ? "client" : "clients"}</span>
+          <span className="ml-auto tabular-nums">{total}</span>
+        </div>
+      )}
     </section>
   );
 }

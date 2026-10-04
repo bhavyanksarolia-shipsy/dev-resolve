@@ -1,5 +1,5 @@
 import { accountRole, getAccount, getDevrevView, inTicketScope, ticketScope } from "@/lib/config";
-import { countClosed, countCreated, openTickets, ticketCounts, ticketsClosedSince, ticketsCreatedSince, devrevUrl, type WorkRow } from "@/lib/devrev";
+import { countClosed, countCreated, openTickets, ticketsClosedSince, ticketsCreatedSince, devrevUrl, type WorkRow } from "@/lib/devrev";
 import { apiError } from "@/lib/apiError";
 import { q } from "@/lib/db";
 
@@ -36,7 +36,7 @@ export async function GET(req: Request) {
   try {
     const [openedTotal, closedTotal] = await Promise.all([countCreated(ids, since.toISOString(), until.toISOString()), countClosed(ids, since.toISOString(), until.toISOString())]);
     const [openFetched, createdFetched, closedFetched, counts, invsAll] = await Promise.all([
-      openTickets(ids), ticketsCreatedSince(ids, since.toISOString(), until.toISOString()), ticketsClosedSince(ids, since.toISOString(), until.toISOString()), ticketCounts(ids),
+      openTickets(ids), ticketsCreatedSince(ids, since.toISOString(), until.toISOString()), ticketsClosedSince(ids, since.toISOString(), until.toISOString()), null,
       q<{ status: string; confidence: string | null; created_at: string; finished_at: string | null; posted_at: string | null; ticket_display: string }>(
         `SELECT status, confidence, created_at, finished_at, posted_at, ticket_display FROM investigations WHERE account_slug = ANY($1) AND created_at BETWEEN $2 AND $3`, [account.slugs, since, until]),
     ]);

@@ -268,6 +268,7 @@ export async function podValues(sample: TicketSummary): Promise<string[]> {
 /** Moves a ticket to another stage, sets its Pod (null clears it) and/or other custom fields (keys with their tnt__/ctype__ prefix). */
 export async function updateTicket(id: string, change: { stageId?: string; pod?: string | null; partId?: string; ownerId?: string; fields?: Record<string, unknown> }, subtype?: string) {
   const custom = { ...(change.fields ?? {}), ...(change.pod !== undefined && { tnt__pod: change.pod }) };
+  clearListCache(); // the dashboard / counts must show this change right away
   const r = await call<{ work: TicketSummary }>("/works.update", {
     id, type: "ticket",
     ...(change.stageId && { stage: { stage: change.stageId } }),
@@ -276,6 +277,7 @@ export async function updateTicket(id: string, change: { stageId?: string; pod?:
     // Custom fields must name the schemas they belong to: tnt__ = the org's tenant fields, ctype__ = the ticket's subtype.
     ...(Object.keys(custom).length && { custom_fields: custom, custom_schema_spec: { tenant_fragment: true, ...(subtype && { subtype }) } }),
   });
+  clearListCache(); // and again once DevRev has it, in case a page loaded the old list meanwhile
   return r.work;
 }
 
@@ -360,15 +362,57 @@ const closedFilter = (accountIds: string[], after: string, before?: string) =>
 export const countCreated = (accountIds: string[], after: string, before?: string) => count(createdFilter(accountIds, after, before));
 export const countClosed = (accountIds: string[], after: string, before?: string) => count(closedFilter(accountIds, after, before));
 const PERIOD_MAX = 5000;
-export const ticketsCreatedSince = (accountIds: string[], after: string, before?: string) =>
-  listAllWorks({ ...createdFilter(accountIds, after, before), sort_by: ["created_date:desc"] }, PERIOD_MAX);
+/**
+ * One list, fetched as date slices in parallel. DevRev pages one cursor at a time (100 rows each), so 1,600 tickets
+ * = 16 calls in a row; slicing the dates runs them side by side. Slices overlap by a second; duplicates are dropped.
+ */
+async function listInSlices(body: Record<string, unknown>, field: "created_date" | "actual_close_date", bounds: [number, number][], max = PERIOD_MAX) {
+  const parts = await Promise.all(bounds.map(([a, b]) =>
+    listAllWorks({ ...body, [field]: { type: "range", after: new Date(a - 1000).toISOString(), before: new Date(b + 1000).toISOString() }, sort_by: [`${field}:desc`] }, max)));
+  const seen = new Set<string>();
+  const rows = parts.flat().filter((w) => (seen.has(w.id) ? false : (seen.add(w.id), true)));
+  const at = (w: WorkRow) => +new Date((field === "created_date" ? w.created_date : w.actual_close_date) ?? 0);
+  return rows.sort((x, y) => at(y) - at(x));
+}
+/** Equal slices of a period. */
+const slices = (after: string, before: string | undefined, n: number): [number, number][] => {
+  const a = +new Date(after), b = before ? +new Date(before) : Date.now(), step = (b - a) / n;
+  return Array.from({ length: n }, (_, i) => [a + i * step, i === n - 1 ? b : a + (i + 1) * step] as [number, number]);
+};
+const SLICES = 12;
+const withoutKey = (o: Record<string, unknown>, k: string) => Object.fromEntries(Object.entries(o).filter(([key]) => key !== k));
+
+/**
+ * Lists are kept 60 s and shared by everyone asking at the same time (dashboard + account picker load the same open
+ * tickets). Any ticket change made here clears them, so a change never shows stale.
+ */
+const listCache = new Map<string, { at: number; value: Promise<WorkRow[]> }>();
+const LIST_TTL = 60_000;
+function cachedList(key: string, load: () => Promise<WorkRow[]>) {
+  const hit = listCache.get(key);
+  if (hit && Date.now() - hit.at < LIST_TTL) return hit.value;
+  const value = load();
+  value.catch(() => listCache.delete(key));
+  listCache.set(key, { at: Date.now(), value });
+  return value;
+}
+export const clearListCache = () => listCache.clear();
+
+export const ticketsCreatedSince = (accountIds: string[], after: string, before?: string) => cachedList(`created|${accountIds.join(",")}|${after}|${before ?? ""}`, () => {
+  return listInSlices(withoutKey(createdFilter(accountIds, after, before), "created_date"), "created_date", slices(after, before, SLICES));
+});
 
 /** Tickets of these accounts closed (resolved / canceled) since `after`. */
-export const ticketsClosedSince = (accountIds: string[], after: string, before?: string) =>
-  listAllWorks({ ...closedFilter(accountIds, after, before), sort_by: ["actual_close_date:desc"] }, PERIOD_MAX);
+export const ticketsClosedSince = (accountIds: string[], after: string, before?: string) => cachedList(`closed|${accountIds.join(",")}|${after}|${before ?? ""}`, () => {
+  return listInSlices(withoutKey(closedFilter(accountIds, after, before), "actual_close_date"), "actual_close_date", slices(after, before, SLICES));
+});
 
-/** Every open ticket in the support view for these accounts (what the Tickets table shows). */
-export const openTickets = (accountIds: string[]) => listAllWorks({ ...viewBase(accountIds), sort_by: ["created_date:desc"] });
+/** Every open ticket in the support view for these accounts (what the Tickets table shows) — sliced by age, in parallel. */
+export const openTickets = (accountIds: string[]) => cachedList(`open|${accountIds.join(",")}`, () => {
+  const now = Date.now(), d = 864e5;
+  const ages = [0, 3, 7, 14, 30, 60, 90, 180, 365, 730, 365 * 30].map((n) => now - n * d);
+  return listInSlices(viewBase(accountIds), "created_date", ages.slice(1).map((from, i) => [from, ages[i]] as [number, number]), 1000);
+});
 
 export interface PartChoice { id: string; name: string; type: string; product: string }
 let partChoiceCache: { at: number; parts: PartChoice[] } | null = null;
