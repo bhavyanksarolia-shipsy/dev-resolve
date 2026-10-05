@@ -1,5 +1,6 @@
 "use client";
-import { ReactNode, useEffect, useId, useRef, useState } from "react";
+import { ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 /** Small shared pieces for the admin screens. */
 export const btn = "rounded-lg border border-line px-3 py-1.5 text-xs font-medium hover:border-accent disabled:opacity-40";
@@ -57,6 +58,38 @@ export function Rows({ rows, onChange, keyLabel, valueLabel, keyPlaceholder, val
   );
 }
 
+/**
+ * A dropdown's list, drawn on top of the page (portal + fixed position) so a table's scroll box or a card can't cut
+ * it off. Sits under its button, or above it when there's more room there; follows the button on scroll / resize.
+ */
+function FloatingPanel({ anchor, panelRef, up, children, className = "" }: {
+  anchor: React.RefObject<HTMLElement | null>; panelRef: React.RefObject<HTMLDivElement | null>; up?: boolean; children: ReactNode; className?: string;
+}) {
+  const [pos, setPos] = useState<{ left: number; width: number; top?: number; bottom?: number; maxH: number } | null>(null);
+  useLayoutEffect(() => {
+    const place = () => {
+      const r = anchor.current?.getBoundingClientRect();
+      if (!r) return;
+      const below = window.innerHeight - r.bottom - 8, above = r.top - 8;
+      const wanted = Math.min(panelRef.current?.scrollHeight ?? 320, 360);
+      const openUp = up || (below < wanted && above > below);
+      setPos({ left: r.left, width: r.width, maxH: Math.max(140, Math.min(360, openUp ? above : below)),
+        ...(openUp ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }) });
+    };
+    place();
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => { window.removeEventListener("scroll", place, true); window.removeEventListener("resize", place); };
+  }, [anchor, panelRef, up]);
+  return createPortal(
+    <div ref={panelRef} style={pos ? { position: "fixed", left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom, maxHeight: pos.maxH } : { position: "fixed", visibility: "hidden" }}
+      className={`z-[70] flex flex-col overflow-hidden rounded-md border border-line bg-panel shadow-lg ${className}`}>
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
 export interface Option { value: string; label: string; hint?: string }
 
 /** Dropdown in the app's style (replaces the browser's <select>): keyboard, click-outside, checkmark, optional hint line; a search box once the list is long. */
@@ -67,6 +100,7 @@ export function Select({ value, onChange, options, placeholder = "Choose…", di
   const [active, setActive] = useState(0);
   const [q, setQ] = useState("");
   const box = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
   const id = useId();
   const current = options.find((o) => o.value === value);
   const searchable = options.length > 6;
@@ -75,7 +109,7 @@ export function Select({ value, onChange, options, placeholder = "Choose…", di
 
   useEffect(() => {
     if (!open) return;
-    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node) && !panel.current?.contains(e.target as Node)) setOpen(false); };
     document.addEventListener("mousedown", away);
     return () => document.removeEventListener("mousedown", away);
   }, [open]);
@@ -105,13 +139,13 @@ export function Select({ value, onChange, options, placeholder = "Choose…", di
         </svg>
       </button>
       {open && (
-        <div className={`absolute left-0 right-0 z-50 ${up ? "bottom-full mb-1" : "mt-1"} overflow-hidden rounded-md border border-line bg-panel shadow-lg`}>
+        <FloatingPanel anchor={box} panelRef={panel} up={up}>
         {searchable && (
           <div className="border-b border-line p-2">
             <input autoFocus className={input} value={q} placeholder="Search…" onChange={(e) => { setQ(e.target.value); setActive(0); }} />
           </div>
         )}
-        <ul id={id} role="listbox" className="max-h-64 overflow-auto py-1">
+        <ul id={id} role="listbox" className="min-h-0 flex-1 overflow-auto py-1">
           {list.length === 0 && <li className="px-3 py-2 text-sm text-muted">{options.length ? "No matches" : "Nothing to choose yet"}</li>}
           {list.map((o, i) => {
             const sel = o.value === value;
@@ -125,7 +159,7 @@ export function Select({ value, onChange, options, placeholder = "Choose…", di
             );
           })}
         </ul>
-        </div>
+        </FloatingPanel>
       )}
     </div>
   );
@@ -145,9 +179,10 @@ export function MultiSelect({ value, onChange, options, search, placeholder = "C
   const [found, setFound] = useState<MultiOption[] | null>(null);
   const [loading, setLoading] = useState(false);
   const box = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
-    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node) && !panel.current?.contains(e.target as Node)) setOpen(false); };
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); setOpen(false); } };
     document.addEventListener("mousedown", away); document.addEventListener("keydown", esc);
     return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
@@ -174,11 +209,11 @@ export function MultiSelect({ value, onChange, options, search, placeholder = "C
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="ml-auto shrink-0 text-muted" aria-hidden><path d={open ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} /></svg>
       </button>
       {open && (
-        <div className="absolute left-0 right-0 z-30 mt-1 overflow-hidden rounded-md border border-line bg-panel text-sm shadow-lg">
+        <FloatingPanel anchor={box} panelRef={panel} className="text-sm">
           <div className="border-b border-line p-2">
             <input autoFocus className={input} value={q} onChange={(e) => setQ(e.target.value)} placeholder={searchPlaceholder} />
           </div>
-          <ul role="listbox" aria-multiselectable="true" className="max-h-64 overflow-auto py-1">
+          <ul role="listbox" aria-multiselectable="true" className="min-h-0 flex-1 overflow-auto py-1">
             {rows.map((o) => (
               <li key={o.value}>
                 <label className="flex cursor-pointer items-center gap-2.5 px-3 py-1.5 hover:bg-accent-soft">
@@ -193,7 +228,7 @@ export function MultiSelect({ value, onChange, options, search, placeholder = "C
               <li className="px-3 py-2 text-xs text-muted">{search && needle.length < 2 ? "Type at least 2 letters to search" : needle ? `Nothing matches “${q}”` : emptyText}</li>
             )}
           </ul>
-        </div>
+        </FloatingPanel>
       )}
     </div>
   );
