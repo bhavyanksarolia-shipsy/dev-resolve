@@ -67,9 +67,14 @@ export function WelcomeEmailEditor({ onClose }: { onClose: () => void }) {
     const d = await post<{ template: Tpl; custom: boolean }>("/api/admin/services", { service: "email", getTemplate: true });
     if (d.template) { setT(d.template); setCustom(d.custom); setDirty(false); }
   };
-  const close = async () => {
-    if (dirty && !(await confirmDialog({ title: "Leave without saving?", message: "Your changes to the welcome email will be lost.", confirmLabel: "Leave", danger: true }))) return;
-    onClose();
+  // Asked by the drawer before it slides out (Esc, ←, the dimmed area) and by Cancel / Close.
+  const okToLeave = async () => !dirty || confirmDialog({ title: "Leave without saving?", message: "Your changes to the welcome email will be lost.", confirmLabel: "Leave", danger: true });
+  const close = async () => { if (await okToLeave()) onClose(); };
+  // Keys pressed inside the preview stay in its frame — pass Esc on so the drawer still closes.
+  const forwardEsc = (frame: HTMLIFrameElement) => {
+    frame.contentDocument?.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
   };
   const field = (k: keyof Tpl, l: string, multi = false, ph = "") => (
     <label className="block"><span className={label}>{l}</span>
@@ -79,9 +84,9 @@ export function WelcomeEmailEditor({ onClose }: { onClose: () => void }) {
   );
 
   return (
-    <SlideSheet wide title="Welcome email"
+    <SlideSheet wide title="Welcome email" beforeClose={okToLeave}
       subtitle={<>{custom ? "Customised" : "Default text"}{dirty && <span className="text-warn"> · unsaved changes</span>} — sent when you add someone with “Send a welcome email” ticked</>}
-      onClose={close}>
+      onClose={onClose}>
       <div className="grid flex-1 gap-5 pb-24 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         {/* Form */}
         <div className="space-y-4">
@@ -198,7 +203,7 @@ export function WelcomeEmailEditor({ onClose }: { onClose: () => void }) {
             </div>
             <div className="border-b border-line bg-bg px-4 py-2 text-sm"><span className="text-muted">Subject: </span><b>{preview?.subject ?? "…"}</b></div>
             {problem && <div className="border-b border-line bg-red-50 px-4 py-2 text-xs text-bad">{problem}</div>}
-            {preview ? <iframe title="Email preview" srcDoc={preview.html} sandbox="" className="h-[calc(100vh-14rem)] w-full bg-white" />
+            {preview ? <iframe title="Email preview" srcDoc={preview.html} sandbox="allow-same-origin" onLoad={(e) => forwardEsc(e.currentTarget)} className="h-[calc(100vh-14rem)] w-full bg-white" />
               : <div className="skeleton h-[60vh] w-full" />}
           </div>
         </div>

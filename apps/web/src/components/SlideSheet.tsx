@@ -19,12 +19,22 @@ export function BackArrow({ onClick }: { onClick: () => void }) {
 /**
  * A drawer that slides in from the right over the current page (admin forms). ← / Esc / clicking the dimmed area
  * slides it back out. Esc is ignored while typing in a field or when a menu inside is open.
+ * beforeClose: asked first (e.g. "Leave without saving?"); false keeps the drawer open.
  */
-export function SlideSheet({ title, subtitle, onClose, children, wide }: { title: React.ReactNode; subtitle?: React.ReactNode; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
+export function SlideSheet({ title, subtitle, onClose, children, wide, beforeClose }: {
+  title: React.ReactNode; subtitle?: React.ReactNode; onClose: () => void; children: React.ReactNode; wide?: boolean; beforeClose?: () => boolean | Promise<boolean>;
+}) {
   const [closing, setClosing] = useState(false);
   const closingRef = useRef(false);
-  const close = () => {
-    if (closingRef.current) return;
+  const asking = useRef(false);
+  const close = async () => {
+    if (closingRef.current || asking.current) return;
+    if (beforeClose) {
+      asking.current = true;
+      const ok = await beforeClose();
+      asking.current = false;
+      if (!ok) return;
+    }
     closingRef.current = true;
     setClosing(true);
     setTimeout(onClose, 400);
@@ -39,6 +49,8 @@ export function SlideSheet({ title, subtitle, onClose, children, wide }: { title
       const el = document.activeElement;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || (el as HTMLElement).isContentEditable)) { (el as HTMLElement).blur(); return; }
       if (document.querySelector('[role="dialog"]:not([data-ticket-sheet]):not([data-slide-sheet]), [role="menu"], [role="listbox"]')) return;
+      // This Esc is used up here — otherwise a "Leave without saving?" prompt opened by beforeClose would catch it and close at once.
+      e.preventDefault(); e.stopPropagation();
       closeRef.current();
     };
     document.addEventListener("keydown", onKey);
