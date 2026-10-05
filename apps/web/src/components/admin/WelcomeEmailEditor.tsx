@@ -5,7 +5,7 @@ import { SlideSheet } from "@/components/SlideSheet";
 import { btn, btnPrimary, input, post } from "./ui";
 
 interface Step { title: string; time: string; tag?: string; text: string; sub?: string[]; button?: [string, string]; auto?: "connector" }
-interface Tpl { subject: string; heading: string; subheading: string; intro: string; buttonLabel: string; stepsTitle: string; steps: Step[]; readyTitle: string; ready: string[]; needs: string; questions: string }
+interface Tpl { theme?: string; subject: string; heading: string; subheading: string; intro: string; buttonLabel: string; stepsTitle: string; steps: Step[]; readyTitle: string; ready: string[]; needs: string; questions: string }
 
 const area = `${input} min-h-[4.5rem] resize-y leading-relaxed`;
 const label = "mb-1 block text-xs font-medium text-muted";
@@ -19,6 +19,7 @@ export function WelcomeEmailEditor({ onClose }: { onClose: () => void }) {
   const [custom, setCustom] = useState(false);
   const [vars, setVars] = useState<Record<string, string>>({});
   const [connector, setConnector] = useState<Step | null>(null);
+  const [themes, setThemes] = useState<{ id: string; label: string; hero: string; heroImage: string; bar: string; accent: string; page: string }[]>([]);
   const [preview, setPreview] = useState<{ subject: string; html: string } | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -27,8 +28,8 @@ export function WelcomeEmailEditor({ onClose }: { onClose: () => void }) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    post<{ template: Tpl; custom: boolean; placeholders: Record<string, string>; connector: Step }>("/api/admin/services", { service: "email", getTemplate: true })
-      .then((r) => { if (r.template) { setT(r.template); setCustom(r.custom); setVars(r.placeholders); setConnector(r.connector); } else toast({ ok: false, text: r.error || "Couldn't load the email" }); });
+    post<{ template: Tpl; custom: boolean; placeholders: Record<string, string>; connector: Step; themes: typeof themes }>("/api/admin/services", { service: "email", getTemplate: true })
+      .then((r) => { if (r.template) { setT(r.template); setCustom(r.custom); setVars(r.placeholders); setConnector(r.connector); setThemes(r.themes ?? []); } else toast({ ok: false, text: r.error || "Couldn't load the email" }); });
   }, []);
   // Live preview, a moment after typing stops.
   useEffect(() => {
@@ -85,7 +86,27 @@ export function WelcomeEmailEditor({ onClose }: { onClose: () => void }) {
         {/* Form */}
         <div className="space-y-4">
           <div className="card space-y-3 p-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Top</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Look</h3>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {themes.map((th) => {
+                const on = (t.theme ?? "clean") === th.id;
+                return (
+                  <button key={th.id} type="button" onClick={() => set({ theme: th.id })} aria-pressed={on}
+                    className={`overflow-hidden rounded-xl border text-left transition ${on ? "border-accent ring-2 ring-accent/30" : "border-line hover:border-accent"}`}>
+                    {/* mini email: header, a line of text, a button */}
+                    <div className="p-2" style={{ background: th.page }}>
+                      <div className="h-6 rounded-t-md" style={{ background: th.heroImage !== "none" ? th.heroImage : th.hero, borderTop: th.bar ? `3px solid ${th.bar}` : undefined, boxShadow: th.bar ? "inset 0 0 0 1px #e3e8e5" : undefined }} />
+                      <div className="space-y-1 rounded-b-md bg-white p-1.5">
+                        <div className="h-1 w-4/5 rounded bg-gray-200" /><div className="h-1 w-3/5 rounded bg-gray-200" />
+                        <div className="h-2 w-8 rounded-sm" style={{ background: th.accent }} />
+                      </div>
+                    </div>
+                    <div className={`flex items-center justify-between px-2.5 py-1.5 text-xs font-medium ${on ? "text-accent-strong" : ""}`}>{th.label}{on && <span aria-hidden>✓</span>}</div>
+                  </button>
+                );
+              })}
+            </div>
+            <h3 className="pt-1 text-xs font-semibold uppercase tracking-wide text-muted">Top</h3>
             {field("subject", "Subject")}
             {field("heading", "Heading")}
             {field("subheading", "Under the heading")}

@@ -144,8 +144,22 @@ export function connectorStep(): Step {
         button: ["Open the Connector page", "{app}/connector"] };
 }
 
+/** Colour themes for the welcome email (picked in the editor). "clean" keeps colour to buttons and step numbers. */
+export const EMAIL_THEMES = {
+  clean:    { label: "Clean",    page: "#f4f6f5", heroBg: "#ffffff", heroImage: "none", heroBar: "#15803d", heroText: "#0f1f16", heroSub: "#5b6b62", logoBg: "#15803d", logoText: "#ffffff", brand: "#15803d",
+              accent: "#15803d", accentDark: "#166534", chip: "#e7f5ec", soft: "#f6f8f7", code: "#eceff0", line: "#e3e8e5", ink: "#0f1f16", text: "#14251c", body: "#3a4a40", muted: "#5b6b62", faint: "#8a9a90" },
+  midnight: { label: "Midnight", page: "#f3f4f6", heroBg: "#0f172a", heroImage: "linear-gradient(135deg,#0f172a,#1e293b)", heroBar: "", heroText: "#ffffff", heroSub: "#cbd5e1", logoBg: "#ffffff", logoText: "#0f172a", brand: "#94a3b8",
+              accent: "#4f46e5", accentDark: "#4338ca", chip: "#eef2ff", soft: "#f6f7fb", code: "#eceef5", line: "#e5e7eb", ink: "#111827", text: "#111827", body: "#374151", muted: "#6b7280", faint: "#9ca3af" },
+  ocean:    { label: "Ocean",    page: "#eff4fa", heroBg: "#1d4ed8", heroImage: "linear-gradient(135deg,#1d4ed8,#0ea5e9)", heroBar: "", heroText: "#ffffff", heroSub: "#dbeafe", logoBg: "#ffffff", logoText: "#1d4ed8", brand: "#dbeafe",
+              accent: "#2563eb", accentDark: "#1d4ed8", chip: "#e0ecff", soft: "#f3f7fd", code: "#e6eefb", line: "#dde6f2", ink: "#0f172a", text: "#0f172a", body: "#334155", muted: "#64748b", faint: "#94a3b8" },
+  green:    { label: "Green",    page: "#f1f6f2", heroBg: "#15803d", heroImage: "linear-gradient(135deg,#166534,#16a34a)", heroBar: "", heroText: "#ffffff", heroSub: "#d9f2e1", logoBg: "#ffffff", logoText: "#15803d", brand: "#d9f2e1",
+              accent: "#15803d", accentDark: "#166534", chip: "#e7f5ec", soft: "#f6faf7", code: "#e7f0ea", line: "#dfe9e2", ink: "#0f1f16", text: "#14251c", body: "#35463c", muted: "#5b6b62", faint: "#8a9a90" },
+} as const;
+export type EmailTheme = keyof typeof EMAIL_THEMES;
+
 /** Everything an admin can edit in Admin → Connections → Email → Edit email (saved in config/welcome-email.json). */
 export interface WelcomeTemplate {
+  theme?: EmailTheme;
   subject: string; heading: string; subheading: string; intro: string; buttonLabel: string;
   stepsTitle: string; steps: Step[]; readyTitle: string; ready: string[]; needs: string; questions: string;
 }
@@ -160,6 +174,7 @@ const TEMPLATE_FILE = path.join(CONFIG_DIR, "welcome-email.json");
 
 export function defaultWelcomeTemplate(): WelcomeTemplate {
   return {
+    theme: "clean",
     subject: "Welcome to Dev Resolve",
     heading: "Welcome aboard, {first} 👋",
     subheading: "You're in as {role}. Setup takes about 10 minutes.",
@@ -210,6 +225,7 @@ export function cleanTemplate(t: Partial<WelcomeTemplate>): WelcomeTemplate {
   const subject = str(t.subject, 150).replace(/\n/g, " ").trim();
   if (!subject) throw new Error("The subject can't be empty");
   return {
+    theme: t.theme && t.theme in EMAIL_THEMES ? t.theme : "clean",
     subject, heading: str(t.heading, 150).trim() || d.heading, subheading: str(t.subheading, 300).trim(), intro: str(t.intro, 2000).trim(),
     buttonLabel: str(t.buttonLabel, 60).trim() || d.buttonLabel, stepsTitle: str(t.stepsTitle, 80).trim(),
     steps: steps.map((x) => ({ ...x, sub: x.sub.length ? x.sub : undefined })),
@@ -243,9 +259,10 @@ export function welcomeEmail(o: Person, tpl: WelcomeTemplate = welcomeTemplate()
   const fill = (v: string) => v.replace(/\{(\w+)\}/g, (m, k) => vars[k] ?? m);
   const plain = (v: string) => fill(v).replace(/\*\*(.+?)\*\*/g, "$1");
   // Escaped, then **bold** and chrome://… as code — nothing else from the template becomes HTML.
-  const rich = (v: string, strong = "#0f1f16") => esc(fill(v))
+  const c = EMAIL_THEMES[tpl.theme ?? "clean"] ?? EMAIL_THEMES.clean;
+  const rich = (v: string, strong: string = c.ink) => esc(fill(v))
     .replace(/\*\*(.+?)\*\*/g, `<b style="font-weight:800;color:${strong}">$1</b>`)
-    .replace(/chrome:\/\/[a-z-]+/g, (c) => `<code style="background:#e7f0ea;padding:1px 5px;border-radius:4px;font-size:12px">${c}</code>`);
+    .replace(/chrome:\/\/[a-z-]+/g, (m) => `<code style="background:${c.code};padding:1px 5px;border-radius:4px;font-size:12px">${m}</code>`);
   const url = (v: string) => fill(v);
   const steps = tpl.steps.map((st) => (st.auto === "connector" ? connectorStep() : st));
 
@@ -268,22 +285,22 @@ export function welcomeEmail(o: Person, tpl: WelcomeTemplate = welcomeTemplate()
 
   const font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
   const btn = (label: string, href: string, big = false) =>
-    `<a class="dr-btn" href="${esc(href)}" style="display:inline-block;background:#15803d;color:#ffffff;text-decoration:none;font-weight:600;border-radius:8px;${big ? "padding:13px 26px;font-size:15px" : "padding:8px 14px;font-size:13px"}">${esc(label)}${big ? "" : " &rarr;"}</a>`;
+    `<a class="dr-btn" href="${esc(href)}" style="display:inline-block;background:${c.accent};color:#ffffff;text-decoration:none;font-weight:600;border-radius:8px;${big ? "padding:13px 26px;font-size:15px" : "padding:8px 14px;font-size:13px"}">${esc(label)}${big ? "" : " &rarr;"}</a>`;
   const chip = (t: string, warm = false) =>
-    `<span style="display:inline-block;margin-left:6px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;vertical-align:middle;${warm ? "background:#fef3c7;color:#92400e" : "background:#e7f5ec;color:#166534"}">${esc(t)}</span>`;
+    `<span style="display:inline-block;margin-left:6px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;vertical-align:middle;${warm ? "background:#fef3c7;color:#92400e" : "background:${c.chip};color:${c.accentDark}"}">${esc(t)}</span>`;
   const stepCard = (st: Step, i: number) => `
 <tr><td class="dr-step" style="padding:0 0 12px 0;animation-delay:${(0.15 + i * 0.12).toFixed(2)}s">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #dfe9e2;border-radius:12px;background:#ffffff">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid ${c.line};border-radius:12px;background:#ffffff">
     <tr>
       <td width="56" valign="top" style="padding:16px 0 16px 16px">
-        <div style="width:34px;height:34px;line-height:34px;border-radius:50%;background:#15803d;color:#ffffff;text-align:center;font-weight:700;font-size:15px">${i + 1}</div>
+        <div style="width:34px;height:34px;line-height:34px;border-radius:50%;background:${c.accent};color:#ffffff;text-align:center;font-weight:700;font-size:15px">${i + 1}</div>
       </td>
       <td valign="top" style="padding:16px 18px 16px 12px">
-        <div style="font-size:16px;font-weight:700;color:#14251c">${esc(plain(st.title))}${st.tag ? chip(plain(st.tag), /reliance|only/i.test(st.tag)) : ""}${st.time ? `<span style="float:right;font-size:12px;color:#7a8a80;font-weight:500">&#9201; ${esc(st.time)}</span>` : ""}</div>
-        ${st.text ? `<div style="margin-top:6px;font-size:14px;line-height:1.6;color:#35463c">${rich(st.text)}</div>` : ""}
-        ${st.sub?.length ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:10px;width:100%;background:#f6faf7;border-radius:8px">${st.sub.map((x, j) => `
-          <tr><td width="28" valign="top" style="padding:7px 0 7px 12px;font-size:13px;font-weight:700;color:#15803d">${String.fromCharCode(97 + j)}</td>
-              <td style="padding:7px 12px 7px 0;font-size:13px;line-height:1.5;color:#35463c">${rich(x)}</td></tr>`).join("")}
+        <div style="font-size:16px;font-weight:700;color:${c.text}">${esc(plain(st.title))}${st.tag ? chip(plain(st.tag), /reliance|only/i.test(st.tag)) : ""}${st.time ? `<span style="float:right;font-size:12px;color:${c.faint};font-weight:500">&#9201; ${esc(st.time)}</span>` : ""}</div>
+        ${st.text ? `<div style="margin-top:6px;font-size:14px;line-height:1.6;color:${c.body}">${rich(st.text)}</div>` : ""}
+        ${st.sub?.length ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:10px;width:100%;background:${c.soft};border-radius:8px">${st.sub.map((x, j) => `
+          <tr><td width="28" valign="top" style="padding:7px 0 7px 12px;font-size:13px;font-weight:700;color:${c.accent}">${String.fromCharCode(97 + j)}</td>
+              <td style="padding:7px 12px 7px 0;font-size:13px;line-height:1.5;color:${c.body}">${rich(x)}</td></tr>`).join("")}
         </table>` : ""}
         ${st.button ? `<div style="margin-top:12px">${btn(plain(st.button[0]), url(st.button[1]))}</div>` : ""}
       </td>
@@ -298,49 +315,49 @@ export function welcomeEmail(o: Person, tpl: WelcomeTemplate = welcomeTemplate()
   .dr-step { animation: drUp .6s ease-out both }
   .dr-hero { animation: drUp .5s ease-out both }
   .dr-btn { transition: background .2s, transform .2s }
-  .dr-btn:hover { background: #166534 !important; transform: translateY(-1px) }
+  .dr-btn:hover { background: ${c.accentDark} !important; transform: translateY(-1px) }
   @media (prefers-reduced-motion: reduce) { .dr-step, .dr-hero { animation: none } }
   @media (max-width: 560px) { .dr-pad { padding-left: 16px !important; padding-right: 16px !important } }
 </style></head>
-<body style="margin:0;padding:0;background:#f1f6f2">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f6f2;font-family:${font}">
+<body style="margin:0;padding:0;background:${c.page}">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${c.page};font-family:${font}">
 <tr><td align="center" style="padding:28px 12px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:620px">
 
-  <tr><td class="dr-hero" style="background:#15803d;background-image:linear-gradient(135deg,#166534,#16a34a);border-radius:16px 16px 0 0;padding:28px 28px 26px">
+  <tr><td class="dr-hero" style="background:${c.heroBg};background-image:${c.heroImage};border-radius:16px 16px 0 0;padding:28px 28px 26px;${c.heroBar ? `border:1px solid ${c.line};border-bottom:0;border-top:5px solid ${c.heroBar}` : ""}">
     <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-      <td style="width:44px;height:44px;background:#ffffff;border-radius:10px;text-align:center;font-weight:800;color:#15803d;font-size:16px">DR</td>
-      <td style="padding-left:12px;color:#d9f2e1;font-size:13px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">Dev Resolve</td>
+      <td style="width:44px;height:44px;background:${c.logoBg};border-radius:10px;text-align:center;font-weight:800;color:${c.logoText};font-size:16px">DR</td>
+      <td style="padding-left:12px;color:${c.brand};font-size:13px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">Dev Resolve</td>
     </tr></table>
-    <div style="margin-top:18px;color:#ffffff;font-size:24px;font-weight:700;line-height:1.3">${rich(tpl.heading, "#ffffff")}</div>
-    ${tpl.subheading ? `<div style="margin-top:6px;color:#d9f2e1;font-size:14px">${rich(tpl.subheading, "#ffffff")}</div>` : ""}
+    <div style="margin-top:18px;color:${c.heroText};font-size:24px;font-weight:700;line-height:1.3">${rich(tpl.heading, c.heroText)}</div>
+    ${tpl.subheading ? `<div style="margin-top:6px;color:${c.heroSub};font-size:14px">${rich(tpl.subheading, c.heroText)}</div>` : ""}
   </td></tr>
 
-  <tr><td class="dr-pad" style="background:#ffffff;padding:24px 28px 8px;border-left:1px solid #dfe9e2;border-right:1px solid #dfe9e2">
-    ${tpl.intro ? `<p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#14251c">${rich(tpl.intro)}</p>` : ""}
+  <tr><td class="dr-pad" style="background:#ffffff;padding:24px 28px 8px;border-left:1px solid ${c.line};border-right:1px solid ${c.line}">
+    ${tpl.intro ? `<p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:${c.text}">${rich(tpl.intro)}</p>` : ""}
     <p style="margin:0 0 6px">${btn(plain(tpl.buttonLabel), app, true)}</p>
   </td></tr>
 
-  <tr><td class="dr-pad" style="background:#ffffff;padding:18px 28px 10px;border-left:1px solid #dfe9e2;border-right:1px solid #dfe9e2">
-    ${tpl.stepsTitle ? `<div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#15803d;margin-bottom:12px">${esc(plain(tpl.stepsTitle))}</div>` : ""}
+  <tr><td class="dr-pad" style="background:#ffffff;padding:18px 28px 10px;border-left:1px solid ${c.line};border-right:1px solid ${c.line}">
+    ${tpl.stepsTitle ? `<div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:${c.accent};margin-bottom:12px">${esc(plain(tpl.stepsTitle))}</div>` : ""}
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${steps.map(stepCard).join("")}</table>
   </td></tr>
 
-  ${tpl.ready.length ? `<tr><td class="dr-pad" style="background:#ffffff;padding:6px 28px 22px;border-left:1px solid #dfe9e2;border-right:1px solid #dfe9e2">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef7f1;border-radius:12px">
+  ${tpl.ready.length ? `<tr><td class="dr-pad" style="background:#ffffff;padding:6px 28px 22px;border-left:1px solid ${c.line};border-right:1px solid ${c.line}">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${c.soft};border-radius:12px">
       <tr><td style="padding:16px 18px">
-        ${tpl.readyTitle ? `<div style="font-size:14px;font-weight:700;color:#14251c;margin-bottom:8px">${esc(plain(tpl.readyTitle))}</div>` : ""}
-        ${tpl.ready.map((r) => `<div style="font-size:14px;line-height:1.5;color:#35463c;padding:3px 0"><span style="color:#15803d;font-weight:700">&#10003;</span>&nbsp; ${rich(r)}</div>`).join("")}
+        ${tpl.readyTitle ? `<div style="font-size:14px;font-weight:700;color:${c.text};margin-bottom:8px">${esc(plain(tpl.readyTitle))}</div>` : ""}
+        ${tpl.ready.map((r) => `<div style="font-size:14px;line-height:1.5;color:${c.body};padding:3px 0"><span style="color:${c.accent};font-weight:700">&#10003;</span>&nbsp; ${rich(r)}</div>`).join("")}
       </td></tr>
     </table>
   </td></tr>` : ""}
 
-  <tr><td class="dr-pad" style="background:#ffffff;border:1px solid #dfe9e2;border-top:0;border-radius:0 0 16px 16px;padding:0 28px 24px">
-    ${tpl.needs ? `<p style="margin:0 0 10px;font-size:13px;line-height:1.6;color:#5b6b62">${rich(tpl.needs, "#35463c")}</p>` : ""}
-    ${tpl.questions ? `<p style="margin:0;font-size:13px;line-height:1.6;color:#5b6b62">${rich(tpl.questions, "#14251c")}</p>` : ""}
+  <tr><td class="dr-pad" style="background:#ffffff;border:1px solid ${c.line};border-top:0;border-radius:0 0 16px 16px;padding:0 28px 24px">
+    ${tpl.needs ? `<p style="margin:0 0 10px;font-size:13px;line-height:1.6;color:${c.muted}">${rich(tpl.needs, "${c.body}")}</p>` : ""}
+    ${tpl.questions ? `<p style="margin:0;font-size:13px;line-height:1.6;color:${c.muted}">${rich(tpl.questions, "${c.text}")}</p>` : ""}
   </td></tr>
 
-  <tr><td align="center" style="padding:16px;font-size:12px;color:#8a9a90">Sent by Dev Resolve because an admin added you. Passwords are never sent by email.</td></tr>
+  <tr><td align="center" style="padding:16px;font-size:12px;color:${c.faint}">Sent by Dev Resolve because an admin added you. Passwords are never sent by email.</td></tr>
 </table>
 </td></tr>
 </table>

@@ -6,7 +6,7 @@ import { writeEnv } from "@/lib/adminConfig";
 import { adminSetting, readConfigEnv } from "@/lib/config";
 import { agentModel, DEFAULT_MODEL } from "@/lib/agent/run";
 import { AGENT_LIMITS, AGENT_TOOLS, SENT_TO_ANTHROPIC, storageSummary } from "@/lib/agent/transparency";
-import { checkMail, cleanTemplate, connectorStep, defaultWelcomeTemplate, mailSettings, revokeGmail, saveWelcomeTemplate, sendMail, WELCOME_PLACEHOLDERS, welcomeEmail, welcomeTemplate, type WelcomeTemplate } from "@/lib/mail";
+import { checkMail, cleanTemplate, connectorStep, EMAIL_THEMES, defaultWelcomeTemplate, mailSettings, revokeGmail, saveWelcomeTemplate, sendMail, WELCOME_PLACEHOLDERS, welcomeEmail, welcomeTemplate, type WelcomeTemplate } from "@/lib/mail";
 import { q as dbq } from "@/lib/db";
 
 const source = (k: string) => (readConfigEnv()[k] ? "saved in Admin" : process.env[k] ? "server variable" : null);
@@ -75,7 +75,8 @@ export async function POST(req: Request) {
   if (b.service === "email" && b.getTemplate) {
     const t = welcomeTemplate();
     // connector: what the automatic Connector step says right now (it follows Admin → Files & extension).
-    return Response.json({ template: t.template, custom: t.custom, defaults: defaultWelcomeTemplate(), placeholders: WELCOME_PLACEHOLDERS, connector: connectorStep() });
+    return Response.json({ template: t.template, custom: t.custom, defaults: defaultWelcomeTemplate(), placeholders: WELCOME_PLACEHOLDERS, connector: connectorStep(),
+      themes: Object.entries(EMAIL_THEMES).map(([id, x]) => ({ id, label: x.label, hero: x.heroBg, heroImage: x.heroImage, bar: x.heroBar, accent: x.accent, page: x.page })) });
   }
   if (b.service === "email" && (b.previewTemplate || b.saveTemplate)) {
     let t: WelcomeTemplate;
