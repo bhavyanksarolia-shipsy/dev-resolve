@@ -145,7 +145,11 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
     setChecks((m) => ({ ...m, [key]: { ok: !r.error && r.ok, message: r.error || r.message, at: Date.now() } }));
   }
   type Sub = "github" | "opensearch" | "metabase" | "claude" | "devrev" | "email";
-  const [sub, setSub] = useState<Sub>("github");
+  // ?sub=email — e.g. back from "Connect Gmail" on Google's screen.
+  const [sub, setSub] = useState<Sub>(() => {
+    const q = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("sub") : null;
+    return (["github", "opensearch", "metabase", "claude", "devrev", "email"] as const).find((k) => k === q) ?? "github";
+  });
   const [connQ, setConnQ] = useState("");
   const usedBy = (c: Conn, kind: Kind) => cfg.accounts.filter((a) => kind === "metabase" ? a.metabase_project === c.name
     : a.app_log?.project === c.name || Object.values(a.opensearch_log_types).some((lt) => c.opensearch?.logTypes[lt] !== undefined)).map((a) => a.name);

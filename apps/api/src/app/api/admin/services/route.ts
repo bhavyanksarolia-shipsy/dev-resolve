@@ -5,7 +5,7 @@ import { q } from "@/lib/db";
 import { writeEnv } from "@/lib/adminConfig";
 import { adminSetting, readConfigEnv } from "@/lib/config";
 import { agentModel, DEFAULT_MODEL } from "@/lib/agent/run";
-import { checkMail, mailSettings, sendMail, welcomeEmail } from "@/lib/mail";
+import { checkMail, mailSettings, revokeGmail, sendMail, welcomeEmail } from "@/lib/mail";
 import { q as dbq } from "@/lib/db";
 
 const source = (k: string) => (readConfigEnv()[k] ? "saved in Admin" : process.env[k] ? "server variable" : null);
@@ -53,7 +53,7 @@ export async function GET(req: Request) {
       owner: detectedOwner ?? adminSetting("CLAUDE_TOKEN_OWNER") ?? null, ownerDetected: !!detectedOwner, ownerNote: adminSetting("CLAUDE_TOKEN_OWNER") ?? "",
     },
     devrev: { ...devrev, as: me ? `${me.dev_user.display_name} <${me.dev_user.email}>` : null, tokenSource: source("DEVREV_TOKEN"), tokenPreview: mask(adminSetting("DEVREV_TOKEN")) },
-    email: (() => { const m = mailSettings(); return { configured: m.configured, user: m.user, host: m.host, port: m.port, fromName: m.fromName, tokenPreview: mask(m.pass) }; })(),
+    email: (() => { const m = mailSettings(); return { configured: m.configured, method: m.method, gmailSender: m.gmailSender, smtp: m.smtp, user: m.user, host: m.host, port: m.port, fromName: m.fromName, tokenPreview: mask(m.pass) }; })(),
   });
 }
 
@@ -65,7 +65,12 @@ export async function POST(req: Request) {
   const g = await requireAdmin(req);
   if (g.error) return g.error;
   const b = (await req.json().catch(() => ({}))) as { service?: string; apiKey?: string; oauthToken?: string; model?: string; token?: string; owner?: string; clear?: string[]; reveal?: boolean;
-    user?: string; pass?: string; fromName?: string; host?: string; port?: number; check?: boolean; test?: boolean; appUrl?: string };
+    user?: string; pass?: string; fromName?: string; host?: string; port?: number; check?: boolean; test?: boolean; appUrl?: string; disconnect?: "gmail" | "smtp" };
+  if (b.service === "email" && b.disconnect) {
+    if (b.disconnect === "gmail") await revokeGmail();
+    await writeEnv(b.disconnect === "gmail" ? { GMAIL_REFRESH_TOKEN: null, GMAIL_SENDER: null } : { SMTP_USER: null, SMTP_PASS: null }, g.user.name);
+    return Response.json({ ok: true, message: b.disconnect === "gmail" ? "Gmail disconnected" : "SMTP mailbox removed" });
+  }
   if (b.service === "email" && b.check) return Response.json(await checkMail());
   if (b.service === "email" && b.test) {
     // A sample welcome mail to the admin themself — shows exactly what new people receive.

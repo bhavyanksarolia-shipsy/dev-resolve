@@ -14,7 +14,7 @@ const setting = (k: string) => cfgValue(k)?.trim() || "";
  * Each can be in the environment or in config/config.env. GOOGLE_ALLOWED_DOMAINS falls back to SSO_ACCOUNT_DOMAIN.
  */
 export const googleClientId = () => setting("GOOGLE_CLIENT_ID");
-const googleClientSecret = () => setting("GOOGLE_CLIENT_SECRET");
+export const googleClientSecret = () => setting("GOOGLE_CLIENT_SECRET");
 export const allowedDomains = () =>
   (setting("GOOGLE_ALLOWED_DOMAINS") || setting("SSO_ACCOUNT_DOMAIN")).split(",").map((d) => d.trim().toLowerCase().replace(/^@/, "")).filter(Boolean);
 export const googleEnabled = () => !!(googleClientId() && googleClientSecret() && allowedDomains().length);
@@ -39,14 +39,20 @@ export function redirectUri(req: Request) {
   return `${publicOrigin(req)}/api/auth/google/callback`;
 }
 
-export function startAuth(req: Request) {
+/** Gmail "send only" permission — asked for only when an admin connects the mailbox for welcome emails. */
+export const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
+
+export function startAuth(req: Request, opts: { mail?: boolean; hint?: string } = {}) {
   const state = randomBytes(16).toString("base64url");
   const nonce = randomBytes(16).toString("base64url");
   const verifier = randomBytes(32).toString("base64url");
   const url = new URL(settings.googleAuthUrl());
   url.search = new URLSearchParams({
     client_id: googleClientId(), redirect_uri: redirectUri(req), response_type: "code",
-    scope: "openid email profile", state, nonce, prompt: "select_account",
+    scope: `openid email profile${opts.mail ? ` ${GMAIL_SEND_SCOPE}` : ""}`, state, nonce,
+    // For the mailbox: a refresh token (offline), and always the consent screen so Google issues a new one.
+    ...(opts.mail ? { access_type: "offline", prompt: "consent select_account", include_granted_scopes: "false" } : { prompt: "select_account" }),
+    ...(opts.hint && { login_hint: opts.hint }),
     code_challenge: createHash("sha256").update(verifier).digest("base64url"), code_challenge_method: "S256",
     // Only shows / accepts accounts of this domain in Google's chooser (still checked again below).
     ...(allowedDomains().length === 1 && { hd: allowedDomains()[0] }),
@@ -92,5 +98,5 @@ export async function finishAuth(req: Request, code: string, verifier: string, n
   if (!email || c.email_verified !== true) throw new Error("Google account has no verified email");
   const domain = email.split("@")[1];
   if (!allowedDomains().includes(domain) || (c.hd && c.hd.toLowerCase() !== domain)) throw new Error(`${domain} accounts can't sign in here`);
-  return { email, name: c.name || email };
+  return { email, name: c.name || email, refreshToken: (t.refresh_token as string | undefined) || "", scope: String(t.scope || "") };
 }
