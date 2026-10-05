@@ -10,6 +10,7 @@ import { userToolEnv } from "../connector";
 import { q } from "../db";
 import { proposeKnowledge, similarCases } from "../knowledge";
 import { pastTickets } from "../pastTickets";
+import { readSkill, skillsFor } from "../skills";
 
 const MAX_OUT = 15000;
 const clip = (s: string) => (s.length > MAX_OUT ? s.slice(0, MAX_OUT) + `\n…[truncated ${s.length - MAX_OUT} chars — narrow the query]` : s);
@@ -147,6 +148,18 @@ export function buildToolServer(opts: { investigationId: number; account: Accoun
     },
   );
 
+  const skillNames = skillsFor(scope).map((x) => x.name);
+  const readSkillTool = tool(
+    "read_skill",
+    `Open a skill (an admin-provided playbook) by name and get its full instructions. Available: ${skillNames.join(", ") || "none"}.`,
+    { name: z.string().describe("The skill's name, from the Skills list") },
+    async ({ name }) => {
+      if (!skillNames.includes(name)) return text(`No skill "${name}" for this ticket. Available: ${skillNames.join(", ") || "none"}.`);
+      // Whole skill, not clipped like other tool output — a playbook cut in half is worse than none.
+      return { content: [{ type: "text" as const, text: readSkill(name) ?? `Skill "${name}" was removed.` }] };
+    },
+  );
+
   const submit = tool(
     "submit_rca",
     "Submit the final RCA (full text, all sections). Call once at the end of an investigation, and again during a follow-up chat only if the new findings change the RCA — each call creates a new draft version. The human reviews/edits it before it is posted as an INTERNAL comment.",
@@ -192,6 +205,6 @@ export function buildToolServer(opts: { investigationId: number; account: Accoun
   return createSdkMcpServer({
     name: "devresolve",
     version: "0.1.0",
-    tools: [metabaseQuery, metabaseTables, codeSearch, codeRead, similar, past, propose, submit],
+    tools: [metabaseQuery, metabaseTables, codeSearch, codeRead, similar, past, propose, submit, ...(skillNames.length ? [readSkillTool] : [])],
   });
 }

@@ -29,8 +29,9 @@ apps/api/knowledge/*
 !apps/api/knowledge/README.md
 !apps/api/knowledge/_template/
 !apps/api/knowledge/_shared/
-# Client-specific skill and ticket-digest lists
-apps/api/.claude/skills/ffo-miss-analysis/
+# Client-specific skills (uploaded in Admin → Connections → Claude; kept in the database) and ticket-digest lists
+apps/api/.claude/skills/*
+!apps/api/.claude/skills/metabase-sql/
 apps/api/services/wms_ticket_digest/.env
 apps/api/services/wms_ticket_digest/state/
 apps/api/services/wms_ticket_digest/config/*.json

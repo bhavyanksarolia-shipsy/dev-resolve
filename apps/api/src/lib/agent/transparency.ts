@@ -30,6 +30,9 @@ export const AGENT_TOOLS: { group: string; tools: { name: string; does: string }
     { name: "past_tickets", does: "Closed DevRev tickets of the same client with a similar title, and how they were closed" },
     { name: "similar_cases", does: "Earlier Dev Resolve root causes for this client" },
   ] },
+  { group: "Skills", tools: [
+    { name: "read_skill", does: "Opens a skill below (the full playbook) when the ticket matches its description — only skills assigned to the ticket's client" },
+  ] },
   { group: "Writes (Dev Resolve only)", tools: [
     { name: "propose_knowledge", does: "Adds a verified learning to the client's knowledge base (admins can review or remove it)" },
     { name: "submit_rca", does: "Saves an RCA draft version for a person to review — it never posts by itself" },

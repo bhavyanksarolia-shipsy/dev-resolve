@@ -14,6 +14,8 @@ export function isPrivate(rel: string) {
   if (rel === "config/projects.json" || rel === "config/config.env") return true;
   if (rel.startsWith("knowledge/")) return !rel.startsWith("knowledge/_template/") && rel !== "knowledge/README.md" && !/\/\._/.test(rel);
   if (rel.startsWith(".auth/users/")) return true;
+  // Agent skills uploaded in Admin (client-specific, so never in the public repo). metabase-sql ships with the code.
+  if (/^\.claude\/skills\/[a-z0-9][a-z0-9-]*\/SKILL\.md$/.test(rel)) return !rel.startsWith(".claude/skills/metabase-sql/");
   return false;
 }
 
@@ -48,6 +50,7 @@ export function listLocal(root: string): string[] {
   for (const f of ["config/projects.json", "config/config.env"]) if (existsSync(path.join(root, f))) out.push(f);
   walk("knowledge");
   walk(".auth/users");
+  walk(".claude/skills");
   return out;
 }
 

@@ -27,6 +27,9 @@ async function writeProjects(file: ReturnType<typeof loadProjectsFile>, by: stri
   await savePrivate(PROJECTS_FILE, by);
 }
 
+/** For other admin modules (e.g. skills) that change projects.json: atomic write + saved to Postgres. */
+export const saveProjectsFile = writeProjects;
+
 /** Set / replace / remove (null) keys in config.env, keeping comments and order. */
 export async function writeEnv(updates: Record<string, string | null>, by: string) {
   const lines = existsSync(ENV_FILE) ? readFileSync(ENV_FILE, "utf8").split("\n") : [];

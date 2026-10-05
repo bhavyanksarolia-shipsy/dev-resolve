@@ -1,5 +1,4 @@
 import "server-only";
-import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { adminSetting, Account, ROOT, getAccount, getAccounts, projectForLogType, resolveDevrevAccount } from "../config";
@@ -7,6 +6,7 @@ import { userToolEnv } from "../connector";
 import { LockedError, q } from "../db";
 import { getTicket, listTimeline } from "../devrev";
 import { accountKnowledge } from "../knowledge";
+import { skillsFor } from "../skills";
 import { agentAttachmentBlocks, listAttachments, uploadedFileBlocks, withEmailSenders } from "../attachments";
 import { buildToolServer } from "./tools";
 import { appLogConfigDir, appLogProjects, ensureAppLogAuth, indexAllowed } from "../applog";
@@ -33,12 +33,14 @@ async function step(investigationId: number, seq: number, kind: string, tool: st
   ]);
 }
 
-function skillText(account: Account) {
-  return (account.skills || [])
-    .map((s) => path.join(ROOT, ".claude/skills", s, "SKILL.md"))
-    .filter(existsSync)
-    .map((f) => `## Skill: ${path.basename(path.dirname(f))}\n${readFileSync(f, "utf8")}`)
-    .join("\n\n");
+/** Skills for this ticket: name + "when to use" only; the agent opens one with read_skill (keeps the prompt small). */
+function skillText(scope: Account[]) {
+  const list = skillsFor(scope);
+  if (!list.length) return "";
+  return `# Skills (playbooks added by admins)
+Before investigating, check this list. When the ticket matches a skill's description, open it with
+mcp__devresolve__read_skill and follow it — it holds proven methods for that kind of ticket.
+${list.map((s) => `- **${s.name}** — ${s.description}`).join("\n")}`;
 }
 
 function systemPrompt(account: Account, candidates: Account[]) {
@@ -138,7 +140,7 @@ ${scope.flatMap((a) => (a.extra_sources ?? []).map((x) => `- **${x.name}**${x.ur
 ` : ""}# Knowledge base (curated — prefer it over assumptions, but lines marked Unverified must be checked)
 ${accountKnowledge(account)}
 
-${skillText(account)}`;
+${skillText(scope)}`;
 }
 
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + "\n…[comment truncated]" : s);
@@ -184,6 +186,12 @@ function withGroup(account: Account, candidates: Account[]) {
     if (a.group === account.group && a.client_active !== false && !out.some((x) => x.slug === a.slug)) out.push(a);
   }
   return out.length > 1 ? out : [];
+}
+
+/** Admin → Claude → "Built-in instructions": the exact system prompt the agent gets for this client's tickets. */
+export function promptPreview(slug: string) {
+  const a = getAccount(slug);
+  return a ? systemPrompt(a, withGroup(a, [])) : null;
 }
 
 function resolveScope(accountId: string | undefined, displayId: string, accountName?: string) {
