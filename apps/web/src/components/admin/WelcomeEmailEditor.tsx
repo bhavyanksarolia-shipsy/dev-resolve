@@ -4,7 +4,7 @@ import { confirmDialog, toast } from "@/components/Dialog";
 import { SlideSheet } from "@/components/SlideSheet";
 import { btn, btnPrimary, input, post } from "./ui";
 
-interface Step { title: string; time: string; tag?: string; text: string; sub?: string[]; button?: [string, string] }
+interface Step { title: string; time: string; tag?: string; text: string; sub?: string[]; button?: [string, string]; auto?: "connector" }
 interface Tpl { subject: string; heading: string; subheading: string; intro: string; buttonLabel: string; stepsTitle: string; steps: Step[]; readyTitle: string; ready: string[]; needs: string; questions: string }
 
 const area = `${input} min-h-[4.5rem] resize-y leading-relaxed`;
@@ -18,6 +18,7 @@ export function WelcomeEmailEditor({ onClose }: { onClose: () => void }) {
   const [t, setT] = useState<Tpl | null>(null);
   const [custom, setCustom] = useState(false);
   const [vars, setVars] = useState<Record<string, string>>({});
+  const [connector, setConnector] = useState<Step | null>(null);
   const [preview, setPreview] = useState<{ subject: string; html: string } | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -26,8 +27,8 @@ export function WelcomeEmailEditor({ onClose }: { onClose: () => void }) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    post<{ template: Tpl; custom: boolean; placeholders: Record<string, string> }>("/api/admin/services", { service: "email", getTemplate: true })
-      .then((r) => { if (r.template) { setT(r.template); setCustom(r.custom); setVars(r.placeholders); } else toast({ ok: false, text: r.error || "Couldn't load the email" }); });
+    post<{ template: Tpl; custom: boolean; placeholders: Record<string, string>; connector: Step }>("/api/admin/services", { service: "email", getTemplate: true })
+      .then((r) => { if (r.template) { setT(r.template); setCustom(r.custom); setVars(r.placeholders); setConnector(r.connector); } else toast({ ok: false, text: r.error || "Couldn't load the email" }); });
   }, []);
   // Live preview, a moment after typing stops.
   useEffect(() => {
@@ -102,14 +103,30 @@ export function WelcomeEmailEditor({ onClose }: { onClose: () => void }) {
                 <li key={i} className="overflow-hidden rounded-xl border border-line bg-panel">
                   <div className="flex items-center gap-2 px-3 py-2">
                     <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-accent text-xs font-bold text-white">{i + 1}</span>
-                    <button type="button" className="min-w-0 flex-1 truncate text-left text-sm font-medium" onClick={() => setOpen(open === i ? null : i)}>{s.title || <span className="text-muted">Untitled step</span>}</button>
+                    <button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm font-medium" onClick={() => setOpen(open === i ? null : i)}>
+                      <span className="truncate">{s.auto ? connector?.title ?? "Install the Connector" : s.title || <span className="text-muted">Untitled step</span>}</span>
+                      {s.auto && <span className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-semibold text-accent-strong">automatic</span>}
+                    </button>
                     <button type="button" className="grid h-6 w-6 place-items-center rounded text-muted hover:bg-bg disabled:opacity-30" disabled={i === 0} onClick={() => move(i, -1)} aria-label="Move up" title="Move up">↑</button>
                     <button type="button" className="grid h-6 w-6 place-items-center rounded text-muted hover:bg-bg disabled:opacity-30" disabled={i === t.steps.length - 1} onClick={() => move(i, 1)} aria-label="Move down" title="Move down">↓</button>
                     <button type="button" className="grid h-6 w-6 place-items-center rounded text-muted hover:bg-red-50 hover:text-bad disabled:opacity-30" disabled={t.steps.length === 1}
                       onClick={() => { set({ steps: t.steps.filter((_, j) => j !== i) }); setOpen(null); }} aria-label="Remove step" title="Remove step">✕</button>
                     <span className={`text-muted transition-transform ${open === i ? "rotate-90" : ""}`} aria-hidden>›</span>
                   </div>
-                  {open === i && (
+                  {open === i && s.auto && (
+                    <div className="space-y-2 border-t border-line bg-bg/60 p-3 text-sm">
+                      <p>Written for you from <b>Admin → Files &amp; extension</b>, so it&apos;s always right:</p>
+                      <ul className="list-disc space-y-0.5 pl-5 text-muted">
+                        <li><b className="text-fg">Chrome Web Store link set</b> → one <b className="text-fg">Add to Chrome</b> button</li>
+                        <li><b className="text-fg">No link yet</b> → download, unzip, Developer mode, Load unpacked</li>
+                      </ul>
+                      <p className="rounded-lg bg-accent-soft/60 px-3 py-2 text-xs text-accent-strong">
+                        Right now: {connector?.button?.[0] === "Add to Chrome" ? "the Web Store link is set — people get the Add to Chrome button." : "no Web Store link yet — people get the manual install steps."}
+                      </p>
+                      <button type="button" className={btn} onClick={() => connector && setStep(i, { ...connector, auto: undefined })}>Write this step myself instead</button>
+                    </div>
+                  )}
+                  {open === i && !s.auto && (
                     <div className="grid gap-3 border-t border-line bg-bg/60 p-3 sm:grid-cols-[1fr_7rem_10rem]">
                       <label className="block"><span className={label}>Title</span><input className={input} value={s.title} onChange={(e) => setStep(i, { title: e.target.value })} /></label>
                       <label className="block"><span className={label}>Time</span><input className={input} value={s.time} placeholder="2 min" onChange={(e) => setStep(i, { time: e.target.value })} /></label>
@@ -126,6 +143,11 @@ export function WelcomeEmailEditor({ onClose }: { onClose: () => void }) {
             </ol>
             <button type="button" className={`${btn} mt-3`} disabled={t.steps.length >= 12}
               onClick={() => { set({ steps: [...t.steps, { title: "New step", time: "", text: "" }] }); setOpen(t.steps.length); }}>+ Add a step</button>
+            {!t.steps.some((s) => s.auto) && (
+              <button type="button" className={`${btn} ml-2 mt-3`} disabled={t.steps.length >= 12}
+                title="Install steps that follow the Chrome Web Store link in Admin → Files & extension"
+                onClick={() => { set({ steps: [...t.steps, { title: "Install the Connector", time: "", text: "", auto: "connector" }] }); setOpen(t.steps.length); }}>+ Add the automatic Connector step</button>
+            )}
           </div>
 
           <div className="card space-y-3 p-4">

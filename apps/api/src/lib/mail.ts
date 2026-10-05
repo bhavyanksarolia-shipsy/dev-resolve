@@ -119,8 +119,30 @@ export async function revokeGmail() {
 
 const esc = (v: string) => v.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
-/** One onboarding step. Text fields take {placeholders} and **bold**; button = [label, link]. */
-export interface Step { title: string; time: string; tag?: string; text: string; sub?: string[]; button?: [string, string] }
+/**
+ * One onboarding step. Text fields take {placeholders} and **bold**; button = [label, link].
+ * auto: "connector" — filled in when the email is sent, from Admin → Files & extension (Web Store link or not).
+ */
+export interface Step { title: string; time: string; tag?: string; text: string; sub?: string[]; button?: [string, string]; auto?: "connector" }
+
+/** How to install the Connector right now: one "Add to Chrome" click once the Web Store link is set, else load it by hand. */
+export function connectorStep(): Step {
+  const store = settings.extensionStoreUrl();
+  return store
+    ? { title: "Add the Connector to Chrome", time: "1 min", tag: "once per laptop",
+        text: "It lets investigations reach systems that are only on the client VPN, through your own laptop. Click **Add to Chrome**, then open the Connector page — it shows \"Installed · linked to you\".",
+        button: ["Add to Chrome", store] }
+    : { title: "Install the Connector extension", time: "3 min", tag: "once per laptop",
+        text: "It lets investigations reach systems that are only on the client VPN, through your own laptop.",
+        sub: [
+          `Open the Connector page and click **Download the extension**.`,
+          "Unzip the downloaded file.",
+          `In Chrome, go to chrome://extensions and switch on **Developer mode** (top right).`,
+          `Click **Load unpacked** and choose the unzipped folder.`,
+          `Go back to the Connector page — it shows "Installed · linked to you".`,
+        ],
+        button: ["Open the Connector page", "{app}/connector"] };
+}
 
 /** Everything an admin can edit in Admin → Connections → Email → Edit email (saved in config/welcome-email.json). */
 export interface WelcomeTemplate {
@@ -137,7 +159,6 @@ export const WELCOME_PLACEHOLDERS: Record<string, string> = {
 const TEMPLATE_FILE = path.join(CONFIG_DIR, "welcome-email.json");
 
 export function defaultWelcomeTemplate(): WelcomeTemplate {
-  const store = settings.extensionStoreUrl();
   return {
     subject: "Welcome to Dev Resolve",
     heading: "Welcome aboard, {first} 👋",
@@ -149,20 +170,7 @@ export function defaultWelcomeTemplate(): WelcomeTemplate {
       { title: "Sign in", time: "1 min", text: "Open Dev Resolve and {signIn}", button: ["Sign in", "{app}/login"] },
       { title: "Pick your Pods", time: "1 min",
         text: `Click the Pods filter at the top right (it shows "All Pods") and tick your team's Pods, e.g. WMS Inbound or WMS Outbound. Tick "No Pod" too if you also want new tickets nobody has triaged yet.` },
-      store
-        ? { title: "Add the Connector to Chrome", time: "2 min", tag: "once per laptop",
-            text: "It lets investigations reach systems that are only on the client VPN, through your own laptop. Click Add to Chrome, then open the Connector page — it links itself to you.",
-            button: ["Add to Chrome", store] }
-        : { title: "Install the Connector extension", time: "3 min", tag: "once per laptop",
-            text: "It lets investigations reach systems that are only on the client VPN, through your own laptop.",
-            sub: [
-              `Open the Connector page and click **Download the extension**.`,
-              "Unzip the downloaded file.",
-              `In Chrome, go to chrome://extensions and switch on **Developer mode** (top right).`,
-              `Click **Load unpacked** and choose the unzipped folder.`,
-              `Go back to the Connector page — it shows "Installed · linked to you".`,
-            ],
-            button: ["Open the Connector page", "{app}/connector"] },
+      { title: "Install the Connector", time: "", text: "", auto: "connector" },
       { title: "Sign in to the tools", time: "2 min",
         text: `On the Connector page, under Google sign-ins, click **Sign in to all missing** (app logs and the Google-login Metabase). Investigations use your own sign-ins.`,
         button: ["Open the Connector page", "{app}/connector"] },
@@ -191,12 +199,13 @@ const str = (v: unknown, max: number) => String(v ?? "").replace(/\r/g, "").slic
 /** Clean up a template from the editor: known fields only, sane lengths, at most 12 steps. */
 export function cleanTemplate(t: Partial<WelcomeTemplate>): WelcomeTemplate {
   const d = defaultWelcomeTemplate();
-  const steps = (Array.isArray(t.steps) ? t.steps : d.steps).slice(0, 12).map((x) => ({
+  const steps = (Array.isArray(t.steps) ? t.steps : d.steps).slice(0, 12).map((x) => x.auto === "connector" ? { title: "Install the Connector", time: "", text: "", sub: [] as string[], auto: "connector" as const, tag: undefined, button: undefined } : ({
     title: str(x.title, 120).trim(), time: str(x.time, 30).trim(), tag: str(x.tag, 40).trim() || undefined, text: str(x.text, 1500).trim(),
     sub: (Array.isArray(x.sub) ? x.sub : []).map((y) => str(y, 400).trim()).filter(Boolean).slice(0, 12),
     button: Array.isArray(x.button) && str(x.button[0], 60).trim() && str(x.button[1], 500).trim() ? [str(x.button[0], 60).trim(), str(x.button[1], 500).trim()] as [string, string] : undefined,
-  })).filter((x) => x.title || x.text);
+  })).filter((x) => x.title || x.text || x.auto);
   if (!steps.length) throw new Error("Keep at least one step");
+  if (steps.filter((x) => x.auto).length > 1) throw new Error("The automatic Connector step can only be in once");
   for (const x of steps) if (x.button && !/^(https?:\/\/|\{app\})/.test(x.button[1])) throw new Error(`The button link in "${x.title}" must start with https:// or {app}`);
   const subject = str(t.subject, 150).replace(/\n/g, " ").trim();
   if (!subject) throw new Error("The subject can't be empty");
@@ -238,7 +247,7 @@ export function welcomeEmail(o: Person, tpl: WelcomeTemplate = welcomeTemplate()
     .replace(/\*\*(.+?)\*\*/g, `<b style="font-weight:800;color:${strong}">$1</b>`)
     .replace(/chrome:\/\/[a-z-]+/g, (c) => `<code style="background:#e7f0ea;padding:1px 5px;border-radius:4px;font-size:12px">${c}</code>`);
   const url = (v: string) => fill(v);
-  const steps = tpl.steps;
+  const steps = tpl.steps.map((st) => (st.auto === "connector" ? connectorStep() : st));
 
   const text = [
     `${plain(tpl.heading)}`, "",
