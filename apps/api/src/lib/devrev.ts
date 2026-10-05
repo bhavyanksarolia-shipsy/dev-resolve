@@ -371,13 +371,27 @@ export async function resolveFields(sample: TicketSummary): Promise<ResolveField
 }
 
 export interface WorkRow extends TicketSummary { actual_close_date?: string; applies_to_part?: { id: string; name?: string } }
-/** Every ticket matching a works.list filter (follows cursors, capped). */
-export async function listAllWorks(body: Record<string, unknown>, max = 1000): Promise<WorkRow[]> {
+/**
+ * Just the fields the dashboard, ticket list and counts use. A full DevRev ticket is ~9 KB (email body, SLA trackers,
+ * schema fragments…); a long period means thousands of them, which ran the server out of memory.
+ */
+export const slimWork = (w: WorkRow): WorkRow => ({
+  id: w.id, display_id: w.display_id, title: w.title, subtype: w.subtype, severity: w.severity,
+  created_date: w.created_date, modified_date: w.modified_date, actual_close_date: w.actual_close_date,
+  stage: w.stage && { name: w.stage.name, display_name: w.stage.display_name, ...(w.stage.stage && { stage: { id: w.stage.stage.id, name: w.stage.stage.name } }) },
+  account: w.account && { id: w.account.id, display_name: w.account.display_name },
+  applies_to_part: w.applies_to_part && { id: w.applies_to_part.id, name: w.applies_to_part.name },
+  owned_by: (w.owned_by ?? []).map((o) => ({ ...(o as { id?: string }).id && { id: (o as { id?: string }).id }, display_name: o.display_name, full_name: o.full_name })),
+  custom_fields: typeof w.custom_fields?.tnt__pod === "string" ? { tnt__pod: w.custom_fields.tnt__pod } : {},
+});
+
+/** Every ticket matching a works.list filter (follows cursors, capped). `slim`: keep only what the lists need. */
+export async function listAllWorks(body: Record<string, unknown>, max = 1000, slim = false): Promise<WorkRow[]> {
   const out: WorkRow[] = [];
   let cursor: string | undefined;
   while (out.length < max) {
     const r = await call<{ works: WorkRow[]; next_cursor?: string }>("/works.list", { ...body, limit: 100, ...(cursor && { cursor }) });
-    out.push(...r.works);
+    out.push(...(slim ? r.works.map(slimWork) : r.works));
     cursor = r.next_cursor;
     if (!cursor) break;
   }
@@ -400,7 +414,7 @@ const PERIOD_MAX = 5000;
  */
 async function listInSlices(body: Record<string, unknown>, field: "created_date" | "actual_close_date", bounds: [number, number][], max = PERIOD_MAX) {
   const parts = await Promise.all(bounds.map(([a, b]) =>
-    listAllWorks({ ...body, [field]: { type: "range", after: new Date(a - 1000).toISOString(), before: new Date(b + 1000).toISOString() }, sort_by: [`${field}:desc`] }, max)));
+    listAllWorks({ ...body, [field]: { type: "range", after: new Date(a - 1000).toISOString(), before: new Date(b + 1000).toISOString() }, sort_by: [`${field}:desc`] }, max, true)));
   const seen = new Set<string>();
   const rows = parts.flat().filter((w) => (seen.has(w.id) ? false : (seen.add(w.id), true)));
   const at = (w: WorkRow) => +new Date((field === "created_date" ? w.created_date : w.actual_close_date) ?? 0);

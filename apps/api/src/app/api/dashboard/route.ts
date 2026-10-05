@@ -1,5 +1,5 @@
 import { accountRole, getAccount, getDevrevView, inTicketScope, ticketScope } from "@/lib/config";
-import { countClosed, countCreated, openTickets, ticketsClosedSince, ticketsCreatedSince, devrevUrl, type WorkRow } from "@/lib/devrev";
+import { clearListCache, countClosed, countCreated, openTickets, ticketsClosedSince, ticketsCreatedSince, devrevUrl, type WorkRow } from "@/lib/devrev";
 import { apiError } from "@/lib/apiError";
 import { q } from "@/lib/db";
 
@@ -31,6 +31,7 @@ export async function GET(req: Request) {
   if (+new Date(to) - +new Date(from) > 365 * DAY) from = istDay(+new Date(`${to}T00:00:00Z`) - 365 * DAY);
   const days = Math.round((+new Date(to) - +new Date(from)) / DAY) + 1;
   const ids = account.ids;
+  if (sp.get("refresh") === "1") clearListCache(); // the Refresh button: fresh from DevRev, not the 60 s copy
   const since = new Date(+new Date(`${from}T00:00:00Z`) - IST);          // from, 00:00 IST
   const until = new Date(+new Date(`${to}T00:00:00Z`) - IST + DAY - 1);  // to, 23:59:59 IST
   try {

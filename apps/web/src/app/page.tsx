@@ -63,17 +63,22 @@ function Dashboard() {
     router.replace(`/?${sp.toString()}`, { scroll: false });
   };
 
-  const [data, setData] = useState<{ key: string; d: Dash } | null>(null);
+  const [data, setData] = useState<{ key: string; tick: number; d: Dash } | null>(null);
+  const [tick, setTick] = useState(0); // Refresh / Try again: same view, fetched again (fresh from DevRev)
   const key = `${account}|${range.from}|${range.to}|${podParam ?? ""}`;
   useEffect(() => {
     let live = true;
-    fetch(`/api/dashboard?account=${account}&from=${range.from}&to=${range.to}${podParam != null ? `&pod=${encodeURIComponent(podParam)}` : ""}`, { cache: "no-store" })
-      .then(async (r) => { const d = await r.json(); if (live) setData({ key, d: r.ok ? d : { error: d.error || `HTTP ${r.status}` } as Dash }); })
-      .catch(() => live && setData({ key, d: { error: "Couldn't reach the backend" } as Dash }));
+    const failed = (status: number, error?: string) => error || (status === 502 || status === 503 || status === 504
+      ? "The server didn't answer in time — it may be restarting. Try again in a moment."
+      : `HTTP ${status}`);
+    fetch(`/api/dashboard?account=${account}&from=${range.from}&to=${range.to}${podParam != null ? `&pod=${encodeURIComponent(podParam)}` : ""}${tick ? "&refresh=1" : ""}`, { cache: "no-store" })
+      .then(async (r) => { const d = await r.json().catch(() => ({})); if (live) setData({ key, tick, d: r.ok ? d : { error: failed(r.status, d.error) } as Dash }); })
+      .catch(() => live && setData({ key, tick, d: { error: "Couldn't reach the server — check your connection and try again." } as Dash }));
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [key, tick]);
   const d = data?.key === key ? data.d : null;
+  const refreshing = !!data && data.key === key && data.tick !== tick;
   // Tickets table link with filters (the dashboard's Pod filter carries over unless the link sets its own).
   const t = (q: string) => `/tickets?account=${account}${podPick?.length && !q.includes("fpod=") ? `&fpod=${encodeURIComponent(podPick.join("|"))}` : ""}${q}`;
   const podChoices = (d?.pod_status?.rows ?? []).filter((r) => r.open && inPodScope(scope, r.pod)).map((r) => ({ value: r.pod, count: r.open }));
@@ -87,11 +92,23 @@ function Dashboard() {
         <AccountPicker accounts={withAllClients(accounts, allOpen)} value={account} onChange={(slug) => go({ account: slug })} />
         <PodPicker allLabel={scope.length === 1 ? scope[0] : scope.length ? `${scope.length} Pods` : "All Pods"} value={podPick} choices={podChoices} onChange={(v) => go({ pod: v && v.length && v.length < podChoices.length ? v.join("|") : null })} />
         <DateRangePicker range={range} onChange={(r) => go(r.key === "custom" ? { range: "custom", from: r.from, to: r.to } : { range: r.key, from: null, to: null })} />
+        <button type="button" onClick={() => setTick((n) => n + 1)} disabled={refreshing || !d} title="Fetch the latest from DevRev"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-3 py-2 text-sm font-medium shadow-sm hover:border-accent hover:text-accent-strong disabled:opacity-60">
+          <span className={`inline-block ${refreshing ? "spin" : ""}`}>↻</span>{refreshing ? "Refreshing…" : "Refresh"}
+        </button>
       </div>
       {loaded && <HealthBanner account={account === "all" || isAccountEntry(account) ? undefined : account} compact />}
 
       {d?.inactive && <div className="card p-5 text-sm">This client is marked <b>inactive</b> — nothing is fetched for it. <Link href={t("")} className="text-accent-strong underline">Open its tickets anyway</Link>.</div>}
-      {d?.error && <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-bad ring-1 ring-red-200">{d.error}</div>}
+      {d?.error && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-bad ring-1 ring-red-200">
+          <span>{d.error}</span>
+          <button type="button" onClick={() => setTick((n) => n + 1)} disabled={refreshing}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-panel px-3 py-1.5 text-xs font-medium text-fg ring-1 ring-red-200 hover:ring-bad disabled:opacity-60">
+            <span className={`inline-block ${refreshing ? "spin" : ""}`}>↻</span>{refreshing ? "Trying…" : "Try again"}
+          </button>
+        </div>
+      )}
       {!d && <Skeleton />}
 
       {d && !d.inactive && !d.error && (
