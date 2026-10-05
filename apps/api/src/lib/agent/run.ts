@@ -201,7 +201,10 @@ function resolveScope(accountId: string | undefined, displayId: string, accountN
   return { account, candidates: withGroup(account, candidates) };
 }
 
-export async function startInvestigation(ticketRef: string, startedBy = "unknown"): Promise<number> {
+/** What a reviewer told the agent when starting (ticket page): text and files, saved with the investigation. */
+export interface StartNotes { text: string; files: { name: string; type: string; size: number; body: Buffer }[] }
+
+export async function startInvestigation(ticketRef: string, startedBy = "unknown", notes?: StartNotes): Promise<number> {
   const ticket = await getTicket(ticketRef);
   const { account, candidates } = resolveScope(ticket.account?.id, ticket.display_id, ticket.account?.display_name);
   // The unique index investigations_one_running_per_ticket makes this the lock: a second start fails here.
@@ -214,7 +217,14 @@ export async function startInvestigation(ticketRef: string, startedBy = "unknown
     const [cur] = await q<{ started_by: string | null }>(`SELECT started_by FROM investigations WHERE ticket_display=$1 AND status='running'`, [ticket.display_id]);
     throw new LockedError(`${ticket.display_id} is already being investigated${cur?.started_by ? ` (started by ${cur.started_by})` : ""}`);
   });
-  void runAgent(row.id, ticket, account, candidates, startedBy).catch(async (e) => {
+  // Files from the start notes are kept like chat files (shown in the trail, sent to the agent).
+  const noteFiles: (StartNotes["files"][number] & { id: number })[] = [];
+  for (const f of notes?.files ?? []) {
+    const [r] = await q<{ id: number }>(`INSERT INTO chat_files (investigation_id, name, type, size, data, uploaded_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [row.id, f.name, f.type, f.size, f.body, startedBy]);
+    noteFiles.push({ ...f, id: Number(r.id) });
+  }
+  void runAgent(row.id, ticket, account, candidates, startedBy, notes && (notes.text || noteFiles.length) ? { text: notes.text, files: noteFiles } : undefined).catch(async (e) => {
     await q(`UPDATE investigations SET status='failed', error=$2, finished_at=now() WHERE id=$1`, [row.id, String(e?.message || e)]);
   });
   return row.id;
@@ -227,7 +237,8 @@ export function cancelInvestigation(id: number) {
 const userMessage = (content: SDKUserMessage["message"]["content"]): SDKUserMessage =>
   ({ type: "user", parent_tool_use_id: null, message: { role: "user", content } }) as SDKUserMessage;
 
-async function runAgent(id: number, ticket: Awaited<ReturnType<typeof getTicket>>, account: Account, candidates: Account[], startedBy?: string) {
+async function runAgent(id: number, ticket: Awaited<ReturnType<typeof getTicket>>, account: Account, candidates: Account[], startedBy?: string,
+  notes?: { text: string; files: { id: number; name: string; type: string; size: number; body: Buffer }[] }) {
   const comments = await listTimeline(ticket.id).then(withEmailSenders).catch(() => []);
   // Screenshots / files the customer attached (incl. images inside email.eml) go to the agent as real images.
   const attachments = await listAttachments(comments).catch(() => []);
@@ -246,9 +257,19 @@ async function runAgent(id: number, ticket: Awaited<ReturnType<typeof getTicket>
     const files = attachmentBlocks.filter((b) => b.type === "text" && b.text.startsWith("Attached file")).length;
     await step(id, seq++, "system", null, { attachments: attachments.map((a) => a.name) }, `Read ${attachments.length} attachment(s) · ${imgs} image(s), ${docs} PDF(s), ${emails} email(s), ${files} file(s) sent to the agent${attachments.some((a) => a.signature) ? ` (${attachments.filter((a) => a.signature).length} signature logo(s) skipped)` : ""}`);
   }
+  // The reviewer's starting notes: shown at the top of the trail, and given to the agent as leads to verify.
+  let notesText = "", noteBlocks: Awaited<ReturnType<typeof uploadedFileBlocks>> = [];
+  if (notes) {
+    await step(id, seq++, "user_message", null, { by: startedBy, start_notes: true, files: notes.files.map(({ id: fid, name, type, size }) => ({ id: fid, name, type, size })) }, notes.text || "(files only)");
+    noteBlocks = notes.files.length ? await uploadedFileBlocks(notes.files) : [];
+    notesText = `\n\n## Notes from the reviewer who started this (${startedBy ?? "a reviewer"})\n` +
+      `These are LEADS from someone who knows the account — use them to aim your checks, but VERIFY each one against logs / DB / code; ` +
+      `they are not evidence. If the data contradicts a note, say so plainly in the RCA.\n\n${notes.text || "(no text)"}` +
+      (notes.files.length ? `\n\nThey attached: ${notes.files.map((f) => f.name).join(", ")} — included below; read them.` : "");
+  }
   await runSession({
     id, account, candidates, seq,
-    message: userMessage([{ type: "text", text: ticketPrompt(ticket, comments) + attachmentList }, ...attachmentBlocks]),
+    message: userMessage([{ type: "text", text: ticketPrompt(ticket, comments) + attachmentList + notesText }, ...attachmentBlocks, ...noteBlocks]),
     kind: "investigation",
     by: startedBy,
   });

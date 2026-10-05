@@ -153,6 +153,13 @@ function Inbox() {
     return { ...t, ...(c.stage && { stage: c.stage, stage_name: c.stage }), ...(c.pod !== undefined && { pod: c.pod }), ...(c.part && { part: c.part, default_part: false }), ...(c.owner && { owner: c.owner }) };
   }).filter((t) => inPodScope(scope, t.pod)) ?? null, [fresh, local, scope]);
   const saved = (id: string) => (c: SavedChange) => { setLocal((m) => ({ ...m, [id]: { ...m[id], ...c } })); refresh(); window.dispatchEvent(new Event("tickets-refreshed")); };
+  // An investigation started from the ticket page (sheet over this table): reload the rows so its status shows
+  // ("investigating…"); the 10 s refresh while something runs then picks up when it finishes.
+  useEffect(() => {
+    const on = () => setTick((n) => n + 1);
+    window.addEventListener("investigations-changed", on);
+    return () => window.removeEventListener("investigations-changed", on);
+  }, []);
   // Changes made in the ticket sheet (opened over this table) arrive as "ticket-changed".
   useEffect(() => {
     const on = (e: Event) => { const { id, change } = (e as CustomEvent<{ id: string; change: SavedChange }>).detail; setLocal((m) => ({ ...m, [id]: { ...m[id], ...change } })); };

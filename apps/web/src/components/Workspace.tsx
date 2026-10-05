@@ -156,13 +156,27 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
     return true;
   }
 
-  async function start() {
+  // Starting from the ticket page: optional notes + files the agent gets as leads to verify.
+  const [startOpen, setStartOpen] = useState(false);
+  const [startNotes, setStartNotes] = useState("");
+  const [startFiles, setStartFiles] = useState<File[]>([]);
+  async function start(withNotes = true) {
     setBusy(true);
-    const r = await fetch("/api/investigations", { method: "POST", body: JSON.stringify({ ticket: ticketId }) });
+    const notes = withNotes ? startNotes.trim() : "";
+    const files = withNotes ? startFiles : [];
+    let body: BodyInit;
+    if (files.length) {
+      const fd = new FormData();
+      fd.append("ticket", ticketId); fd.append("notes", notes);
+      for (const f of files) fd.append("files", f);
+      body = fd;
+    } else body = JSON.stringify({ ticket: ticketId, notes });
+    const r = await fetch("/api/investigations", { method: "POST", body });
     window.dispatchEvent(new Event("investigations-changed")); // header count
     const d = await r.json();
     setBusy(false);
     if (!r.ok) return notify({ title: "Investigation not started", message: d.error, tone: "error" });
+    setStartOpen(false); setStartNotes(""); setStartFiles([]);
     setRca("");
     setInvId(d.id);
   }
@@ -290,10 +304,12 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
             <span className="rounded-md bg-bg px-3 py-1.5 text-sm text-muted ring-1 ring-line">{data.investigate_blocked}</span>
           )}
           {(!inv || inv.status === "failed") && data.can_investigate !== false && (
-            <button onClick={start} disabled={busy || running || data.routing.kind === "unmapped" || data.routing.kind === "ignored"}
-              className="rounded-md bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50">
-              {inv ? "Try again" : "Start investigation"}
-            </button>
+            !startOpen && (
+              <button onClick={() => setStartOpen(true)} disabled={busy || running || data.routing.kind === "unmapped" || data.routing.kind === "ignored"}
+                className="rounded-md bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50">
+                {inv ? "Try again" : "Start investigation"}
+              </button>
+            )
           )}
           {inv && (
             <span className="text-sm text-muted">
@@ -314,6 +330,11 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
             </div>
           )}
         </div>
+        {startOpen && (!inv || inv.status === "failed") && (
+          <StartNotes notes={startNotes} files={startFiles} busy={busy} retry={!!inv}
+            onNotes={setStartNotes} onFiles={setStartFiles}
+            onStart={() => start(true)} onSkip={() => start(false)} onCancel={() => { setStartOpen(false); setStartNotes(""); setStartFiles([]); }} />
+        )}
         {canChat && mode === "chat" ? (
           <ChatPanel invId={inv!.id} steps={steps} busy={!!inv!.chat_running} rca={inv!.draft_rca} rcaVersion={inv!.rca_version}
             confidence={inv!.confidence} rcaAt={inv!.finished_at} onSend={sendChat} onOpenRca={() => setMode("rca")} />
@@ -650,6 +671,52 @@ function StoppedCard({ inv, checks }: { inv: Investigation; checks: number }) {
         </p>
         {!cancelled && <details className="mt-1 text-xs text-muted"><summary className="cursor-pointer">Details</summary><p className="mt-1 break-words font-mono">{err}</p></details>}
       </div>
+    </div>
+  );
+}
+
+const START_ACCEPT = "image/*,.pdf,.eml,.xlsx,.xls,.xlsm,.csv,.tsv,.ods,.docx,.txt,.log,.json,.xml,.html,.md,.yaml,.yml,.sql";
+
+/** Before an investigation starts: what the reviewer already knows (optional) — the agent treats it as leads to verify. */
+function StartNotes({ notes, files, busy, retry, onNotes, onFiles, onStart, onSkip, onCancel }: {
+  notes: string; files: File[]; busy: boolean; retry: boolean;
+  onNotes: (v: string) => void; onFiles: (f: File[]) => void; onStart: () => void; onSkip: () => void; onCancel: () => void;
+}) {
+  const picker = useRef<HTMLInputElement>(null);
+  const [drag, setDrag] = useState(false);
+  const add = (list: FileList | File[] | null) => { if (list?.length) onFiles([...files, ...Array.from(list)].slice(0, 10)); };
+  return (
+    <div className={`chat-pop relative mb-4 rounded-xl border bg-panel p-4 shadow-sm ${drag ? "border-accent" : "border-line"}`}
+      onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
+      onDrop={(e) => { e.preventDefault(); setDrag(false); add(e.dataTransfer.files); }}>
+      <div className="font-medium">Anything the agent should know? <span className="font-normal text-muted">(optional)</span></div>
+      <p className="mt-0.5 text-xs text-muted">e.g. the warehouse or order to look at, which client it really is, when it started. The agent checks these against logs, database and code — they aren&apos;t taken as fact.</p>
+      <textarea autoFocus value={notes} onChange={(e) => onNotes(e.target.value)} rows={3} disabled={busy}
+        onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onStart(); } if (e.key === "Escape") { e.stopPropagation(); onCancel(); } }}
+        onPaste={(e) => { const imgs = Array.from(e.clipboardData.files); if (imgs.length) { e.preventDefault(); add(imgs.map((f, i) => (f.name && f.name !== "image.png" ? f : new File([f], `pasted-${Date.now()}-${i}.png`, { type: f.type })))); } }}
+        placeholder="Optional — leave empty to let the agent work it out"
+        className="mt-3 block w-full resize-y rounded-lg border border-line bg-bg px-3 py-2 text-sm outline-none focus:border-accent focus:bg-panel focus:ring-2 focus:ring-accent-soft" />
+      {files.length > 0 && (
+        <ul className="mt-2 flex flex-wrap gap-1.5">
+          {files.map((f, i) => (
+            <li key={`${f.name}-${i}`} className="inline-flex items-center gap-1 rounded-md bg-accent-soft py-0.5 pl-2 pr-1 text-xs text-accent-strong">
+              {f.name}<button type="button" aria-label={`Remove ${f.name}`} onClick={() => onFiles(files.filter((_, j) => j !== i))} className="grid h-4 w-4 place-items-center rounded hover:bg-white/70">✕</button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <input ref={picker} type="file" multiple accept={START_ACCEPT} className="hidden" onChange={(e) => { add(e.target.files); e.target.value = ""; }} />
+        <button type="button" onClick={() => picker.current?.click()} disabled={busy} className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-muted hover:bg-bg hover:text-fg disabled:opacity-50">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5" /></svg>
+          Attach
+        </button>
+        <button type="button" onClick={onCancel} disabled={busy} className="ml-auto rounded-md px-3 py-1.5 text-sm text-muted hover:text-fg">Cancel</button>
+        <button type="button" onClick={onSkip} disabled={busy} className="rounded-md border border-line px-3 py-1.5 text-sm hover:border-accent">Start without notes</button>
+        <button type="button" onClick={onStart} disabled={busy || (!notes.trim() && !files.length)} title={!notes.trim() && !files.length ? "Add a note or a file — or use Start without notes" : undefined}
+          className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-strong disabled:opacity-50">{busy ? "Starting…" : retry ? "Try again with notes" : "Start with notes"}</button>
+      </div>
+      {drag && <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-xl border-2 border-dashed border-accent bg-accent-soft/80 text-sm font-semibold text-accent-strong">Drop files to attach</div>}
     </div>
   );
 }
