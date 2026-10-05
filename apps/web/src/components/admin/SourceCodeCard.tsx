@@ -31,6 +31,15 @@ export function SourceCodeCard() {
     pendingRef.current = pendingRef.current.filter((x) => x.repo !== repo);
     setPending(pendingRef.current);
   }
+  // Repos being (re)connected one by one from their row.
+  const [rowBusy, setRowBusy] = useState<string[]>([]);
+  async function connectRepo(repo: string) {
+    setRowBusy((b) => [...b, repo]);
+    const r = await post<{ status?: Status; message?: string }>("/api/admin/code", { action: "sync_repo", repo });
+    setRowBusy((b) => b.filter((x) => x !== repo));
+    setMsg({ ok: !r.error, text: r.error || r.message || "Connected" });
+    if (r.status) setS(r.status);
+  }
   const load = useCallback(() => fetch("/api/admin/code", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((d) => d && setS(d)).catch(() => {}), []);
   useEffect(() => { load(); }, [load]);
 
@@ -129,6 +138,12 @@ export function SourceCodeCard() {
                     {x?.error ? <span className="truncate text-xs text-bad" title={x.error}>{x.error}</span>
                       : hash ? <><code className="rounded bg-bg px-1.5 py-0.5 text-xs text-muted">{hash}</code><span className="w-24 text-right text-xs text-muted">{date}</span></>
                       : <span className="text-xs text-muted" title={r.present ? "Downloaded (not a git checkout)" : "Not downloaded yet — Sync now"}>{r.present ? "downloaded" : "not downloaded yet"}</span>}
+                    {s.base && (rowBusy.includes(r.repo)
+                      ? <span className="flex items-center gap-1.5 text-xs text-accent-strong"><span className="spin inline-block" aria-hidden>↻</span>Connecting…</span>
+                      : <button type="button" disabled={busy || s.syncing}
+                          className={`${btn} px-2.5 py-1 text-xs ${!r.present || x?.error ? "border-accent text-accent-strong" : ""}`}
+                          title={!r.present || x?.error ? "Download this repo from GitHub now" : "Download the latest from GitHub again"}
+                          onClick={() => connectRepo(r.repo)}>{!r.present || x?.error ? "Connect" : "Reconnect"}</button>)}
                     {(s.connected ?? []).includes(r.repo) && (
                       <button type="button" disabled={busy} title="Disconnect this repo" aria-label={`Disconnect ${r.repo}`}
                         onClick={async () => {

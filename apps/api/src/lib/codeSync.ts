@@ -105,6 +105,24 @@ export function syncCode(): Promise<SyncResult> {
   return running;
 }
 
+/** Connect / re-download ONE repo (the row's button in Admin → Connections → GitHub), without syncing the rest. */
+const syncingRepos = new Set<string>();
+export async function syncRepo(repo: string): Promise<RepoResult> {
+  if (!base()) return { repo, ok: false, error: "Source code isn't set up — add the GitHub address first (Edit)" };
+  if (syncingRepos.has(repo) || running) return { repo, ok: false, error: "A sync is already running — try again in a moment" };
+  syncingRepos.add(repo);
+  try {
+    mkdirSync(CODE_ROOT, { recursive: true });
+    const r = await syncOne(repo, githubToken());
+    const repos = [...(last?.repos ?? []).filter((x) => x.repo !== repo), r];
+    last = { at: new Date().toISOString(), ok: repos.every((x) => x.ok), repos };
+    console.log(`[code] ${r.ok ? `synced ${r.repo} → ${r.commit}` : `FAILED ${r.repo}: ${r.error}`}`);
+    return r;
+  } finally {
+    syncingRepos.delete(repo);
+  }
+}
+
 /** For code_search: if a repo is missing on this server, try one sync (at most every 5 minutes) before giving up. */
 let lastAttempt = 0;
 export async function ensureRepos(repos: string[]) {
