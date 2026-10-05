@@ -3,6 +3,8 @@ import { q } from "@/lib/db";
 import { hashPassword, passwordProblem } from "@/lib/passwords";
 import { rmSync } from "node:fs";
 import { connectorStatus, userAuthDir } from "@/lib/connector";
+import { adminSetting } from "@/lib/config";
+import { mailSettings, sendMail, welcomeEmail } from "@/lib/mail";
 
 /** User access control: list everyone; add / promote / demote / disable / enable / sign out / set a password. */
 export async function GET(req: Request) {
@@ -18,13 +20,15 @@ export async function GET(req: Request) {
   return Response.json({
     users: users.map((u) => { const c = connectorStatus(String(u.name)); return { ...u, connector_online: c.online, connector_kind: c.version?.startsWith("ext-") ? "extension" : c.version ? "terminal" : null }; }),
     me: g.user.name,
+    mail_configured: mailSettings().configured, // the Add user form offers the welcome email only when this is on
   });
 }
 
 export async function POST(req: Request) {
   const g = await requireAdmin(req);
   if (g.error) return g.error;
-  const b = (await req.json().catch(() => ({}))) as { action?: string; name?: string; email?: string; admin?: boolean; password?: string; display_name?: string; confirm?: string };
+  const b = (await req.json().catch(() => ({}))) as { action?: string; name?: string; email?: string; admin?: boolean; password?: string; display_name?: string; confirm?: string;
+    welcome?: boolean; appUrl?: string };
   const name = (b.name || "").trim().toLowerCase();
   const self = name === g.user.name;
   const one = async (sql: string, params: unknown[]) => {
@@ -47,7 +51,17 @@ export async function POST(req: Request) {
         await q(`INSERT INTO app_users (name, display_name, email, password_hash, is_admin) VALUES ($1, $2, $3, $4, $5)`,
           [username, display, email, b.password ? await hashPassword(b.password) : null, !!b.admin]);
         const how = [b.password && `username "${username}" + password`, email && `Google (${email})`].filter(Boolean).join(" or ");
-        return Response.json({ ok: true, message: `Added ${display || username} as ${b.admin ? "admin" : "member"} — they sign in with ${how}` });
+        // Welcome email with the onboarding steps (the password itself is never emailed).
+        let mailNote = "";
+        if (b.welcome && email) {
+          const [me] = await q<{ display_name: string | null }>(`SELECT display_name FROM app_users WHERE name=$1`, [g.user.name]);
+          const m = welcomeEmail({ name: display || username, username, email, admin: !!b.admin, addedBy: me?.display_name || g.user.name,
+            appUrl: adminSetting("APP_URL") || String(b.appUrl || ""), hasPassword: !!b.password });
+          mailNote = await sendMail({ to: email, subject: m.subject, text: m.text, html: m.html })
+            .then(() => ` · welcome email sent to ${email}`)
+            .catch((e: Error) => ` · welcome email NOT sent (${e.message.slice(0, 120)})`);
+        }
+        return Response.json({ ok: true, message: `Added ${display || username} as ${b.admin ? "admin" : "member"} — they sign in with ${how}${mailNote}` });
       }
       case "role":
         if (self && !b.admin) throw new Error("You can't remove your own admin role (ask another admin)");

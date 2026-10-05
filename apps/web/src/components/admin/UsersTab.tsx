@@ -12,9 +12,9 @@ const when = (d: string | null) => (d ? new Date(d).toLocaleString("en-IN", { da
 
 /** User access control: everyone who can sign in, and what they may do. */
 export function UsersTab() {
-  const [data, setData] = useState<{ users: U[]; me: string } | null>(null);
+  const [data, setData] = useState<{ users: U[]; me: string; mail_configured?: boolean } | null>(null);
   const setMsg = toast;
-  const blank = { display_name: "", name: "", email: "", password: "", admin: false };
+  const blank = { display_name: "", name: "", email: "", password: "", admin: false, welcome: true };
   const [nu, setNu] = useState(blank);
   const [pw, setPw] = useState<{ name: string; value: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -46,7 +46,7 @@ export function UsersTab() {
     setBusy(true);
     const r = await post("/api/admin/users", body);
     setBusy(false);
-    setMsg({ ok: !r.error, text: r.error || r.message || "Done" });
+    setMsg({ ok: !r.error && !/NOT sent/.test(r.message ?? ""), text: r.error || r.message || "Done" }); // added but the email failed → shown as a warning
     if (!r.error) { setPw(null); await load(); }
     return !r.error;
   }
@@ -154,7 +154,7 @@ export function UsersTab() {
       {adding && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4 backdrop-blur-[2px]" onMouseDown={(e) => e.target === e.currentTarget && setAdding(false)}>
           <form role="dialog" aria-modal="true" aria-labelledby="add-user-title" className="w-full max-w-lg space-y-4 rounded-2xl bg-panel p-6 shadow-xl ring-1 ring-line"
-            onSubmit={async (e) => { e.preventDefault(); const ok = await act({ action: "add", ...nu }); if (ok) { setNu(blank); setAdding(false); } }}>
+            onSubmit={async (e) => { e.preventDefault(); const ok = await act({ action: "add", ...nu, welcome: nu.welcome && !!data?.mail_configured && nu.email.includes("@"), appUrl: window.location.origin }); if (ok) { setNu(blank); setAdding(false); } }}>
             <div>
               <h2 id="add-user-title" className="font-semibold">Add user</h2>
               <p className="mt-1 text-xs text-muted">They can sign in with a password, their Google account, or both.</p>
@@ -172,6 +172,17 @@ export function UsersTab() {
                 { value: "admin", label: "Admin", hint: "Also manages users, clients and connections" },
               ]} />
             </Field>
+            {(() => {
+              const can = !!data?.mail_configured && nu.email.includes("@");
+              return (
+                <label className={`flex items-start gap-2.5 rounded-lg bg-bg px-3 py-2.5 text-sm ${can ? "cursor-pointer" : "text-muted"}`}>
+                  <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[var(--accent)]" disabled={!can} checked={can && nu.welcome} onChange={(e) => setNu({ ...nu, welcome: e.target.checked })} />
+                  <span>Send a welcome email with the onboarding steps
+                    <span className="block text-xs text-muted">{!data?.mail_configured ? "Set up email first: Admin → Connections → Email" : !nu.email.includes("@") ? "Needs their email above" : `To ${nu.email} — sign-in link, My Pods, Connector, VPN, how to investigate. Passwords are never emailed.`}</span>
+                  </span>
+                </label>
+              );
+            })()}
             <div className="flex justify-end gap-2 pt-1">
               <button type="button" className="rounded-lg border border-line px-4 py-2 text-sm font-medium hover:border-accent" onClick={() => setAdding(false)}>Cancel</button>
               <button type="submit" className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-strong disabled:opacity-40"

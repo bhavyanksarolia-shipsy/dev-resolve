@@ -6,6 +6,7 @@ import type { AdminConfig, Conn } from "./types";
 import { btn, btnPrimary, Field, input, post, Rows, Switch } from "./ui";
 import { SourceCodeCard } from "./SourceCodeCard";
 import { ServiceCard } from "./ServiceCard";
+import { EmailCard } from "./EmailCard";
 import { TableCard, usePaged } from "@/components/TableTools";
 
 type Kind = "opensearch" | "metabase";
@@ -143,7 +144,7 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
     const r = await post<{ ok: boolean; message: string }>("/api/admin/connections/test", { ...payload(toForm(c, kind)), existing: c.name });
     setChecks((m) => ({ ...m, [key]: { ok: !r.error && r.ok, message: r.error || r.message, at: Date.now() } }));
   }
-  type Sub = "github" | "opensearch" | "metabase" | "claude" | "devrev";
+  type Sub = "github" | "opensearch" | "metabase" | "claude" | "devrev" | "email";
   const [sub, setSub] = useState<Sub>("github");
   const [connQ, setConnQ] = useState("");
   const usedBy = (c: Conn, kind: Kind) => cfg.accounts.filter((a) => kind === "metabase" ? a.metabase_project === c.name
@@ -192,7 +193,7 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
   const paged = usePaged(rows.filter(({ c, x }) => !connQ || [c.name, x.displayName, x.host].some((v) => v?.toLowerCase().includes(connQ.toLowerCase()))), { noun: "connections", reset: `${sub}|${connQ}` });
   const TABS: [Sub, string, number | null][] = [
     ["github", "GitHub", null], ["opensearch", "OpenSearch", cfg.connections.filter((c) => c.opensearch).length],
-    ["metabase", "Metabase", cfg.connections.filter((c) => c.metabase).length], ["claude", "Claude", null], ["devrev", "DevRev", null],
+    ["metabase", "Metabase", cfg.connections.filter((c) => c.metabase).length], ["claude", "Claude", null], ["devrev", "DevRev", null], ["email", "Email", null],
   ];
   const newHostNeedsExt = form && form.vpn && !form.vpnSuffix && (() => { try { const h = new URL(form.url).hostname; return !cfg.vpnSuffixes.some((s) => h.endsWith(s)); } catch { return false; } })();
   const authChoices: Auth[] = form?.kind === "metabase" ? ["password", "api_key", "google"] : ["none", "password", "google"];
@@ -211,6 +212,7 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
       )}
       {sub === "github" && <SourceCodeCard />}
       {(sub === "claude" || sub === "devrev") && <ServiceCard key={sub} which={sub} />}
+      {sub === "email" && <EmailCard />}
       {(sub === "opensearch" || sub === "metabase") && (
         <>
           <TableCard title={sub === "metabase" ? "Metabase connections" : "OpenSearch connections"} pager={paged.pager}

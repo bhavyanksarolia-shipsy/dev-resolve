@@ -25,7 +25,7 @@ function Status({ s }: { s: Svc }) {
 }
 
 /** The current token, masked; the eye fetches the full value (admins only, logged) and the copy button copies it. */
-function TokenField({ which, preview }: { which: "claude" | "devrev"; preview: string | null }) {
+export function TokenField({ which, preview }: { which: "claude" | "devrev" | "email"; preview: string | null }) {
   const [full, setFull] = useState<string | null>(null);
   const [shown, setShown] = useState(false);
   const [busy, setBusy] = useState(false);

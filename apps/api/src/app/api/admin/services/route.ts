@@ -5,6 +5,8 @@ import { q } from "@/lib/db";
 import { writeEnv } from "@/lib/adminConfig";
 import { adminSetting, readConfigEnv } from "@/lib/config";
 import { agentModel, DEFAULT_MODEL } from "@/lib/agent/run";
+import { checkMail, mailSettings, sendMail, welcomeEmail } from "@/lib/mail";
+import { q as dbq } from "@/lib/db";
 
 const source = (k: string) => (readConfigEnv()[k] ? "saved in Admin" : process.env[k] ? "server variable" : null);
 /** First 7 and last 4 characters only — the full value is sent just when an admin clicks the eye. */
@@ -51,6 +53,7 @@ export async function GET(req: Request) {
       owner: detectedOwner ?? adminSetting("CLAUDE_TOKEN_OWNER") ?? null, ownerDetected: !!detectedOwner, ownerNote: adminSetting("CLAUDE_TOKEN_OWNER") ?? "",
     },
     devrev: { ...devrev, as: me ? `${me.dev_user.display_name} <${me.dev_user.email}>` : null, tokenSource: source("DEVREV_TOKEN"), tokenPreview: mask(adminSetting("DEVREV_TOKEN")) },
+    email: (() => { const m = mailSettings(); return { configured: m.configured, user: m.user, host: m.host, port: m.port, fromName: m.fromName, tokenPreview: mask(m.pass) }; })(),
   });
 }
 
@@ -61,10 +64,20 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const g = await requireAdmin(req);
   if (g.error) return g.error;
-  const b = (await req.json().catch(() => ({}))) as { service?: string; apiKey?: string; oauthToken?: string; model?: string; token?: string; owner?: string; clear?: string[]; reveal?: boolean };
+  const b = (await req.json().catch(() => ({}))) as { service?: string; apiKey?: string; oauthToken?: string; model?: string; token?: string; owner?: string; clear?: string[]; reveal?: boolean;
+    user?: string; pass?: string; fromName?: string; host?: string; port?: number; check?: boolean; test?: boolean; appUrl?: string };
+  if (b.service === "email" && b.check) return Response.json(await checkMail());
+  if (b.service === "email" && b.test) {
+    // A sample welcome mail to the admin themself — shows exactly what new people receive.
+    const [me] = await dbq<{ email: string | null; display_name: string | null }>(`SELECT email, display_name FROM app_users WHERE name=$1`, [g.user.name]);
+    if (!me?.email) return Response.json({ error: "Your login has no email to send the test to" }, { status: 400 });
+    const m = welcomeEmail({ name: me.display_name || g.user.name, username: g.user.name, email: me.email, admin: true, addedBy: me.display_name || g.user.name, appUrl: adminSetting("APP_URL") || b.appUrl || "", hasPassword: false });
+    try { await sendMail({ to: me.email, subject: `[Test] ${m.subject}`, text: m.text, html: m.html }); return Response.json({ ok: true, message: `Test email sent to ${me.email}` }); }
+    catch (e) { return Response.json({ error: `Couldn't send: ${(e as Error).message.slice(0, 200)}` }, { status: 400 }); }
+  }
   // The eye button: the full current token, for admins only; every reveal is logged.
   if (b.reveal) {
-    const value = b.service === "claude" ? claudeToken() : b.service === "devrev" ? adminSetting("DEVREV_TOKEN") ?? "" : "";
+    const value = b.service === "claude" ? claudeToken() : b.service === "devrev" ? adminSetting("DEVREV_TOKEN") ?? "" : b.service === "email" ? mailSettings().pass : "";
     console.log(`[admin] ${g.user.name} revealed the ${b.service} token`);
     return Response.json({ value: value || null });
   }
@@ -86,6 +99,14 @@ export async function POST(req: Request) {
     if (b.owner !== undefined) updates.CLAUDE_TOKEN_OWNER = String(b.owner).replace(/[\r\n]/g, " ").trim().slice(0, 120) || null;
   } else if (b.service === "devrev") {
     if (v(b.token)) updates.DEVREV_TOKEN = v(b.token);
+  } else if (b.service === "email") {
+    const user = String(b.user ?? "").trim();
+    if (user && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(user)) return Response.json({ error: "The sending address doesn't look like an email" }, { status: 400 });
+    if (user) updates.SMTP_USER = user;
+    if (v(b.pass)) updates.SMTP_PASS = v(b.pass); // Google shows App Passwords with spaces; they're not part of it
+    if (b.fromName !== undefined) updates.SMTP_FROM_NAME = String(b.fromName).replace(/["\r\n<>]/g, "").trim().slice(0, 60) || null;
+    if (b.host !== undefined) updates.SMTP_HOST = String(b.host).trim() || null;
+    if (b.port !== undefined) updates.SMTP_PORT = Number(b.port) > 0 ? String(Number(b.port)) : null;
   } else return Response.json({ error: "unknown service" }, { status: 400 });
   if (!Object.keys(updates).length) return Response.json({ error: "Nothing to change" }, { status: 400 });
   await writeEnv(updates, g.user.name);
