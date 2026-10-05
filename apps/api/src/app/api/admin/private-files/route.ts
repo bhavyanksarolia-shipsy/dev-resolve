@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { sessionUser } from "@/lib/auth";
@@ -24,13 +24,28 @@ async function admin(req: Request) {
 const info = (p: string) => (existsSync(p) ? { present: true, size: statSync(p).size, updated: statSync(p).mtime.toISOString() } : { present: false });
 
 export async function GET(req: Request) {
-  if (!(await admin(req))) return Response.json({ error: "Admins only" }, { status: 403 });
+  const u = await admin(req);
+  if (!u) return Response.json({ error: "Admins only" }, { status: 403 });
+  // ?download=projects.json|config.env — the current file (admins only; config.env holds credentials, so it's logged).
+  const dl = new URL(req.url).searchParams.get("download");
+  if (dl) {
+    if (dl !== "projects.json" && dl !== "config.env") return Response.json({ error: "Unknown file" }, { status: 400 });
+    const f = path.join(CONFIG_DIR, dl);
+    if (!existsSync(f)) return Response.json({ error: `${dl} isn't saved yet` }, { status: 404 });
+    console.log(`[private-files] ${u.name} downloaded ${dl}`);
+    const stamp = new Date().toISOString().slice(0, 10);
+    return new Response(readFileSync(f), { headers: {
+      "Content-Type": dl.endsWith(".json") ? "application/json" : "text/plain; charset=utf-8",
+      "Content-Disposition": `attachment; filename="${dl.replace(".", `-${stamp}.`)}"`, "Cache-Control": "no-store",
+    } });
+  }
   // What's saved in the database (kept across deploys) — sizes and dates only, never contents.
   const { rows } = await getPool().query(
     `SELECT CASE WHEN path LIKE 'knowledge/%' THEN 'knowledge' ELSE split_part(path, '/', 2) END AS k,
-            sum(length(content))::int AS size, max(updated_at) AS updated, count(*)::int AS files
+            sum(length(content))::int AS size, max(updated_at) AS updated, count(*)::int AS files,
+            (array_agg(updated_by ORDER BY updated_at DESC))[1] AS by
        FROM private_files WHERE path LIKE 'config/%' OR path LIKE 'knowledge/%' GROUP BY 1`);
-  const db = Object.fromEntries(rows.map((r) => [r.k, { present: true, size: r.size, updated: new Date(r.updated).toISOString(), files: r.files }]));
+  const db = Object.fromEntries(rows.map((r) => [r.k, { present: true, size: r.size, updated: new Date(r.updated).toISOString(), files: r.files, by: r.by ?? null }]));
   return Response.json({
     "projects.json": db["projects.json"] ?? info(path.join(CONFIG_DIR, "projects.json")),
     "config.env": db["config.env"] ?? info(path.join(CONFIG_DIR, "config.env")),
