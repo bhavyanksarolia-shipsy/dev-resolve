@@ -5,6 +5,7 @@ import { q } from "@/lib/db";
 import { writeEnv } from "@/lib/adminConfig";
 import { adminSetting, readConfigEnv } from "@/lib/config";
 import { agentModel, DEFAULT_MODEL } from "@/lib/agent/run";
+import { AGENT_LIMITS, AGENT_TOOLS, SENT_TO_ANTHROPIC, storageSummary } from "@/lib/agent/transparency";
 import { checkMail, mailSettings, revokeGmail, sendMail, welcomeEmail } from "@/lib/mail";
 import { q as dbq } from "@/lib/db";
 
@@ -36,11 +37,12 @@ async function claudeTokenOwner(): Promise<string | null> {
 export async function GET(req: Request) {
   const g = await requireAdmin(req);
   if (g.error) return g.error;
-  const [claude, devrev, me, [usage], detectedOwner] = await Promise.all([
+  const [claude, devrev, me, [usage], detectedOwner, stored] = await Promise.all([
     checkClaude(), checkDevrev(), whoAmI().catch(() => null),
     q<{ runs: number; cost: number; tokens: number }>(`SELECT count(*)::int runs, COALESCE(sum(cost_usd),0)::float cost,
        COALESCE(sum(input_tokens + output_tokens),0)::float tokens FROM agent_runs WHERE started_at > now() - interval '30 days'`),
     claudeTokenOwner(),
+    storageSummary(),
   ]);
   return Response.json({
     claude: {
@@ -51,6 +53,8 @@ export async function GET(req: Request) {
       tokenPreview: mask(claudeToken()),
       // Who the key / token belongs to: from Anthropic for a login token, else the name an admin entered.
       owner: detectedOwner ?? adminSetting("CLAUDE_TOKEN_OWNER") ?? null, ownerDetected: !!detectedOwner, ownerNote: adminSetting("CLAUDE_TOKEN_OWNER") ?? "",
+      // Transparency: what the agent can do, its limits, what's sent to Anthropic and what Dev Resolve keeps.
+      tools: AGENT_TOOLS, limits: AGENT_LIMITS, sent: SENT_TO_ANTHROPIC, stored,
     },
     devrev: { ...devrev, as: me ? `${me.dev_user.display_name} <${me.dev_user.email}>` : null, tokenSource: source("DEVREV_TOKEN"), tokenPreview: mask(adminSetting("DEVREV_TOKEN")) },
     email: (() => { const m = mailSettings(); return { configured: m.configured, method: m.method, gmailSender: m.gmailSender, smtp: m.smtp, user: m.user, host: m.host, port: m.port, fromName: m.fromName, tokenPreview: mask(m.pass) }; })(),

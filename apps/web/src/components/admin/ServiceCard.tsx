@@ -6,7 +6,9 @@ import { btn, btnPrimary, Field, input, post, Select } from "./ui";
 interface Svc { status: string; message: string; fix?: string; host?: string }
 interface Data {
   claude: Svc & { method: string; model: string; defaultModel: string; usage30: { runs: number; cost: number; tokens: number };
-    tokenPreview: string | null; owner: string | null; ownerDetected: boolean; ownerNote: string };
+    tokenPreview: string | null; owner: string | null; ownerDetected: boolean; ownerNote: string;
+    tools: { group: string; tools: { name: string; does: string }[] }[]; limits: string[]; sent: string;
+    stored: { label: string; what: string; count: number; bytes: number; since: string | null }[] };
   devrev: Svc & { as: string | null; tokenSource: string | null; tokenPreview: string | null };
 }
 let cache: Promise<Data | null> | null = null;
@@ -61,6 +63,55 @@ export function TokenField({ which, preview }: { which: "claude" | "devrev" | "e
 
 function Row({ k, v }: { k: string; v: React.ReactNode }) {
   return <div className="grid grid-cols-[9rem_1fr] gap-2 py-1.5 text-sm"><dt className="text-muted">{k}</dt><dd className="min-w-0 break-words">{v}</dd></div>;
+}
+
+const size = (b: number) => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : b >= 1024 ? `${Math.round(b / 1024)} KB` : `${b} B`);
+
+/** What the agent can do, what limits it, what goes to Anthropic and what Dev Resolve keeps — for transparency. */
+function ClaudeTransparency({ c }: { c: Data["claude"] }) {
+  const h = "mb-2 text-xs font-semibold uppercase tracking-wide text-muted";
+  return (
+    <div className="mt-5 grid gap-5 border-t border-line pt-5 lg:grid-cols-2">
+      <div>
+        <h4 className={h}>What the agent can do</h4>
+        <div className="overflow-hidden rounded-lg border border-line">
+          <table className="w-full text-sm">
+            <tbody className="divide-y divide-line">
+              {c.tools.map((g) => g.tools.map((t, i) => (
+                <tr key={t.name} className="align-top">
+                  {i === 0 && <td rowSpan={g.tools.length} className="w-32 bg-bg px-3 py-2 text-xs font-medium text-muted">{g.group}</td>}
+                  <td className="px-3 py-2"><code className="text-xs">{t.name}</code><div className="text-muted">{t.does}</div></td>
+                </tr>
+              )))}
+            </tbody>
+          </table>
+        </div>
+        <h4 className={`${h} mt-5`}>Limits</h4>
+        <ul className="list-disc space-y-1 pl-5 text-sm">{c.limits.map((l) => <li key={l}>{l}</li>)}</ul>
+      </div>
+      <div>
+        <h4 className={h}>What we keep (in Dev Resolve&apos;s database and server)</h4>
+        <div className="overflow-hidden rounded-lg border border-line">
+          <table className="w-full text-sm">
+            <thead className="bg-bg text-left text-xs text-muted"><tr><th className="px-3 py-2 font-medium">Data</th><th className="px-3 py-2 text-right font-medium">Items</th><th className="px-3 py-2 text-right font-medium">Size</th></tr></thead>
+            <tbody className="divide-y divide-line">
+              {c.stored.map((s) => (
+                <tr key={s.label} className="align-top">
+                  <td className="px-3 py-2"><div className="font-medium">{s.label}</div><div className="text-muted">{s.what}{s.since && <> · since {new Date(s.since).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</>}</div></td>
+                  <td className="px-3 py-2 text-right tabular-nums">{s.count.toLocaleString("en-IN")}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-muted">{size(s.bytes)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <h4 className={`${h} mt-5`}>Sent to Anthropic (Claude)</h4>
+        <p className="text-sm">{c.sent}</p>
+        <h4 className={`${h} mt-5`}>Not kept</h4>
+        <p className="text-sm">The Claude token is stored only as a server setting (shown masked; every reveal is logged). Log and database passwords stay in the connection settings or each person&apos;s own sign-ins — never in investigation records, and never sent to Claude.</p>
+      </div>
+    </div>
+  );
 }
 
 /** Claude or DevRev: read-only status card (keys are set on the server — Railway variables). */
@@ -154,6 +205,7 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
           ? "A key or model saved here overrides the server variables (ANTHROPIC_API_KEY / CLAUDE_CODE_OAUTH_TOKEN / DEV_RESOLVE_MODEL)."
           : "A token saved here overrides the server variable DEVREV_TOKEN. Posts and updates appear in DevRev as this user."}
       </p>
+      {which === "claude" && <ClaudeTransparency c={d.claude} />}
     </section>
   );
 }
