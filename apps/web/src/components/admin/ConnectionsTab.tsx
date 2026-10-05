@@ -7,7 +7,6 @@ import { btn, btnPrimary, Field, input, post, Rows, Switch } from "./ui";
 import { SourceCodeCard } from "./SourceCodeCard";
 import { ServiceCard } from "./ServiceCard";
 import { EmailCard } from "./EmailCard";
-import { SkillsCard } from "./SkillsCard";
 import { TableCard, usePaged } from "@/components/TableTools";
 
 type Kind = "opensearch" | "metabase";
@@ -217,7 +216,6 @@ export function ConnectionsTab({ cfg, reload }: { cfg: AdminConfig; reload: () =
       )}
       {sub === "github" && <SourceCodeCard />}
       {(sub === "claude" || sub === "devrev") && <ServiceCard key={sub} which={sub} />}
-      {sub === "claude" && <SkillsCard />}
       {sub === "email" && <EmailCard />}
       {(sub === "opensearch" || sub === "metabase") && (
         <>

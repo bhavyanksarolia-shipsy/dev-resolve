@@ -1,5 +1,6 @@
 import { requireAdmin } from "@/lib/adminGuard";
 import { getAccounts } from "@/lib/config";
+import { q } from "@/lib/db";
 import { promptPreview } from "@/lib/agent/run";
 import { assignSkill, deleteSkill, listSkills, readSkill, saveSkill, skillAssignments } from "@/lib/skills";
 
@@ -21,8 +22,14 @@ export async function GET(req: Request) {
     return md == null ? Response.json({ error: "No such client" }, { status: 404 }) : Response.json({ markdown: md });
   }
   const used = skillAssignments();
+  // Who uploaded each skill and when: from its saved copy in the database (the file's date resets on every deploy).
+  const saved = new Map((await q<{ path: string; updated_by: string | null; updated_at: string }>(
+    `SELECT path, updated_by, updated_at FROM private_files WHERE path LIKE '.claude/skills/%'`).catch(() => [])).map((r) => [r.path.split("/")[2], r]));
   return Response.json({
-    skills: listSkills().map((s) => ({ ...s, ...used(s.name) })),
+    skills: listSkills().map((s) => {
+      const r = saved.get(s.name);
+      return { ...s, ...used(s.name), updatedBy: s.builtIn ? "Dev Resolve" : r?.updated_by ?? null, updatedAt: r?.updated_at ?? s.updatedAt };
+    }),
     clients: getAccounts().map((a) => ({ slug: a.slug, name: a.name, active: a.client_active !== false })).sort((a, b) => a.name.localeCompare(b.name)),
   });
 }

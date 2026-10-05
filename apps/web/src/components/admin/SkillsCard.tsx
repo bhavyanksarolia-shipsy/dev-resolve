@@ -5,7 +5,7 @@ import { Markdown } from "@/components/Markdown";
 import { SlideSheet } from "@/components/SlideSheet";
 import { btn, btnPrimary, MultiSelect, post, Select } from "./ui";
 
-interface Skill { name: string; description: string; bytes: number; updatedAt: string; builtIn: boolean; all: boolean; clients: string[] }
+interface Skill { name: string; description: string; bytes: number; updatedAt: string; updatedBy: string | null; builtIn: boolean; all: boolean; clients: string[] }
 interface Client { slug: string; name: string; active: boolean }
 type Viewing = { kind: "skill"; name: string } | { kind: "prompt"; slug: string };
 
@@ -79,48 +79,54 @@ export function SkillsCard() {
   const link = "text-accent-strong underline-offset-2 hover:underline disabled:opacity-40";
   const options = d.clients.map((c) => ({ value: c.slug, label: c.name, hint: c.active ? undefined : "inactive" }));
 
+  const act = "rounded-md border border-line bg-panel px-2 py-1 text-xs font-medium transition hover:border-accent hover:text-accent-strong disabled:opacity-40";
+  const th = "px-3 py-2 font-medium";
   return (
-    <section className="card mt-4 p-5">
+    <section className="mt-5 border-t border-line pt-5">
       <input ref={file} type="file" accept=".md,.markdown,text/markdown,text/plain" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); }} />
-      <div className="mb-1 flex flex-wrap items-center gap-3">
+      <div className="mb-3 flex flex-wrap items-center gap-3">
         <h3 className="font-semibold">Skills</h3>
-        <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs font-medium text-accent-strong">{d.skills.filter((s) => !s.builtIn).length} uploaded</span>
         <button className={`${btn} ml-auto`} onClick={() => { const c = d.clients.find((x) => x.active) ?? d.clients[0]; if (c) setViewing({ kind: "prompt", slug: c.slug }); }}>View built-in instructions</button>
-        <button className={btnPrimary} disabled={busy} onClick={() => pick(null)}>{busy ? "Uploading…" : "Upload skill"}</button>
+        <button className={btnPrimary} disabled={busy} onClick={() => pick(null)} title="A SKILL.md: name and description at the top, then the instructions">{busy ? "Uploading…" : "Upload skill"}</button>
       </div>
-      <p className="mb-3 text-xs text-muted">
-        A skill is a <code>SKILL.md</code>: a <code>---</code> block with <code>name:</code> and <code>description:</code> (when to use it), then the instructions in markdown.
-        The agent sees each skill&apos;s description and opens the full text when a ticket matches. Stored in Dev Resolve&apos;s database, never in the code repository.
-      </p>
-      <div className="overflow-hidden rounded-lg border border-line">
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto rounded-xl border border-line">
+        <table className="w-full min-w-[60rem] text-sm">
           <thead className="bg-bg text-left text-xs text-muted">
-            <tr><th className="px-3 py-2 font-medium">Skill</th><th className="px-3 py-2 font-medium">Used for</th><th className="px-3 py-2 text-right font-medium">Size</th><th className="px-3 py-2 font-medium">Updated</th><th className="px-3 py-2" /></tr>
+            <tr>
+              <th className={th}>Skill</th><th className={th}>Description</th><th className={th}>Used for</th>
+              <th className={`${th} text-right`}>Size</th><th className={th}>Updated by</th><th className={th}>Updated on</th><th className={`${th} text-right`}>Actions</th>
+            </tr>
           </thead>
           <tbody className="divide-y divide-line">
-            {!d.skills.length && <tr><td colSpan={5} className="px-3 py-6 text-center text-muted">No skills yet — upload a SKILL.md</td></tr>}
+            {!d.skills.length && <tr><td colSpan={7} className="px-3 py-6 text-center text-muted">No skills yet — upload a SKILL.md</td></tr>}
             {d.skills.map((s) => (
-              <tr key={s.name} className="align-top">
-                <td className="max-w-md px-3 py-2.5">
-                  <div className="flex items-center gap-2"><code className="text-[13px] font-medium">{s.name}</code>{s.builtIn && <span className="rounded bg-bg px-1.5 text-[10px] text-muted">built in</span>}</div>
-                  <div className="line-clamp-2 text-muted" title={s.description}>{s.description}</div>
+              <tr key={s.name} className="align-top transition hover:bg-bg/60">
+                <td className="whitespace-nowrap px-3 py-2.5">
+                  <code className="text-[13px] font-semibold">{s.name}</code>
+                  {s.builtIn && <span className="ml-2 rounded bg-bg px-1.5 py-0.5 text-[10px] text-muted">built in</span>}
                 </td>
+                <td className="max-w-md px-3 py-2.5"><div className="line-clamp-2 text-muted" title={s.description}>{s.description}</div></td>
                 <td className="px-3 py-2.5">
                   {assign?.name === s.name ? (
-                    <div className="flex min-w-72 flex-col gap-2">
-                      <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4 accent-[var(--accent)]" checked={assign.all} onChange={(e) => setAssign({ ...assign, all: e.target.checked })} />All clients (including ones added later)</label>
+                    <div className="flex min-w-64 flex-col gap-2">
+                      <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4 accent-[var(--accent)]" checked={assign.all} onChange={(e) => setAssign({ ...assign, all: e.target.checked })} />All clients (also ones added later)</label>
                       {!assign.all && <MultiSelect value={options.filter((o) => assign.clients.includes(o.value))} onChange={(v) => setAssign({ ...assign, clients: v.map((o) => o.value) })} options={options} placeholder="Choose clients…" searchPlaceholder="Search clients…" />}
                       <div className="flex gap-2"><button className={btnPrimary} disabled={busy} onClick={saveAssign}>Save</button><button className={btn} onClick={() => setAssign(null)}>Cancel</button></div>
                     </div>
-                  ) : <>{usedBy(s)}{!s.builtIn && <button className={`${link} ml-2 text-xs`} onClick={() => setAssign({ name: s.name, all: s.all, clients: s.clients })}>Change</button>}</>}
+                  ) : <div className="flex flex-wrap items-center gap-x-2">{usedBy(s)}{!s.builtIn && <button className={`${link} text-xs`} onClick={() => setAssign({ name: s.name, all: s.all, clients: s.clients })}>Change</button>}</div>}
                 </td>
                 <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-muted">{size(s.bytes)}</td>
+                <td className="whitespace-nowrap px-3 py-2.5">{s.updatedBy ?? <span className="text-muted">—</span>}</td>
                 <td className="whitespace-nowrap px-3 py-2.5 text-muted">{when(s.updatedAt)}</td>
-                <td className="whitespace-nowrap px-3 py-2.5 text-right text-xs">
-                  <button className={link} onClick={() => setViewing({ kind: "skill", name: s.name })}>View</button>
-                  <span className="text-line"> · </span><button className={link} onClick={() => download(s.name)}>Download</button>
-                  {!s.builtIn && <><span className="text-line"> · </span><button className={link} disabled={busy} onClick={() => pick(s.name)}>Replace</button>
-                    <span className="text-line"> · </span><button className="text-bad underline-offset-2 hover:underline" onClick={() => remove(s)}>Delete</button></>}
+                <td className="whitespace-nowrap px-3 py-2.5">
+                  <div className="flex justify-end gap-1.5">
+                    <button className={act} onClick={() => setViewing({ kind: "skill", name: s.name })}>View</button>
+                    <button className={act} onClick={() => download(s.name)}>Download</button>
+                    {!s.builtIn && <>
+                      <button className={act} disabled={busy} onClick={() => pick(s.name)}>Replace</button>
+                      <button className={`${act} text-bad hover:border-red-300 hover:text-bad`} onClick={() => remove(s)}>Delete</button>
+                    </>}
+                  </div>
                 </td>
               </tr>
             ))}

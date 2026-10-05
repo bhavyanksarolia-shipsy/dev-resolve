@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "@/components/Dialog";
 import { btn, btnPrimary, Field, input, post, Select } from "./ui";
+import { SkillsCard } from "./SkillsCard";
 
 interface Svc { status: string; message: string; fix?: string; host?: string }
 interface Data {
@@ -67,19 +68,35 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
 
 const size = (b: number) => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : b >= 1024 ? `${Math.round(b / 1024)} KB` : `${b} B`);
 
-/** What the agent can do, what limits it, what goes to Anthropic and what Dev Resolve keeps — for transparency. */
+/** A section that opens on click (closed at first): title + one-line summary, chevron on the right. */
+function Collapse({ title, summary, children }: { title: string; summary: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="overflow-hidden rounded-xl border border-line">
+      <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)}
+        className={`flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-bg ${open ? "bg-bg" : ""}`}>
+        <span className="text-sm font-semibold">{title}</span>
+        <span className="truncate text-xs text-muted">{summary}</span>
+        <svg className={`ml-auto shrink-0 text-muted transition-transform duration-200 ${open ? "rotate-180" : ""}`} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden><path d="m6 9 6 6 6-6" /></svg>
+      </button>
+      {open && <div className="chat-pop border-t border-line p-4">{children}</div>}
+    </div>
+  );
+}
+
+/** What the agent can do and what Dev Resolve keeps — each opens on click. */
 function ClaudeTransparency({ c }: { c: Data["claude"] }) {
   const h = "mb-2 text-xs font-semibold uppercase tracking-wide text-muted";
+  const tools = c.tools.reduce((n, g) => n + g.tools.length, 0);
   return (
-    <div className="mt-5 grid gap-5 border-t border-line pt-5 lg:grid-cols-2">
-      <div>
-        <h4 className={h}>What the agent can do</h4>
+    <div className="mt-4 space-y-3">
+      <Collapse title="What the agent can do" summary={`${tools} tools in ${c.tools.length} groups · ${c.limits.length} limits`}>
         <div className="overflow-hidden rounded-lg border border-line">
           <table className="w-full text-sm">
             <tbody className="divide-y divide-line">
               {c.tools.map((g) => g.tools.map((t, i) => (
                 <tr key={t.name} className="align-top">
-                  {i === 0 && <td rowSpan={g.tools.length} className="w-32 bg-bg px-3 py-2 text-xs font-medium text-muted">{g.group}</td>}
+                  {i === 0 && <td rowSpan={g.tools.length} className="w-36 bg-bg px-3 py-2 text-xs font-medium text-muted">{g.group}</td>}
                   <td className="px-3 py-2"><code className="text-xs">{t.name}</code><div className="text-muted">{t.does}</div></td>
                 </tr>
               )))}
@@ -88,9 +105,8 @@ function ClaudeTransparency({ c }: { c: Data["claude"] }) {
         </div>
         <h4 className={`${h} mt-5`}>Limits</h4>
         <ul className="list-disc space-y-1 pl-5 text-sm">{c.limits.map((l) => <li key={l}>{l}</li>)}</ul>
-      </div>
-      <div>
-        <h4 className={h}>What we keep (in Dev Resolve&apos;s database and server)</h4>
+      </Collapse>
+      <Collapse title="What we keep" summary={`in Dev Resolve's database and server · ${size(c.stored.reduce((n, s) => n + s.bytes, 0))}`}>
         <div className="overflow-hidden rounded-lg border border-line">
           <table className="w-full text-sm">
             <thead className="bg-bg text-left text-xs text-muted"><tr><th className="px-3 py-2 font-medium">Data</th><th className="px-3 py-2 text-right font-medium">Items</th><th className="px-3 py-2 text-right font-medium">Size</th></tr></thead>
@@ -105,11 +121,11 @@ function ClaudeTransparency({ c }: { c: Data["claude"] }) {
             </tbody>
           </table>
         </div>
-        <h4 className={`${h} mt-5`}>Sent to Anthropic (Claude)</h4>
-        <p className="text-sm">{c.sent}</p>
-        <h4 className={`${h} mt-5`}>Not kept</h4>
-        <p className="text-sm">The Claude token is stored only as a server setting (shown masked; every reveal is logged). Log and database passwords stay in the connection settings or each person&apos;s own sign-ins — never in investigation records, and never sent to Claude.</p>
-      </div>
+        <div className="mt-5 grid gap-5 md:grid-cols-2">
+          <div><h4 className={h}>Sent to Anthropic (Claude)</h4><p className="text-sm">{c.sent}</p></div>
+          <div><h4 className={h}>Not kept</h4><p className="text-sm">The Claude token is stored only as a server setting (shown masked; every reveal is logged). Log and database passwords stay in the connection settings or each person&apos;s own sign-ins — never in investigation records, and never sent to Claude.</p></div>
+        </div>
+      </Collapse>
     </div>
   );
 }
@@ -200,11 +216,8 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
         </>}
         {s.fix && <Row k="To fix" v={<span className="text-warn">{s.fix}</span>} />}
       </dl>
-      <p className="mt-3 text-xs text-muted">
-        {which === "claude"
-          ? "A key or model saved here overrides the server variables (ANTHROPIC_API_KEY / CLAUDE_CODE_OAUTH_TOKEN / DEV_RESOLVE_MODEL)."
-          : "A token saved here overrides the server variable DEVREV_TOKEN. Posts and updates appear in DevRev as this user."}
-      </p>
+      {which === "devrev" && <p className="mt-3 text-xs text-muted">A token saved here overrides the server variable DEVREV_TOKEN. Posts and updates appear in DevRev as this user.</p>}
+      {which === "claude" && <SkillsCard />}
       {which === "claude" && <ClaudeTransparency c={d.claude} />}
     </section>
   );
