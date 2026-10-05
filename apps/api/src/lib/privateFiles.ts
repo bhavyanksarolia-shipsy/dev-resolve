@@ -11,7 +11,7 @@ export type Query = (sql: string, params?: unknown[]) => Promise<{ rows: Record<
 /** What counts as private state worth keeping (relative to the backend root). */
 export function isPrivate(rel: string) {
   rel = rel.split(path.sep).join("/");
-  if (rel === "config/projects.json" || rel === "config/config.env") return true;
+  if (rel === "config/projects.json" || rel === "config/config.env" || rel === "config/welcome-email.json") return true;
   if (rel.startsWith("knowledge/")) return !rel.startsWith("knowledge/_template/") && rel !== "knowledge/README.md" && !/\/\._/.test(rel);
   if (rel.startsWith(".auth/users/")) return true;
   // Agent skills uploaded in Admin (client-specific, so never in the public repo). metabase-sql ships with the code.
@@ -47,7 +47,7 @@ export function listLocal(root: string): string[] {
       else if (isPrivate(rel)) out.push(rel);
     }
   };
-  for (const f of ["config/projects.json", "config/config.env"]) if (existsSync(path.join(root, f))) out.push(f);
+  for (const f of ["config/projects.json", "config/config.env", "config/welcome-email.json"]) if (existsSync(path.join(root, f))) out.push(f);
   walk("knowledge");
   walk(".auth/users");
   walk(".claude/skills");

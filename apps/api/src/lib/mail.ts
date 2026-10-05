@@ -1,6 +1,9 @@
 import "server-only";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import nodemailer from "nodemailer";
-import { adminSetting } from "./config";
+import { adminSetting, CONFIG_DIR } from "./config";
+import { savePrivate } from "./privateStore";
 import { googleClientId, googleClientSecret } from "./google";
 import { settings } from "./settings";
 
@@ -69,8 +72,12 @@ export async function checkMail(): Promise<{ ok: boolean; message: string }> {
   if (!s.configured) return { ok: false, message: "Not set up — connect Gmail (or add an SMTP mailbox)" };
   try {
     if (s.method === "gmail") {
-      const p = await gmailApi("profile");
-      return { ok: true, message: `Connected to Gmail as ${p.emailAddress ?? s.gmailSender}` };
+      // Send-only permission can't read the mailbox (not even its profile), so check the token and what it allows.
+      const info = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(await gmailToken())}`, { signal: AbortSignal.timeout(10_000) })
+        .then((r) => r.json() as Promise<{ scope?: string; error_description?: string }>);
+      if (!String(info.scope ?? "").split(" ").includes("https://www.googleapis.com/auth/gmail.send"))
+        return { ok: false, message: "Connected, but without permission to send — click Reconnect Gmail and allow \"Send email on your behalf\"" };
+      return { ok: true, message: `Connected to Gmail as ${s.gmailSender} · allowed to send` };
     }
     await transport().verify();
     return { ok: true, message: `Signed in to ${s.host} as ${s.user}` };
@@ -112,43 +119,222 @@ export async function revokeGmail() {
 
 const esc = (v: string) => v.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
-/** The welcome mail: who added them, how to sign in, and the onboarding steps that make investigations work. */
-export function welcomeEmail(o: { name: string; username: string; email: string; admin: boolean; addedBy: string; appUrl: string; hasPassword: boolean }) {
+/** One onboarding step. Text fields take {placeholders} and **bold**; button = [label, link]. */
+export interface Step { title: string; time: string; tag?: string; text: string; sub?: string[]; button?: [string, string] }
+
+/** Everything an admin can edit in Admin → Connections → Email → Edit email (saved in config/welcome-email.json). */
+export interface WelcomeTemplate {
+  subject: string; heading: string; subheading: string; intro: string; buttonLabel: string;
+  stepsTitle: string; steps: Step[]; readyTitle: string; ready: string[]; needs: string; questions: string;
+}
+
+/** What {placeholders} the template can use, for the editor's hint. */
+export const WELCOME_PLACEHOLDERS: Record<string, string> = {
+  "{first}": "their first name", "{name}": "their full name", "{email}": "their email", "{username}": "their username",
+  "{addedBy}": "who added them", "{role}": "an admin / a member", "{app}": "Dev Resolve's address", "{signIn}": "how they sign in (Google, or Google + password)", "{steps}": "how many steps there are",
+};
+
+const TEMPLATE_FILE = path.join(CONFIG_DIR, "welcome-email.json");
+
+export function defaultWelcomeTemplate(): WelcomeTemplate {
+  const store = settings.extensionStoreUrl();
+  return {
+    subject: "Welcome to Dev Resolve",
+    heading: "Welcome aboard, {first} 👋",
+    subheading: "You're in as {role}. Setup takes about 10 minutes.",
+    intro: "**{addedBy}** added you to Dev Resolve. It investigates DevRev support tickets — it searches the client's logs, database and code, and drafts an evidence-based RCA for you to review.",
+    buttonLabel: "Open Dev Resolve",
+    stepsTitle: "Set up in {steps} steps",
+    steps: [
+      { title: "Sign in", time: "1 min", text: "Open Dev Resolve and {signIn}", button: ["Sign in", "{app}/login"] },
+      { title: "Pick your Pods", time: "1 min",
+        text: `Click the Pods filter at the top right (it shows "All Pods") and tick your team's Pods, e.g. WMS Inbound or WMS Outbound. Tick "No Pod" too if you also want new tickets nobody has triaged yet.` },
+      store
+        ? { title: "Add the Connector to Chrome", time: "2 min", tag: "once per laptop",
+            text: "It lets investigations reach systems that are only on the client VPN, through your own laptop. Click Add to Chrome, then open the Connector page — it links itself to you.",
+            button: ["Add to Chrome", store] }
+        : { title: "Install the Connector extension", time: "3 min", tag: "once per laptop",
+            text: "It lets investigations reach systems that are only on the client VPN, through your own laptop.",
+            sub: [
+              `Open the Connector page and click **Download the extension**.`,
+              "Unzip the downloaded file.",
+              `In Chrome, go to chrome://extensions and switch on **Developer mode** (top right).`,
+              `Click **Load unpacked** and choose the unzipped folder.`,
+              `Go back to the Connector page — it shows "Installed · linked to you".`,
+            ],
+            button: ["Open the Connector page", "{app}/connector"] },
+      { title: "Sign in to the tools", time: "2 min",
+        text: `On the Connector page, under Google sign-ins, click **Sign in to all missing** (app logs and the Google-login Metabase). Investigations use your own sign-ins.`,
+        button: ["Open the Connector page", "{app}/connector"] },
+      { title: "Connect the VPN", time: "1 min", tag: "Reliance tickets only",
+        text: `Before investigating Reliance tickets (VF, QC, JioMart 3P), connect the Cisco AnyConnect "ril" profile.` },
+      { title: "Investigate a ticket", time: "",
+        text: `Open Tickets, pick a ticket and click **Start investigation**. Add what you already know (order, warehouse, screenshots) — the agent checks it against logs, database and code. Review the RCA, ask follow-ups in Chat, then post it to DevRev's internal discussion.`,
+        button: ["Open Tickets", "{app}/tickets"] },
+    ],
+    readyTitle: "You're ready when",
+    ready: [`The bar at the top says "All connections OK"`, `The Connector page shows "Installed · linked to you"`, `"Start investigation" runs without a "connect the VPN" or "sign in" warning`],
+    needs: `**You'll need:** Chrome, your Shipsy Google account, and the Cisco AnyConnect "ril" VPN for Reliance tickets. No DevRev, GitHub, log or database passwords — admins set those up.`,
+    questions: "Questions? Reply to this email or ask **{addedBy}**.",
+  };
+}
+
+/** The saved template (edited in Admin), or the default. */
+export function welcomeTemplate(): { template: WelcomeTemplate; custom: boolean } {
+  try {
+    if (existsSync(TEMPLATE_FILE)) return { template: { ...defaultWelcomeTemplate(), ...JSON.parse(readFileSync(TEMPLATE_FILE, "utf8")) }, custom: true };
+  } catch { /* broken file → default */ }
+  return { template: defaultWelcomeTemplate(), custom: false };
+}
+
+const str = (v: unknown, max: number) => String(v ?? "").replace(/\r/g, "").slice(0, max);
+/** Clean up a template from the editor: known fields only, sane lengths, at most 12 steps. */
+export function cleanTemplate(t: Partial<WelcomeTemplate>): WelcomeTemplate {
+  const d = defaultWelcomeTemplate();
+  const steps = (Array.isArray(t.steps) ? t.steps : d.steps).slice(0, 12).map((x) => ({
+    title: str(x.title, 120).trim(), time: str(x.time, 30).trim(), tag: str(x.tag, 40).trim() || undefined, text: str(x.text, 1500).trim(),
+    sub: (Array.isArray(x.sub) ? x.sub : []).map((y) => str(y, 400).trim()).filter(Boolean).slice(0, 12),
+    button: Array.isArray(x.button) && str(x.button[0], 60).trim() && str(x.button[1], 500).trim() ? [str(x.button[0], 60).trim(), str(x.button[1], 500).trim()] as [string, string] : undefined,
+  })).filter((x) => x.title || x.text);
+  if (!steps.length) throw new Error("Keep at least one step");
+  for (const x of steps) if (x.button && !/^(https?:\/\/|\{app\})/.test(x.button[1])) throw new Error(`The button link in "${x.title}" must start with https:// or {app}`);
+  const subject = str(t.subject, 150).replace(/\n/g, " ").trim();
+  if (!subject) throw new Error("The subject can't be empty");
+  return {
+    subject, heading: str(t.heading, 150).trim() || d.heading, subheading: str(t.subheading, 300).trim(), intro: str(t.intro, 2000).trim(),
+    buttonLabel: str(t.buttonLabel, 60).trim() || d.buttonLabel, stepsTitle: str(t.stepsTitle, 80).trim(),
+    steps: steps.map((x) => ({ ...x, sub: x.sub.length ? x.sub : undefined })),
+    readyTitle: str(t.readyTitle, 80).trim(), ready: (Array.isArray(t.ready) ? t.ready : []).map((y) => str(y, 300).trim()).filter(Boolean).slice(0, 10),
+    needs: str(t.needs, 1000).trim(), questions: str(t.questions, 500).trim(),
+  };
+}
+
+export async function saveWelcomeTemplate(t: WelcomeTemplate | null, by: string) {
+  if (t) writeFileSync(TEMPLATE_FILE, JSON.stringify(t, null, 2) + "\n", { mode: 0o600 });
+  else rmSync(TEMPLATE_FILE, { force: true });
+  await savePrivate(TEMPLATE_FILE, by);
+}
+
+interface Person { name: string; username: string; email: string; admin: boolean; addedBy: string; appUrl: string; hasPassword: boolean }
+
+/**
+ * The welcome mail: who added them, how to sign in, and the onboarding steps that make investigations work.
+ * Email-safe HTML (tables + inline styles). The <style> block only adds polish — a gentle fade-in of the cards and a
+ * hover on buttons — in clients that support it (Apple Mail, iOS, Outlook for Mac); everything is fully visible without it.
+ */
+export function welcomeEmail(o: Person, tpl: WelcomeTemplate = welcomeTemplate().template) {
   const app = o.appUrl.replace(/\/+$/, "");
-  const first = o.name.split(/\s+/)[0] || o.username;
-  const signIn = o.hasPassword
-    ? `Sign in with Google (${o.email}), or with username "${o.username}" and the password ${o.addedBy} shares with you separately.`
-    : `Sign in with Google, using ${o.email}.`;
-  const steps: [string, string][] = [
-    ["Sign in", `Open ${app} and ${signIn.charAt(0).toLowerCase()}${signIn.slice(1)}`],
-    ["Pick your Pods", `Top right, "My Pods": tick your team's Pods (e.g. WMS Inbound / WMS Outbound). Tick "No Pod" too if you want new, untriaged tickets.`],
-    ["Add the Connector", `Open ${app}/connector and click "Add to Chrome" (once per laptop), then come back to that page. It lets investigations reach systems that are only on the client VPN, through your own laptop.`],
-    ["Sign in to the tools", `On the Connector page, click "Sign in to all missing" (app logs and the Google-login Metabase instances). Investigations use your own sign-ins.`],
-    ["Connect the VPN for Reliance", `Before investigating Reliance tickets (VF, QC, JioMart 3P), connect the Cisco AnyConnect "ril" profile.`],
-    ["Investigate a ticket", `Tickets → open a ticket → "Start investigation". You can add what you already know (order, warehouse, screenshots) — the agent checks it against logs, database and code. Review the RCA, ask follow-ups in Chat, then post it to DevRev's internal discussion.`],
-  ];
-  const ready = `You're ready when the status line at the top says "All connections OK" and "Start investigation" runs without a "connect the VPN" or "sign in" warning.`;
+  const vars: Record<string, string> = {
+    first: o.name.split(/\s+/)[0] || o.username, name: o.name || o.username, email: o.email, username: o.username,
+    addedBy: o.addedBy, role: o.admin ? "an admin" : "a member", app, steps: String(tpl.steps.length),
+    signIn: o.hasPassword
+      ? `click Sign in with Google, using ${o.email}. You can also use the username "${o.username}" and the password ${o.addedBy} shares with you separately.`
+      : `click Sign in with Google, using ${o.email}.`,
+  };
+  const fill = (v: string) => v.replace(/\{(\w+)\}/g, (m, k) => vars[k] ?? m);
+  const plain = (v: string) => fill(v).replace(/\*\*(.+?)\*\*/g, "$1");
+  // Escaped, then **bold** and chrome://… as code — nothing else from the template becomes HTML.
+  const rich = (v: string, strong = "#0f1f16") => esc(fill(v))
+    .replace(/\*\*(.+?)\*\*/g, `<b style="font-weight:800;color:${strong}">$1</b>`)
+    .replace(/chrome:\/\/[a-z-]+/g, (c) => `<code style="background:#e7f0ea;padding:1px 5px;border-radius:4px;font-size:12px">${c}</code>`);
+  const url = (v: string) => fill(v);
+  const steps = tpl.steps;
+
   const text = [
-    `Hi ${first},`, "",
-    `${o.addedBy} added you to Dev Resolve as ${o.admin ? "an admin" : "a member"}. Dev Resolve investigates DevRev support tickets — it searches the client's logs, database and code and drafts an evidence-based RCA for you to review.`, "",
-    "Getting started:",
-    ...steps.map(([t, d], i) => `${i + 1}. ${t} — ${d}`), "",
-    ready, "",
-    "You'll need: Chrome, your Shipsy Google account, and the Cisco AnyConnect \"ril\" VPN for Reliance tickets. No DevRev, GitHub, log or database passwords — those are set up by admins.", "",
-    `Questions? Reply to this email or ask ${o.addedBy}.`, "",
+    `${plain(tpl.heading)}`, "",
+    plain(tpl.intro), "",
+    `${plain(tpl.buttonLabel)}: ${app}`, "",
+    ...(tpl.stepsTitle ? [plain(tpl.stepsTitle).toUpperCase(), ""] : []),
+    ...steps.flatMap((st, i) => [
+      `${i + 1}. ${plain(st.title)}${st.tag ? ` (${plain(st.tag)})` : ""}`,
+      `   ${plain(st.text)}`,
+      ...(st.sub ?? []).map((x, j) => `   ${String.fromCharCode(97 + j)}) ${plain(x)}`),
+      ...(st.button ? [`   → ${url(st.button[1])}`] : []), "",
+    ]),
+    ...(tpl.ready.length ? [plain(tpl.readyTitle).toUpperCase(), ...tpl.ready.map((r) => `   ✓ ${plain(r)}`), ""] : []),
+    ...(tpl.needs ? [plain(tpl.needs), ""] : []),
+    ...(tpl.questions ? [plain(tpl.questions), ""] : []),
     "— Dev Resolve",
   ].join("\n");
-  const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.55;color:#14251c;max-width:600px">
-<div style="background:#15803d;color:#fff;padding:18px 22px;border-radius:12px 12px 0 0"><b style="font-size:17px">Welcome to Dev Resolve</b></div>
-<div style="border:1px solid #dfe9e2;border-top:0;border-radius:0 0 12px 12px;padding:20px 22px">
-<p>Hi ${esc(first)},</p>
-<p><b>${esc(o.addedBy)}</b> added you to Dev Resolve as <b>${o.admin ? "an admin" : "a member"}</b>. Dev Resolve investigates DevRev support tickets — it searches the client's logs, database and code and drafts an evidence-based RCA for you to review.</p>
-<p style="margin:18px 0"><a href="${esc(app)}" style="background:#15803d;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;display:inline-block">Open Dev Resolve</a></p>
-<p style="margin-bottom:6px"><b>Getting started</b></p>
-<ol style="padding-left:20px;margin-top:0">${steps.map(([t, d]) => `<li style="margin-bottom:8px"><b>${esc(t)}</b> — ${esc(d)}</li>`).join("")}</ol>
-<p style="background:#eef7f1;border-radius:8px;padding:10px 12px">${esc(ready)}</p>
-<p style="color:#5b6b62;font-size:13px">You'll need: Chrome, your Shipsy Google account, and the Cisco AnyConnect "ril" VPN for Reliance tickets. No DevRev, GitHub, log or database passwords — admins set those up.</p>
-<p style="color:#5b6b62;font-size:13px">Questions? Reply to this email or ask ${esc(o.addedBy)}.</p>
-</div></div>`;
-  return { subject: "You've been added to Dev Resolve", text, html };
+
+  const font = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+  const btn = (label: string, href: string, big = false) =>
+    `<a class="dr-btn" href="${esc(href)}" style="display:inline-block;background:#15803d;color:#ffffff;text-decoration:none;font-weight:600;border-radius:8px;${big ? "padding:13px 26px;font-size:15px" : "padding:8px 14px;font-size:13px"}">${esc(label)}${big ? "" : " &rarr;"}</a>`;
+  const chip = (t: string, warm = false) =>
+    `<span style="display:inline-block;margin-left:6px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;vertical-align:middle;${warm ? "background:#fef3c7;color:#92400e" : "background:#e7f5ec;color:#166534"}">${esc(t)}</span>`;
+  const stepCard = (st: Step, i: number) => `
+<tr><td class="dr-step" style="padding:0 0 12px 0;animation-delay:${(0.15 + i * 0.12).toFixed(2)}s">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #dfe9e2;border-radius:12px;background:#ffffff">
+    <tr>
+      <td width="56" valign="top" style="padding:16px 0 16px 16px">
+        <div style="width:34px;height:34px;line-height:34px;border-radius:50%;background:#15803d;color:#ffffff;text-align:center;font-weight:700;font-size:15px">${i + 1}</div>
+      </td>
+      <td valign="top" style="padding:16px 18px 16px 12px">
+        <div style="font-size:16px;font-weight:700;color:#14251c">${esc(plain(st.title))}${st.tag ? chip(plain(st.tag), /reliance|only/i.test(st.tag)) : ""}${st.time ? `<span style="float:right;font-size:12px;color:#7a8a80;font-weight:500">&#9201; ${esc(st.time)}</span>` : ""}</div>
+        ${st.text ? `<div style="margin-top:6px;font-size:14px;line-height:1.6;color:#35463c">${rich(st.text)}</div>` : ""}
+        ${st.sub?.length ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:10px;width:100%;background:#f6faf7;border-radius:8px">${st.sub.map((x, j) => `
+          <tr><td width="28" valign="top" style="padding:7px 0 7px 12px;font-size:13px;font-weight:700;color:#15803d">${String.fromCharCode(97 + j)}</td>
+              <td style="padding:7px 12px 7px 0;font-size:13px;line-height:1.5;color:#35463c">${rich(x)}</td></tr>`).join("")}
+        </table>` : ""}
+        ${st.button ? `<div style="margin-top:12px">${btn(plain(st.button[0]), url(st.button[1]))}</div>` : ""}
+      </td>
+    </tr>
+  </table>
+</td></tr>`;
+
+  const html = `<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  @keyframes drUp { from { opacity: 0; transform: translateY(10px) } to { opacity: 1; transform: none } }
+  .dr-step { animation: drUp .6s ease-out both }
+  .dr-hero { animation: drUp .5s ease-out both }
+  .dr-btn { transition: background .2s, transform .2s }
+  .dr-btn:hover { background: #166534 !important; transform: translateY(-1px) }
+  @media (prefers-reduced-motion: reduce) { .dr-step, .dr-hero { animation: none } }
+  @media (max-width: 560px) { .dr-pad { padding-left: 16px !important; padding-right: 16px !important } }
+</style></head>
+<body style="margin:0;padding:0;background:#f1f6f2">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f6f2;font-family:${font}">
+<tr><td align="center" style="padding:28px 12px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:620px">
+
+  <tr><td class="dr-hero" style="background:#15803d;background-image:linear-gradient(135deg,#166534,#16a34a);border-radius:16px 16px 0 0;padding:28px 28px 26px">
+    <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+      <td style="width:44px;height:44px;background:#ffffff;border-radius:10px;text-align:center;font-weight:800;color:#15803d;font-size:16px">DR</td>
+      <td style="padding-left:12px;color:#d9f2e1;font-size:13px;font-weight:600;letter-spacing:.04em;text-transform:uppercase">Dev Resolve</td>
+    </tr></table>
+    <div style="margin-top:18px;color:#ffffff;font-size:24px;font-weight:700;line-height:1.3">${rich(tpl.heading, "#ffffff")}</div>
+    ${tpl.subheading ? `<div style="margin-top:6px;color:#d9f2e1;font-size:14px">${rich(tpl.subheading, "#ffffff")}</div>` : ""}
+  </td></tr>
+
+  <tr><td class="dr-pad" style="background:#ffffff;padding:24px 28px 8px;border-left:1px solid #dfe9e2;border-right:1px solid #dfe9e2">
+    ${tpl.intro ? `<p style="margin:0 0 14px;font-size:15px;line-height:1.6;color:#14251c">${rich(tpl.intro)}</p>` : ""}
+    <p style="margin:0 0 6px">${btn(plain(tpl.buttonLabel), app, true)}</p>
+  </td></tr>
+
+  <tr><td class="dr-pad" style="background:#ffffff;padding:18px 28px 10px;border-left:1px solid #dfe9e2;border-right:1px solid #dfe9e2">
+    ${tpl.stepsTitle ? `<div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#15803d;margin-bottom:12px">${esc(plain(tpl.stepsTitle))}</div>` : ""}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${steps.map(stepCard).join("")}</table>
+  </td></tr>
+
+  ${tpl.ready.length ? `<tr><td class="dr-pad" style="background:#ffffff;padding:6px 28px 22px;border-left:1px solid #dfe9e2;border-right:1px solid #dfe9e2">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef7f1;border-radius:12px">
+      <tr><td style="padding:16px 18px">
+        ${tpl.readyTitle ? `<div style="font-size:14px;font-weight:700;color:#14251c;margin-bottom:8px">${esc(plain(tpl.readyTitle))}</div>` : ""}
+        ${tpl.ready.map((r) => `<div style="font-size:14px;line-height:1.5;color:#35463c;padding:3px 0"><span style="color:#15803d;font-weight:700">&#10003;</span>&nbsp; ${rich(r)}</div>`).join("")}
+      </td></tr>
+    </table>
+  </td></tr>` : ""}
+
+  <tr><td class="dr-pad" style="background:#ffffff;border:1px solid #dfe9e2;border-top:0;border-radius:0 0 16px 16px;padding:0 28px 24px">
+    ${tpl.needs ? `<p style="margin:0 0 10px;font-size:13px;line-height:1.6;color:#5b6b62">${rich(tpl.needs, "#35463c")}</p>` : ""}
+    ${tpl.questions ? `<p style="margin:0;font-size:13px;line-height:1.6;color:#5b6b62">${rich(tpl.questions, "#14251c")}</p>` : ""}
+  </td></tr>
+
+  <tr><td align="center" style="padding:16px;font-size:12px;color:#8a9a90">Sent by Dev Resolve because an admin added you. Passwords are never sent by email.</td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>`;
+  return { subject: plain(tpl.subject), text, html };
 }

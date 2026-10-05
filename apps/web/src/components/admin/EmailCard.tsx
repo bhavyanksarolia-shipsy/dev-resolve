@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { toast } from "@/components/Dialog";
 import { btn, btnPrimary, Field, input, post } from "./ui";
 import { TokenField } from "./ServiceCard";
+import { WelcomeEmailEditor } from "./WelcomeEmailEditor";
 
 interface Mail { configured: boolean; method: "gmail" | "smtp" | null; gmailSender: string; smtp: boolean; user: string; host: string; port: number; fromName: string; tokenPreview: string | null }
 
@@ -16,6 +17,7 @@ export function EmailCard() {
   const [status, setStatus] = useState<{ ok: boolean; message: string } | null>(null);
   const [edit, setEdit] = useState(false);
   const [nameEdit, setNameEdit] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
   const [f, setF] = useState({ user: "", pass: "", fromName: "" });
   const load = () => fetch("/api/admin/services", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((d) => setM(d?.email ?? null)).catch(() => setM(null));
   useEffect(() => {
@@ -97,7 +99,7 @@ export function EmailCard() {
           ? <span>Gmail, via Google sign-in (send-only permission) · <button className="text-bad underline-offset-2 hover:underline disabled:opacity-50" disabled={!!busy} onClick={() => disconnect("gmail")}>Disconnect</button></span>
           : m.method === "smtp" ? <span>SMTP <code className="text-xs">{m.host}:{m.port}</code> with an App Password</span>
           : <span className="text-muted">none</span>)}
-        {m.smtp && row("App Password", <TokenField which="email" preview={m.tokenPreview} />)}
+        {m.method === "smtp" && row("App Password", <TokenField which="email" preview={m.tokenPreview} />)}
         {row("Sender name", <span>{m.fromName} <button className="ml-2 text-accent-strong underline-offset-2 hover:underline" onClick={() => setNameEdit(nameEdit === null ? m.fromName : null)}>{nameEdit === null ? "Change" : "Cancel"}</button>
           {nameEdit !== null && <span className="mt-2 flex gap-2"><input className={`${input} max-w-xs`} value={nameEdit} placeholder="Dev Resolve" onChange={(e) => setNameEdit(e.target.value)} />
             <button className={btnPrimary} disabled={!!busy} onClick={saveName}>Save</button></span>}</span>)}
@@ -105,8 +107,10 @@ export function EmailCard() {
           {m.smtp && <> · <button className="text-bad underline-offset-2 hover:underline disabled:opacity-50" disabled={!!busy} onClick={() => disconnect("smtp")}>Remove</button></>}
           {m.smtp && m.method === "gmail" && <span className="text-muted"> (not used while Gmail is connected)</span>}</span>)}
         {status && row("Connection", <span className={status.ok ? "text-ok" : "text-bad"}>{status.ok ? "● " : "○ "}{status.message}</span>)}
-        {row("Used for", "The welcome email when you add someone (sign-in link and onboarding steps). Passwords are never emailed.")}
+        {row("Welcome email", <span>Sign-in link and the onboarding steps, sent when you add someone. Passwords are never emailed.
+          <button className="ml-2 font-medium text-accent-strong underline-offset-2 hover:underline" onClick={() => setEditing(true)}>Edit email</button></span>)}
       </dl>
+      {editing && <WelcomeEmailEditor onClose={() => setEditing(false)} />}
     </section>
   );
 }

@@ -6,7 +6,7 @@ import { writeEnv } from "@/lib/adminConfig";
 import { adminSetting, readConfigEnv } from "@/lib/config";
 import { agentModel, DEFAULT_MODEL } from "@/lib/agent/run";
 import { AGENT_LIMITS, AGENT_TOOLS, SENT_TO_ANTHROPIC, storageSummary } from "@/lib/agent/transparency";
-import { checkMail, mailSettings, revokeGmail, sendMail, welcomeEmail } from "@/lib/mail";
+import { checkMail, cleanTemplate, defaultWelcomeTemplate, mailSettings, revokeGmail, saveWelcomeTemplate, sendMail, WELCOME_PLACEHOLDERS, welcomeEmail, welcomeTemplate, type WelcomeTemplate } from "@/lib/mail";
 import { q as dbq } from "@/lib/db";
 
 const source = (k: string) => (readConfigEnv()[k] ? "saved in Admin" : process.env[k] ? "server variable" : null);
@@ -69,7 +69,29 @@ export async function POST(req: Request) {
   const g = await requireAdmin(req);
   if (g.error) return g.error;
   const b = (await req.json().catch(() => ({}))) as { service?: string; apiKey?: string; oauthToken?: string; model?: string; token?: string; owner?: string; clear?: string[]; reveal?: boolean;
-    user?: string; pass?: string; fromName?: string; host?: string; port?: number; check?: boolean; test?: boolean; appUrl?: string; disconnect?: "gmail" | "smtp" };
+    user?: string; pass?: string; fromName?: string; host?: string; port?: number; check?: boolean; test?: boolean; appUrl?: string; disconnect?: "gmail" | "smtp";
+    template?: Partial<WelcomeTemplate>; saveTemplate?: boolean; previewTemplate?: boolean; resetTemplate?: boolean; getTemplate?: boolean };
+  // Admin → Email → Edit email: the welcome mail's text and steps.
+  if (b.service === "email" && b.getTemplate) {
+    const t = welcomeTemplate();
+    return Response.json({ template: t.template, custom: t.custom, defaults: defaultWelcomeTemplate(), placeholders: WELCOME_PLACEHOLDERS });
+  }
+  if (b.service === "email" && (b.previewTemplate || b.saveTemplate)) {
+    let t: WelcomeTemplate;
+    try { t = cleanTemplate(b.template ?? {}); } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+    if (b.saveTemplate) {
+      await saveWelcomeTemplate(t, g.user.name);
+      return Response.json({ ok: true, message: "Welcome email saved — used for the next person you add" });
+    }
+    // Preview as if sent to a sample new member, added by this admin.
+    const [me] = await dbq<{ display_name: string | null }>(`SELECT display_name FROM app_users WHERE name=$1`, [g.user.name]);
+    const m = welcomeEmail({ name: "Asha Rao", username: "asha.rao", email: "asha.rao@shipsy.io", admin: false, addedBy: me?.display_name || g.user.name, appUrl: adminSetting("APP_URL") || b.appUrl || "", hasPassword: false }, t);
+    return Response.json({ subject: m.subject, html: m.html });
+  }
+  if (b.service === "email" && b.resetTemplate) {
+    await saveWelcomeTemplate(null, g.user.name);
+    return Response.json({ ok: true, message: "Back to the default welcome email" });
+  }
   if (b.service === "email" && b.disconnect) {
     if (b.disconnect === "gmail") await revokeGmail();
     await writeEnv(b.disconnect === "gmail" ? { GMAIL_REFRESH_TOKEN: null, GMAIL_SENDER: null } : { SMTP_USER: null, SMTP_PASS: null }, g.user.name);

@@ -20,6 +20,7 @@ __pycache__/
 apps/api/config/config.env
 apps/api/config/projects.json
 apps/api/config/metabase_ratelimit.json
+apps/api/config/welcome-email.json
 apps/api/.auth/
 apps/api/.logs/
 apps/api/code/

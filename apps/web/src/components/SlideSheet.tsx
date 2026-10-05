@@ -20,7 +20,7 @@ export function BackArrow({ onClick }: { onClick: () => void }) {
  * A drawer that slides in from the right over the current page (admin forms). ← / Esc / clicking the dimmed area
  * slides it back out. Esc is ignored while typing in a field or when a menu inside is open.
  */
-export function SlideSheet({ title, subtitle, onClose, children }: { title: React.ReactNode; subtitle?: React.ReactNode; onClose: () => void; children: React.ReactNode }) {
+export function SlideSheet({ title, subtitle, onClose, children, wide }: { title: React.ReactNode; subtitle?: React.ReactNode; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
   const [closing, setClosing] = useState(false);
   const closingRef = useRef(false);
   const close = () => {
@@ -47,7 +47,7 @@ export function SlideSheet({ title, subtitle, onClose, children }: { title: Reac
   return (
     <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" data-slide-sheet>
       <div className={`absolute inset-0 bg-black/20 ${closing ? "sheet-fade-out" : "sheet-fade-in"}`} onClick={close} aria-hidden />
-      <div className={`absolute inset-y-0 right-0 w-full max-w-3xl overflow-y-auto border-l border-line bg-bg shadow-2xl ${closing ? "drawer-out" : "drawer-in"}`}>
+      <div className={`absolute inset-y-0 right-0 w-full ${wide ? "max-w-7xl" : "max-w-3xl"} overflow-y-auto border-l border-line bg-bg shadow-2xl ${closing ? "drawer-out" : "drawer-in"}`}>
         <div className="flex min-h-full flex-col px-4 pt-5 sm:px-6">
           <div className="mb-5 flex items-center gap-3">
             <BackArrow onClick={close} />
