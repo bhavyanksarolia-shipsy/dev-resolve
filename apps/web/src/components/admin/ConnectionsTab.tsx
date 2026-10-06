@@ -1,4 +1,5 @@
 "use client";
+import { CopyButton } from "@/components/CopyButton";
 import { SlideSheet } from "@/components/SlideSheet";
 import { toast } from "@/components/Dialog";
 import { useEffect, useRef, useState } from "react";
@@ -65,17 +66,20 @@ function SecretInput({ value, onChange, saved, conn, kind, field }: {
   }, [masked, saved, conn, kind, field]);
   return (
     <div className="relative">
-      <input className={`${input} ${masked ? "pr-9" : ""}`} type={shown ? "text" : "password"} autoComplete={field === "password" ? "new-password" : "off"}
+      <input className={`${input} ${masked && shown && value ? "pr-16" : masked || value ? "pr-9" : ""}`} type={shown ? "text" : "password"} autoComplete={field === "password" ? "new-password" : "off"}
         value={value} placeholder={saved && !loaded ? (busy ? "Loading…" : masked ? "••••••••" : "") : ""} onChange={(e) => onChange(e.target.value)} />
+      <span className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-0.5">
+      {shown && value && <CopyButton text={value} label={field === "username" ? "Copy username" : field === "apiKey" ? "Copy API key" : "Copy password"} />}
       {masked && (
         <button type="button" disabled={busy} aria-label={shown ? "Hide" : "Show"} title={shown ? "Hide" : "Show"}
           onClick={async () => { if (!shown) await load(); setShown(!shown); }}
-          className="absolute right-1.5 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md text-muted hover:bg-accent-soft hover:text-accent-strong">
+          className="grid h-6 w-6 place-items-center rounded-md text-muted hover:bg-accent-soft hover:text-accent-strong">
           {shown
             ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.1A10.6 10.6 0 0 1 12 5c5 0 9 4.5 10 7a13 13 0 0 1-2.9 4M6.1 6.1A13 13 0 0 0 2 12c1 2.5 5 7 10 7a10.6 10.6 0 0 0 4.1-.8" /></svg>
             : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>}
         </button>
       )}
+      </span>
     </div>
   );
 }

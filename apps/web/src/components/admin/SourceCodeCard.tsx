@@ -1,4 +1,5 @@
 "use client";
+import { CopyButton } from "@/components/CopyButton";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { btn, btnPrimary, Field, input, post } from "./ui";
 import { confirmDialog, toast } from "@/components/Dialog";
@@ -195,9 +196,7 @@ function TokenField({ preview }: { preview: string | null }) {
           : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>}
       </button>
       {shown && full && (
-        <button type="button" onClick={() => navigator.clipboard?.writeText(full)} aria-label="Copy token" title="Copy" className={icon}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></svg>
-        </button>
+        <CopyButton text={full} label="Copy token" />
       )}
     </span>
   );

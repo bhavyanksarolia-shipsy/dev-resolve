@@ -1,4 +1,5 @@
 "use client";
+import { CopyButton } from "@/components/CopyButton";
 import { useEffect, useState } from "react";
 import { toast } from "@/components/Dialog";
 import { btn, btnPrimary, Field, input, post, Select } from "./ui";
@@ -6,7 +7,7 @@ import { SkillsCard } from "./SkillsCard";
 
 interface Svc { status: string; message: string; fix?: string; host?: string }
 interface Data {
-  claude: Svc & { method: string; model: string; defaultModel: string; usage30: { runs: number; cost: number; tokens: number };
+  claude: Svc & { method: string; model: string; defaultModel: string; gatewayUrl: string | null; usage30: { runs: number; cost: number; tokens: number };
     tokenPreview: string | null; owner: string | null; ownerDetected: boolean; ownerNote: string;
     tools: { group: string; tools: { name: string; does: string }[] }[]; limits: string[]; sent: string;
     stored: { label: string; what: string; count: number; bytes: number; since: string | null }[] };
@@ -54,9 +55,7 @@ export function TokenField({ which, preview }: { which: "claude" | "devrev" | "e
           : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>}
       </button>
       {shown && full && (
-        <button type="button" onClick={() => navigator.clipboard?.writeText(full)} aria-label="Copy token" title="Copy" className={icon}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></svg>
-        </button>
+        <CopyButton text={full} label="Copy token" />
       )}
     </span>
   );
@@ -137,16 +136,17 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
   useEffect(() => { let live = true; load().then((x) => live && setD(x)); return () => { live = false; }; }, []);
   const recheck = async () => { setBusy(true); setD(await load(true)); setBusy(false); };
   const [edit, setEdit] = useState(false);
-  const [f, setF] = useState({ mode: "keep", secret: "", model: "", owner: "" });
+  const [f, setF] = useState({ mode: "keep", secret: "", model: "", owner: "", gateway: "" });
   const setMsg = toast;
   const save = async () => {
     setBusy(true); setMsg(null);
     const body = which === "devrev" ? { service: "devrev", token: f.secret }
-      : { service: "claude", model: f.model, owner: f.owner, ...(f.mode === "api" ? { apiKey: f.secret } : f.mode === "oauth" ? { oauthToken: f.secret } : {}) };
+      : { service: "claude", model: f.model, owner: f.owner,
+          ...(f.mode === "api" ? { apiKey: f.secret } : f.mode === "oauth" ? { oauthToken: f.secret } : f.mode === "gateway" ? { gatewayUrl: f.gateway, apiKey: f.secret } : {}) };
     const r = await post("/api/admin/services", body);
     setBusy(false);
     if (r.error) return setMsg({ ok: false, text: r.error });
-    setEdit(false); setF({ mode: "keep", secret: "", model: "", owner: "" });
+    setEdit(false); setF({ mode: "keep", secret: "", model: "", owner: "", gateway: "" });
     setD(await load(true));
     setMsg({ ok: true, text: "Saved — used from the next investigation" });
   };
@@ -159,7 +159,7 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
         <h3 className="font-semibold">{which === "claude" ? "Claude — investigation agent" : "DevRev — tickets & comments"}</h3>
         <Status s={s} />
         <button className={`${btn} ml-auto`} disabled={busy} onClick={recheck}>{busy ? "Checking…" : "Check connection"}</button>
-        <button className={btnPrimary} onClick={() => { setF({ mode: "keep", secret: "", model: which === "claude" ? d.claude.model : "", owner: which === "claude" ? d.claude.ownerNote : "" }); setEdit((e) => !e); }}>{edit ? "Close" : "Edit"}</button>
+        <button className={btnPrimary} onClick={() => { setF({ mode: "keep", secret: "", model: which === "claude" ? d.claude.model : "", owner: which === "claude" ? d.claude.ownerNote : "", gateway: which === "claude" ? d.claude.gatewayUrl ?? "" : "" }); setEdit((e) => !e); }}>{edit ? "Close" : "Edit"}</button>
       </div>
       {edit && (
         <div className="mb-4 grid gap-3 rounded-lg bg-bg p-4 sm:grid-cols-2">
@@ -169,6 +169,7 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
                 { value: "keep", label: `Keep current (${d.claude.method})` },
                 { value: "api", label: "Anthropic API key", hint: "sk-ant-… from console.anthropic.com" },
                 { value: "oauth", label: "Claude login token", hint: "from `claude setup-token` (uses a Claude subscription)" },
+                { value: "gateway", label: "API gateway (e.g. Bifrost)", hint: "the gateway's address + the key it gave you (sk-bf-…)" },
               ]} />
             </Field>
             <Field label="Model" hint={`Default ${d.claude.defaultModel}`}>
@@ -179,8 +180,13 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
                 { value: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5", hint: "fastest, for light tickets" },
               ]} />
             </Field>
+            {f.mode === "gateway" && (
+              <Field label="Gateway address" hint="Ask whoever issued the key; for Bifrost it usually ends in /anthropic">
+                <input className={input} value={f.gateway} placeholder="https://bifrost.example.com/anthropic" onChange={(e) => setF({ ...f, gateway: e.target.value })} />
+              </Field>
+            )}
             {f.mode !== "keep" && (
-              <Field label={f.mode === "api" ? "New API key" : "New login token"} hint="Stored on the server; admins can reveal it with the eye">
+              <Field label={f.mode === "api" ? "New API key" : f.mode === "gateway" ? (d.claude.gatewayUrl ? "Gateway key (empty = keep)" : "Gateway key") : "New login token"} hint="Stored on the server; admins can reveal it with the eye">
                 <input className={input} type="password" autoComplete="off" value={f.secret} onChange={(e) => setF({ ...f, secret: e.target.value })} />
               </Field>
             )}
@@ -193,7 +199,7 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
             </Field>
           )}
           <div className="flex items-end gap-2 sm:col-span-2">
-            <button className={btnPrimary} disabled={busy || (which === "devrev" ? !f.secret : f.mode !== "keep" && !f.secret)} onClick={save}>{busy ? "Saving…" : "Save"}</button>
+            <button className={btnPrimary} disabled={busy || (which === "devrev" ? !f.secret : f.mode === "gateway" ? !f.gateway.trim() || (!f.secret && !d.claude.gatewayUrl) : f.mode !== "keep" && !f.secret)} onClick={save}>{busy ? "Saving…" : "Save"}</button>
             <button className={btn} onClick={() => setEdit(false)}>Cancel</button>
           </div>
         </div>

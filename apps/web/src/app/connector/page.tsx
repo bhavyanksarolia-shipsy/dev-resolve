@@ -1,4 +1,5 @@
 "use client";
+import { CopyButton } from "@/components/CopyButton";
 import { useEffect, useRef, useState } from "react";
 
 interface Status {
@@ -33,7 +34,6 @@ export default function ConnectorPage() {
   const [showHosts, setShowHosts] = useState(false);
   const [showNode, setShowNode] = useState(false);
   const [token, setToken] = useState<{ token: string; server: string } | null>(null);
-  const [copied, setCopied] = useState(false);
   const linking = useRef(false);
 
   useEffect(() => {
@@ -200,7 +200,7 @@ export default function ConnectorPage() {
                 {cmd && (
                   <div className="flex items-start gap-2">
                     <code className="block flex-1 break-all rounded-md bg-bg px-2 py-1.5 font-mono ring-1 ring-line">{cmd}</code>
-                    <button onClick={() => { navigator.clipboard.writeText(cmd); setCopied(true); }} className="rounded-md border border-line px-2 py-1">{copied ? "Copied" : "Copy"}</button>
+                    <CopyButton text={cmd} label="Copy command" className="rounded-md border border-line px-2 py-1 hover:border-accent">Copy</CopyButton>
                   </div>
                 )}
               </div>
