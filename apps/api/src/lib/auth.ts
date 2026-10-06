@@ -20,6 +20,11 @@ const LOCK_AFTER = 5, LOCK_MS = 15 * 60e3;
 
 export interface SessionUser { name: string; isAdmin: boolean }
 
+/** SQL (alias s = app_sessions, u = app_users; $idle = idle limit in ms): a session that still signs someone in. */
+export const LIVE_SESSION_SQL = (idle: string) =>
+  `s.revoked_at IS NULL AND s.expires_at > now() AND s.created_at > u.password_changed_at AND s.last_seen_at > now() - (${idle} || ' milliseconds')::interval`;
+export const sessionIdleMs = () => IDLE_MS;
+
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
 /**
@@ -101,8 +106,7 @@ export async function verifySession(token: string | undefined): Promise<SessionU
   // Checked against the DB on every request (one primary-key lookup), so sign-out / disable / reset is instant.
   const [s] = await q<{ name: string; is_admin: boolean; last_seen_at: string }>(
     `SELECT u.name, u.is_admin, s.last_seen_at FROM app_sessions s JOIN app_users u ON u.id = s.user_id
-      WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now() AND u.disabled_at IS NULL
-        AND s.created_at > u.password_changed_at AND s.last_seen_at > now() - ($2 || ' milliseconds')::interval`,
+      WHERE s.token_hash = $1 AND u.disabled_at IS NULL AND ${LIVE_SESSION_SQL("$2")}`,
     [sha256(token), String(IDLE_MS)]);
   const user = s ? { name: s.name, isAdmin: s.is_admin } : null;
   if (s && Date.now() - new Date(s.last_seen_at).getTime() > 5 * 60e3) {

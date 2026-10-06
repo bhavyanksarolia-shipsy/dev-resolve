@@ -1,4 +1,5 @@
 import { requireAdmin } from "@/lib/adminGuard";
+import { LIVE_SESSION_SQL, sessionIdleMs } from "@/lib/auth";
 import { q } from "@/lib/db";
 import { hashPassword, passwordProblem } from "@/lib/passwords";
 import { rmSync } from "node:fs";
@@ -13,10 +14,12 @@ export async function GET(req: Request) {
   const users = await q(
     `SELECT u.name, u.email, u.display_name, u.is_admin, u.disabled_at, u.last_login_at, u.created_at, u.locked_until,
             u.password_hash IS NOT NULL AS has_password,
-            (SELECT count(*)::int FROM app_sessions s WHERE s.user_id = u.id AND s.revoked_at IS NULL AND s.expires_at > now()) AS sessions,
+            -- Same rule as sign-in: not ended, under 7 days old, and used in the last 12 h.
+            (SELECT count(*)::int FROM app_sessions s WHERE s.user_id = u.id AND ${LIVE_SESSION_SQL("$1")}) AS sessions,
+            (SELECT max(s.last_seen_at) FROM app_sessions s WHERE s.user_id = u.id) AS last_active_at,
             (SELECT count(*)::int FROM investigations i WHERE i.started_by = u.name) AS investigations,
             (SELECT max(t.last_seen_at) FROM connector_tokens t WHERE t.user_id = u.id AND t.revoked_at IS NULL) AS connector_seen
-       FROM app_users u ORDER BY u.disabled_at NULLS FIRST, u.is_admin DESC, u.name`);
+       FROM app_users u ORDER BY u.disabled_at NULLS FIRST, u.is_admin DESC, u.name`, [String(sessionIdleMs())]);
   return Response.json({
     users: users.map((u) => { const c = connectorStatus(String(u.name)); return { ...u, connector_online: c.online, connector_kind: c.version?.startsWith("ext-") ? "extension" : c.version ? "terminal" : null }; }),
     me: g.user.name,

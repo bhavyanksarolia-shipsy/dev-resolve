@@ -6,7 +6,7 @@ import { Paged, TableCard } from "@/components/TableTools";
 
 interface U {
   name: string; email: string | null; display_name: string | null; is_admin: boolean; disabled_at: string | null; last_login_at: string | null;
-  created_at: string; locked_until: string | null; has_password: boolean; sessions: number; investigations: number; connector_seen: string | null; connector_online?: boolean; connector_kind?: string | null;
+  created_at: string; locked_until: string | null; has_password: boolean; sessions: number; last_active_at: string | null; investigations: number; connector_seen: string | null; connector_online?: boolean; connector_kind?: string | null;
 }
 const when = (d: string | null) => (d ? new Date(d).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "—");
 
@@ -111,7 +111,7 @@ export function UsersTab() {
                       label={<span className="text-xs">{u.is_admin ? "Admin" : "Member"}</span>} />
                   </td>
                   <td className="px-4 py-3 text-xs">{u.disabled_at ? <span className="text-bad">Disabled</span> : locked ? <span className="text-warn">Locked (wrong passwords)</span> : <span className="text-ok">Active</span>}
-                    <div className="text-muted">{u.sessions} open session{u.sessions === 1 ? "" : "s"}
+                    <div className="text-muted" title="Sessions that still work: used in the last 12 h and under 7 days old">{u.sessions} open session{u.sessions === 1 ? "" : "s"}
                       {u.sessions > 0 && (
                         <> · <button type="button" disabled={busy} className="text-accent-strong underline-offset-2 hover:underline disabled:opacity-50"
                           title="Sign them out on every device and browser"
@@ -122,7 +122,8 @@ export function UsersTab() {
                             confirmLabel: "End sessions" }); if (ok && me) window.location.assign("/login"); }}>End all</button></>
                       )}
                     </div></td>
-                  <td className="px-4 py-3 text-xs text-muted">{when(u.last_login_at)}</td>
+                  <td className="px-4 py-3 text-xs text-muted">{when(u.last_login_at)}
+                    {u.last_active_at && <div title="Last time they used Dev Resolve">active {when(u.last_active_at)}</div>}</td>
                   <td className="px-4 py-3 text-xs">{u.connector_online
                     ? <span className="inline-flex items-center gap-1.5 text-ok"><span className="h-2 w-2 rounded-full bg-ok" />running now{u.connector_kind === "terminal" ? " (terminal)" : ""}</span>
                     : <span className="text-muted">{u.connector_seen ? `last seen ${when(u.connector_seen)}` : "not set up on this server"}</span>}</td>
