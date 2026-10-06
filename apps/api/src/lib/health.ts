@@ -219,6 +219,8 @@ export async function checkClaude(): Promise<ConnectionHealth> {
     if (!res.ok) return { ...base, ...(gateway && { host: new URL(gateway).host }), status: "error", message: `HTTP ${res.status}${where}${gateway ? " — check the gateway address (it usually ends in /anthropic)" : ""}` };
     return { ...base, ...(gateway && { host: new URL(gateway).host }), status: "ok", message: `API key valid${where}` };
   } catch (e) {
+    if (gateway) return { ...base, host: new URL(gateway).host, status: "error", message: `Can't reach ${new URL(gateway).host}`,
+      fix: "This server can't reach the gateway — gateways on a private network (e.g. Bifrost behind Pritunl VPN) must allow this server first. Until then, switch Sign-in back to the server's Claude login" };
     return { ...base, status: "error", message: (e as Error).message };
   }
 }

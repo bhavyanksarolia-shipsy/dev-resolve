@@ -142,7 +142,7 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
     setBusy(true); setMsg(null);
     const body = which === "devrev" ? { service: "devrev", token: f.secret }
       : { service: "claude", model: f.model, owner: f.owner,
-          ...(f.mode === "api" ? { apiKey: f.secret } : f.mode === "oauth" ? { oauthToken: f.secret } : f.mode === "gateway" ? { gatewayUrl: f.gateway, apiKey: f.secret } : {}) };
+          ...(f.mode === "api" ? { apiKey: f.secret } : f.mode === "oauth" ? { oauthToken: f.secret } : f.mode === "gateway" ? { gatewayUrl: f.gateway, apiKey: f.secret } : f.mode === "server" ? { useServerDefault: true } : {}) };
     const r = await post("/api/admin/services", body);
     setBusy(false);
     if (r.error) return setMsg({ ok: false, text: r.error });
@@ -170,6 +170,7 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
                 { value: "api", label: "Anthropic API key", hint: "sk-ant-… from console.anthropic.com" },
                 { value: "oauth", label: "Claude login token", hint: "from `claude setup-token` (uses a Claude subscription)" },
                 { value: "gateway", label: "API gateway (e.g. Bifrost)", hint: "the gateway's address + the key it gave you (sk-bf-…)" },
+                { value: "server", label: "Server's Claude login (default)", hint: "forget the key / gateway saved here and use the server's own login" },
               ]} />
             </Field>
             <Field label="Model" hint={`Default ${d.claude.defaultModel}`}>
@@ -185,7 +186,7 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
                 <input className={input} value={f.gateway} placeholder="https://bifrost.example.com/anthropic" onChange={(e) => setF({ ...f, gateway: e.target.value })} />
               </Field>
             )}
-            {f.mode !== "keep" && (
+            {f.mode !== "keep" && f.mode !== "server" && (
               <Field label={f.mode === "api" ? "New API key" : f.mode === "gateway" ? (d.claude.gatewayUrl ? "Gateway key (empty = keep)" : "Gateway key") : "New login token"} hint="Stored on the server; admins can reveal it with the eye">
                 <input className={input} type="password" autoComplete="off" value={f.secret} onChange={(e) => setF({ ...f, secret: e.target.value })} />
               </Field>
@@ -199,7 +200,7 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
             </Field>
           )}
           <div className="flex items-end gap-2 sm:col-span-2">
-            <button className={btnPrimary} disabled={busy || (which === "devrev" ? !f.secret : f.mode === "gateway" ? !f.gateway.trim() || (!f.secret && !d.claude.gatewayUrl) : f.mode !== "keep" && !f.secret)} onClick={save}>{busy ? "Saving…" : "Save"}</button>
+            <button className={btnPrimary} disabled={busy || (which === "devrev" ? !f.secret : f.mode === "gateway" ? !f.gateway.trim() || (!f.secret && !d.claude.gatewayUrl) : f.mode !== "keep" && f.mode !== "server" && !f.secret)} onClick={save}>{busy ? "Saving…" : "Save"}</button>
             <button className={btn} onClick={() => setEdit(false)}>Cancel</button>
           </div>
         </div>

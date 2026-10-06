@@ -21,6 +21,7 @@ export function SkillsCard() {
   const [busy, setBusy] = useState(false);
   const [viewing, setViewing] = useState<Viewing | null>(null);
   const [assign, setAssign] = useState<{ name: string; all: boolean; clients: string[] } | null>(null);
+  const [open, setOpen] = useState(false);
   const file = useRef<HTMLInputElement>(null);
   const replacing = useRef<string | null>(null);
   const load = useCallback(() => fetch("/api/admin/skills", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then(setD).catch(() => setD(null)), []);
@@ -42,7 +43,7 @@ export function SkillsCard() {
     toast({ ok: !r.error, text: r.error || r.message || "Saved" });
     if (r.error) return;
     await load();
-    if (r.name && !r.existed) setAssign({ name: r.name, all: false, clients: [] }); // new skill: choose its clients right away
+    if (r.name && !r.existed) { setOpen(true); setAssign({ name: r.name, all: false, clients: [] }); } // new skill: choose its clients right away
   };
   const saveAssign = async () => {
     if (!assign) return;
@@ -76,6 +77,9 @@ export function SkillsCard() {
     : s.all ? <span className="font-medium">All clients</span>
     : s.clients.length ? <span title={s.clients.map(nameOf).join(", ")}>{s.clients.slice(0, 3).map(nameOf).join(", ")}{s.clients.length > 3 && ` +${s.clients.length - 3}`}</span>
     : <span className="text-warn">No client yet — not used</span>;
+  const uploaded = d.skills.filter((s) => !s.builtIn);
+  const unused = uploaded.filter((s) => !s.all && !s.clients.length).length;
+  const summary = `${uploaded.length} uploaded \u00b7 ${d.skills.length - uploaded.length} built in${unused ? ` \u00b7 ${unused} not used yet` : ""}`;
   const link = "text-accent-strong underline-offset-2 hover:underline disabled:opacity-40";
   const options = d.clients.map((c) => ({ value: c.slug, label: c.name, hint: c.active ? undefined : "inactive" }));
 
@@ -84,12 +88,17 @@ export function SkillsCard() {
   return (
     <section className="mt-5 border-t border-line pt-5">
       <input ref={file} type="file" accept=".md,.markdown,text/markdown,text/plain" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); }} />
-      <div className="mb-3 flex flex-wrap items-center gap-3">
-        <h3 className="font-semibold">Skills</h3>
-        <button className={`${btn} ml-auto`} onClick={() => { const c = d.clients.find((x) => x.active) ?? d.clients[0]; if (c) setViewing({ kind: "prompt", slug: c.slug }); }}>View built-in instructions</button>
+      <div className="overflow-hidden rounded-xl border border-line">
+      <div className={`flex flex-wrap items-center gap-3 px-4 py-3 transition ${open ? "bg-bg" : "hover:bg-bg"}`}>
+        <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+          <span className="text-sm font-semibold">Skills</span>
+          <span className="truncate text-xs text-muted">{summary}</span>
+          <svg className={`ml-auto shrink-0 text-muted transition-transform duration-200 ${open ? "rotate-180" : ""}`} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden><path d="m6 9 6 6 6-6" /></svg>
+        </button>
+        <button className={btn} onClick={() => { const c = d.clients.find((x) => x.active) ?? d.clients[0]; if (c) setViewing({ kind: "prompt", slug: c.slug }); }}>View built-in instructions</button>
         <button className={btnPrimary} disabled={busy} onClick={() => pick(null)} title="A SKILL.md: name and description at the top, then the instructions">{busy ? "Uploading…" : "Upload skill"}</button>
       </div>
-      <div className="overflow-x-auto rounded-xl border border-line">
+      {open && <div className="chat-pop overflow-x-auto border-t border-line">
         <table className="w-full min-w-[60rem] text-sm">
           <thead className="bg-bg text-left text-xs text-muted">
             <tr>
@@ -132,6 +141,7 @@ export function SkillsCard() {
             ))}
           </tbody>
         </table>
+      </div>}
       </div>
       {viewing && <Viewer v={viewing} clients={d.clients} onClient={(slug) => setViewing({ kind: "prompt", slug })} onClose={() => setViewing(null)} />}
     </section>
