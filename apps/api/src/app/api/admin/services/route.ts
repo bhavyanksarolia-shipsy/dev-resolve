@@ -47,8 +47,9 @@ export async function GET(req: Request) {
   return Response.json({
     claude: {
       ...claude,
-      method: adminSetting("ANTHROPIC_API_KEY") ? `API key (${source("ANTHROPIC_API_KEY")})` : adminSetting("CLAUDE_CODE_OAUTH_TOKEN") ? `Claude login token (${source("CLAUDE_CODE_OAUTH_TOKEN")})` : "Local Claude Code login",
-      model: agentModel(), defaultModel: DEFAULT_MODEL,
+      method: adminSetting("ANTHROPIC_API_KEY") && adminSetting("ANTHROPIC_BASE_URL") ? `API gateway ${new URL(adminSetting("ANTHROPIC_BASE_URL")!).host} (${source("ANTHROPIC_API_KEY")})`
+        : adminSetting("ANTHROPIC_API_KEY") ? `API key (${source("ANTHROPIC_API_KEY")})` : adminSetting("CLAUDE_CODE_OAUTH_TOKEN") ? `Claude login token (${source("CLAUDE_CODE_OAUTH_TOKEN")})` : "Local Claude Code login",
+      model: agentModel(), defaultModel: DEFAULT_MODEL, gatewayUrl: adminSetting("ANTHROPIC_BASE_URL") ?? null,
       usage30: usage,
       tokenPreview: mask(claudeToken()),
       // Who the key / token belongs to: from Anthropic for a login token, else the name an admin entered.
@@ -68,7 +69,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const g = await requireAdmin(req);
   if (g.error) return g.error;
-  const b = (await req.json().catch(() => ({}))) as { service?: string; apiKey?: string; oauthToken?: string; model?: string; token?: string; owner?: string; clear?: string[]; reveal?: boolean;
+  const b = (await req.json().catch(() => ({}))) as { service?: string; apiKey?: string; gatewayUrl?: string; oauthToken?: string; model?: string; token?: string; owner?: string; clear?: string[]; reveal?: boolean;
     user?: string; pass?: string; fromName?: string; host?: string; port?: number; check?: boolean; test?: boolean; appUrl?: string; disconnect?: "gmail" | "smtp";
     template?: Partial<WelcomeTemplate>; saveTemplate?: boolean; previewTemplate?: boolean; resetTemplate?: boolean; getTemplate?: boolean };
   // Admin → Email → Edit email: the welcome mail's text and steps.
@@ -117,11 +118,20 @@ export async function POST(req: Request) {
   const v = (x?: string) => String(x ?? "").replace(/[\r\n\s]/g, "");
   const updates: Record<string, string | null> = {};
   if (b.service === "claude") {
-    if (v(b.apiKey)) {
-      if (!/^sk-ant-/.test(v(b.apiKey))) return Response.json({ error: "That doesn't look like an Anthropic API key (sk-ant-…)" }, { status: 400 });
-      updates.ANTHROPIC_API_KEY = v(b.apiKey); updates.CLAUDE_CODE_OAUTH_TOKEN = null;
+    if (b.gatewayUrl !== undefined) {
+      // An API gateway in front of Anthropic (e.g. Bifrost): its address + the key it issued (sk-bf-… for Bifrost).
+      const url = String(b.gatewayUrl).trim().replace(/\/+$/, "");
+      if (!/^https?:\/\/[^\s/]+/.test(url)) return Response.json({ error: "Gateway address must start with https:// (e.g. https://bifrost.example.com/anthropic)" }, { status: 400 });
+      const key = v(b.apiKey) || (adminSetting("ANTHROPIC_BASE_URL") ? adminSetting("ANTHROPIC_API_KEY") : "") || "";
+      if (!key) return Response.json({ error: "Paste the key the gateway gave you" }, { status: 400 });
+      updates.ANTHROPIC_BASE_URL = url; updates.ANTHROPIC_API_KEY = key; updates.CLAUDE_CODE_OAUTH_TOKEN = null;
+    } else if (v(b.apiKey)) {
+      if (!/^sk-ant-/.test(v(b.apiKey))) return Response.json({ error: v(b.apiKey).startsWith("sk-bf-")
+        ? "That's a Bifrost key — choose \"API gateway (e.g. Bifrost)\" under Sign-in and add the gateway address"
+        : "That doesn't look like an Anthropic API key (sk-ant-…)" }, { status: 400 });
+      updates.ANTHROPIC_API_KEY = v(b.apiKey); updates.CLAUDE_CODE_OAUTH_TOKEN = null; updates.ANTHROPIC_BASE_URL = null;
     } else if (v(b.oauthToken)) {
-      updates.CLAUDE_CODE_OAUTH_TOKEN = v(b.oauthToken); updates.ANTHROPIC_API_KEY = null;
+      updates.CLAUDE_CODE_OAUTH_TOKEN = v(b.oauthToken); updates.ANTHROPIC_API_KEY = null; updates.ANTHROPIC_BASE_URL = null;
     }
     if (b.model !== undefined) {
       const m = String(b.model).trim();

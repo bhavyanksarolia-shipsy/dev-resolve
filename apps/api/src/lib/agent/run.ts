@@ -16,9 +16,15 @@ import { appLogConfigDir, appLogProjects, ensureAppLogAuth, indexAllowed } from 
 export const DEFAULT_MODEL = "claude-opus-5-5";
 /** Model and Claude sign-in: values saved in Admin → Connections → Claude win over the server variables. */
 export const agentModel = () => adminSetting("DEV_RESOLVE_MODEL") || DEFAULT_MODEL;
+/** Claude sign-in for the agent: an Anthropic API key, an API gateway (e.g. Bifrost: its address + its key), or a login token. */
 function claudeEnv(): Record<string, string | undefined> {
-  const key = adminSetting("ANTHROPIC_API_KEY"), oauth = adminSetting("CLAUDE_CODE_OAUTH_TOKEN");
-  return { ...process.env, ...(key ? { ANTHROPIC_API_KEY: key, CLAUDE_CODE_OAUTH_TOKEN: undefined } : oauth ? { CLAUDE_CODE_OAUTH_TOKEN: oauth } : {}) };
+  const key = adminSetting("ANTHROPIC_API_KEY"), oauth = adminSetting("CLAUDE_CODE_OAUTH_TOKEN"), gateway = adminSetting("ANTHROPIC_BASE_URL");
+  if (key && gateway) {
+    // Gateways read the key from x-api-key; Bifrost virtual keys (sk-bf-…) are also sent as x-bf-vk for older Bifrost versions.
+    return { ...process.env, ANTHROPIC_BASE_URL: gateway, ANTHROPIC_API_KEY: key, CLAUDE_CODE_OAUTH_TOKEN: undefined,
+      ...(key.startsWith("sk-bf-") && { ANTHROPIC_CUSTOM_HEADERS: `x-bf-vk: ${key}` }) };
+  }
+  return { ...process.env, ANTHROPIC_BASE_URL: undefined, ...(key ? { ANTHROPIC_API_KEY: key, CLAUDE_CODE_OAUTH_TOKEN: undefined } : oauth ? { CLAUDE_CODE_OAUTH_TOKEN: oauth } : {}) };
 }
 /**
  * Is Claude's saved conversation for this session still on this server's disk? The SDK keeps it under

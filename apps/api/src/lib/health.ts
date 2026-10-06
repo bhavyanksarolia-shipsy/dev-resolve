@@ -202,11 +202,22 @@ export async function checkClaude(): Promise<ConnectionHealth> {
     }
     return { ...base, status: "ok", message: "Using your local Claude Code login (no ANTHROPIC_API_KEY set)" };
   }
+  // Through an API gateway (e.g. Bifrost) when one is set: same Anthropic API, different address and key.
+  const gateway = adminSetting("ANTHROPIC_BASE_URL")?.replace(/\/+$/, "");
+  const api = gateway || settings.anthropicApiUrl();
+  const headers: Record<string, string> = { "x-api-key": key, "anthropic-version": "2023-06-01", ...(key.startsWith("sk-bf-") && { "x-bf-vk": key }) };
+  const where = gateway ? ` via ${new URL(gateway).host}` : "";
   try {
-    const res = await fetch(`${settings.anthropicApiUrl()}/v1/models?limit=1`, { headers: { "x-api-key": key, "anthropic-version": "2023-06-01" }, cache: "no-store" });
-    if (res.status === 401 || res.status === 403) return { ...base, status: "auth_failed", message: `HTTP ${res.status}`, fix: "Paste a valid key in Admin → Connections → Claude" };
-    if (!res.ok) return { ...base, status: "error", message: `HTTP ${res.status}` };
-    return { ...base, status: "ok", message: "API key valid" };
+    let res = await fetch(`${api}/v1/models?limit=1`, { headers, cache: "no-store", signal: AbortSignal.timeout(15_000) });
+    // Some gateways don't list models: try the smallest possible request instead.
+    if (gateway && (res.status === 404 || res.status === 405)) {
+      res = await fetch(`${api}/v1/messages`, { method: "POST", cache: "no-store", signal: AbortSignal.timeout(30_000),
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({ model: adminSetting("DEV_RESOLVE_MODEL") || "claude-opus-5-5", max_tokens: 1, messages: [{ role: "user", content: "ping" }] }) });
+    }
+    if (res.status === 401 || res.status === 403) return { ...base, ...(gateway && { host: new URL(gateway).host }), status: "auth_failed", message: `HTTP ${res.status}${where}`, fix: `The ${gateway ? "gateway" : "API"} refused the key — paste a valid one in Admin → Connections → Claude` };
+    if (!res.ok) return { ...base, ...(gateway && { host: new URL(gateway).host }), status: "error", message: `HTTP ${res.status}${where}${gateway ? " — check the gateway address (it usually ends in /anthropic)" : ""}` };
+    return { ...base, ...(gateway && { host: new URL(gateway).host }), status: "ok", message: `API key valid${where}` };
   } catch (e) {
     return { ...base, status: "error", message: (e as Error).message };
   }
