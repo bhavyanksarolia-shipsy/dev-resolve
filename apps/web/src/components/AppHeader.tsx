@@ -26,8 +26,8 @@ export function AppHeader() {
       if (r.status === 401) router.replace(`/login?next=${encodeURIComponent(pathname + window.location.search)}`);
       else if (r.ok) setMe(await r.json());
       // 5xx with a non-JSON body = the forwarding to the backend failed (wrong BACKEND_URL, backend down/redeploying).
-      else if (r.status >= 500) setDown(`The backend isn't reachable (HTTP ${r.status}). If this lasts, check BACKEND_URL on Vercel and that the Railway service is running.`);
-    }).catch(() => live && setDown("The backend isn't reachable — check your connection, BACKEND_URL on Vercel, and the Railway service."));
+      else if (r.status >= 500) setDown(`Dev Resolve's server isn't reachable (HTTP ${r.status}). It may be restarting after an update — try again in a minute; if it lasts, tell an admin.`);
+    }).catch(() => live && setDown("Dev Resolve's server isn't reachable — check your internet connection; if it lasts, tell an admin."));
     check();
     const t = setInterval(check, 20000);
     const onFocus = () => { if (document.visibilityState === "visible") check(); };

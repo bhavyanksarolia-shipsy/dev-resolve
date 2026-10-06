@@ -222,7 +222,7 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
         </>}
         {s.fix && <Row k="To fix" v={<span className="text-warn">{s.fix}</span>} />}
       </dl>
-      {which === "devrev" && <p className="mt-3 text-xs text-muted">A token saved here overrides the server variable DEVREV_TOKEN. Posts and updates appear in DevRev as this user.</p>}
+      {which === "devrev" && <p className="mt-3 text-xs text-muted">Posts and updates appear in DevRev as this token&apos;s owner.</p>}
       {which === "claude" && <SkillsCard />}
       {which === "claude" && <ClaudeTransparency c={d.claude} />}
     </section>

@@ -87,11 +87,11 @@ async function checkOpenSearch(project: string, cfg: NonNullable<ReturnType<type
     host,
     used_by: usersOf((a) => logTypes.includes(a.opensearch_log_type || "") || Object.values(a.opensearch_log_types).some((l) => logTypes.includes(l))),
   };
-  if (!url) return { ...base, status: "not_configured", message: `${cfg.url_env} is not set`, fix: `Add ${cfg.url_env}=<url> to config/config.env` };
+  if (!url) return { ...base, status: "not_configured", message: "Address not set", fix: "Add its address in Admin → Connections → OpenSearch" };
   const user = cfgValue(cfg.username_env);
   const pass = cfgValue(cfg.password_env);
   if (cfg.username_env && (!user || !pass)) {
-    return { ...base, status: "auth_failed", message: `Missing ${cfg.username_env} / ${cfg.password_env}`, fix: `Set ${cfg.username_env} and ${cfg.password_env} in config/config.env` };
+    return { ...base, status: "auth_failed", message: "Username / password not set", fix: "Add them in Admin → Connections → OpenSearch" };
   }
   const index = Object.values(cfg.log_types)[0];
   try {
@@ -115,7 +115,7 @@ async function checkOpenSearch(project: string, cfg: NonNullable<ReturnType<type
       res = await rawPost(url, body, headers, user && pass ? { user, pass } : undefined);
     }
     if (res.status === 401 || res.status === 403) {
-      return { ...base, status: "auth_failed", message: `HTTP ${res.status} from ${host}`, fix: `Fix ${cfg.username_env} / ${cfg.password_env} in config/config.env` };
+      return { ...base, status: "auth_failed", message: `HTTP ${res.status} from ${host}`, fix: "Update the username / password in Admin → Connections → OpenSearch" };
     }
     if (res.status >= 400) return { ...base, status: "error", message: `HTTP ${res.status}: ${res.text.slice(0, 160)}` };
     return { ...base, status: "ok", message: `Reachable · ${logTypes.length} log types (${logTypes.join(", ")})` };
@@ -137,7 +137,7 @@ function checkMetabase(project: string, cfg: NonNullable<ReturnType<typeof getCo
     host,
     used_by: usersOf((a) => a.metabase_project === project),
   };
-  if (!url) return Promise.resolve({ ...base, status: "not_configured", message: `${cfg.base_url_env} is not set`, fix: `Add ${cfg.base_url_env}=<url> to config/config.env` });
+  if (!url) return Promise.resolve({ ...base, status: "not_configured", message: "Address not set", fix: "Add its address in Admin → Connections → Metabase" });
   const script = path.join(ROOT, ".claude/skills/metabase-sql/query.py");
   if (connectorMode() && cfg.sso === "google" && !(viewer && metabaseSession(viewer, project))) {
     return Promise.resolve({ ...base, status: "auth_failed", message: "You haven't signed in to it with Google yet",
@@ -160,7 +160,7 @@ function checkMetabase(project: string, cfg: NonNullable<ReturnType<typeof getCo
             ? `Sign in to ${project} with Google from your local connector (Connector page)`
             : cfg.sso === "google"
             ? `Google sign-in expired — run in a terminal: npm run metabase-login -- ${project}`
-            : `Run in a terminal: npm run metabase-password -- ${project}`,
+            : "Update the username / password in Admin → Connections → Metabase",
         });
       }
       resolve({ ...base, status: "error", message: out.trim().slice(0, 200) || String(error) });
@@ -195,12 +195,12 @@ export async function checkClaude(): Promise<ConnectionHealth> {
   const key = adminSetting("ANTHROPIC_API_KEY");
   if (!key) {
     // Server without an API key: a long-lived token from `claude setup-token` (your Claude subscription login).
-    if (adminSetting("CLAUDE_CODE_OAUTH_TOKEN")) return { ...base, status: "ok", message: "Using your Claude login token (CLAUDE_CODE_OAUTH_TOKEN)" };
+    if (adminSetting("CLAUDE_CODE_OAUTH_TOKEN")) return { ...base, status: "ok", message: "Using your Claude login token" };
     if (process.env.NODE_ENV === "production") {
       return { ...base, status: "auth_failed", message: "No Claude login on this server",
         fix: "Add an API key (or a `claude setup-token` login token) in Admin → Connections → Claude" };
     }
-    return { ...base, status: "ok", message: "Using your local Claude Code login (no ANTHROPIC_API_KEY set)" };
+    return { ...base, status: "ok", message: "Using this computer's Claude Code login" };
   }
   // Through an API gateway (e.g. Bifrost) when one is set: same Anthropic API, different address and key.
   const gateway = adminSetting("ANTHROPIC_BASE_URL")?.replace(/\/+$/, "");
@@ -273,7 +273,7 @@ export async function checkAll(filter?: { accountSlug?: string; force?: boolean;
   }
   if (!projectsFileExists()) {
     checks.push(Promise.resolve({ id: "config", kind: "config", label: "Private config", status: "not_configured", used_by: ["all accounts"],
-      message: "projects.json hasn't been uploaded to this server", fix: "An admin uploads projects.json and config.env on the Settings page" } as ConnectionHealth));
+      message: "projects.json hasn't been uploaded to this server", fix: "An admin restores it in Admin → Files & extension → Private files" } as ConnectionHealth));
   }
   let results = await Promise.all(checks);
   if (filter?.accountSlug) {
@@ -283,14 +283,14 @@ export async function checkAll(filter?: { accountSlug?: string; force?: boolean;
       results.push({
         id: `opensearch:${acc.slug}`, kind: "opensearch", label: "OpenSearch logs", status: "not_configured", used_by: [acc.name],
         message: `No log connection configured for ${acc.name}`,
-        fix: "Add its OpenSearch project to config/projects.json + URL/credentials to config/config.env, then set opensearch_log_types on the account",
+        fix: "Pick its logs in Admin → Clients (add the connection in Admin → Connections first)",
       });
     }
     if (acc && !results.some((r) => r.kind === "metabase")) {
       results.push({
         id: `metabase:${acc.slug}`, kind: "metabase", label: "Metabase DB", status: "not_configured", used_by: [acc.name],
         message: `No database connection configured for ${acc.name}`,
-        fix: "Add its Metabase project to config/projects.json + URL/credentials to config/config.env, then set metabase_project / metabase_database on the account",
+        fix: "Pick its database in Admin → Clients (add the connection in Admin → Connections first)",
       });
     }
   }
