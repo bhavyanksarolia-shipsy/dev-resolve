@@ -1,4 +1,6 @@
 import "server-only";
+import { existsSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { adminSetting, Account, ROOT, getAccount, getAccounts, projectForLogType, resolveDevrevAccount } from "../config";
@@ -17,6 +19,14 @@ export const agentModel = () => adminSetting("DEV_RESOLVE_MODEL") || DEFAULT_MOD
 function claudeEnv(): Record<string, string | undefined> {
   const key = adminSetting("ANTHROPIC_API_KEY"), oauth = adminSetting("CLAUDE_CODE_OAUTH_TOKEN");
   return { ...process.env, ...(key ? { ANTHROPIC_API_KEY: key, CLAUDE_CODE_OAUTH_TOKEN: undefined } : oauth ? { CLAUDE_CODE_OAUTH_TOKEN: oauth } : {}) };
+}
+/**
+ * Is Claude's saved conversation for this session still on this server's disk? The SDK keeps it under
+ * projects/<working folder> — and a redeploy on a host without a volume (Railway) wipes it.
+ */
+function sessionOnDisk(sid: string) {
+  const dir = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"), "projects", ROOT.replace(/[^a-zA-Z0-9]/g, "-"));
+  return existsSync(path.join(dir, `${sid}.jsonl`));
 }
 const OS_SERVER = "opensearch-logs";
 const APP_LOG = "shipsy-app-log";
@@ -365,21 +375,36 @@ export async function sendChatMessage(id: number, text: string, by = "unknown", 
     `- If the message is an acknowledgement or asks you to confirm what you found, answer straight away from the evidence you already have (quote it) — no new checks.\n` +
     `- Only if the findings change the RCA (including Current status), call submit_rca again with the FULL revised RCA.\n\n` +
     CHAT_REPLY_STYLE;
-  let message: SDKUserMessage;
-  if (inv.session_id) {
-    message = userMessage([{ type: "text", text: followUp }, ...fileBlocks, ...freshBlocks]);
-  } else {
-    // Investigations created before chat existed have no saved session: re-seed with the ticket + current RCA.
+  // Without the saved conversation (none yet, or wiped by a redeploy), start a fresh one that carries the ticket, the
+  // current RCA and the chat so far — so the agent still knows what was already established.
+  const reseeded = async (): Promise<SDKUserMessage> => {
     const ticket = await getTicket(inv.ticket_id);
     const comments = await listTimeline(inv.ticket_id).then(withEmailSenders).catch(() => []);
-    message = userMessage([{
+    const earlier = (await q<{ kind: string; output: string | null; input: { by?: string } | null }>(
+      `SELECT kind, output, input FROM investigation_steps WHERE investigation_id=$1 AND seq < $2 AND kind IN ('user_message','text')
+        ORDER BY seq DESC LIMIT 16`, [id, next])).reverse();
+    const chat = earlier.length
+      ? `\n\n## Earlier in this conversation (most recent last)\n` + earlier.map((r) => `${r.kind === "user_message" ? `Reviewer${r.input?.by ? ` (${r.input.by})` : ""}` : "You"}: ${clip(r.output ?? "", 1500)}`).join("\n\n")
+      : "";
+    return userMessage([{
       type: "text",
-      text: `${ticketPrompt(ticket, comments)}\n\n## Current RCA draft (from an earlier investigation)\n${inv.draft_rca ?? "(none)"}\n\n---\n${followUp}`,
+      text: `${ticketPrompt(ticket, comments)}\n\n## Current RCA draft (from the investigation)\n${inv.draft_rca ?? "(none)"}${chat}\n\n---\n${followUp}`,
     }, ...fileBlocks, ...freshBlocks]);
-  }
+  };
+  const resume = inv.session_id && sessionOnDisk(inv.session_id) ? inv.session_id : undefined;
+  const message = resume ? userMessage([{ type: "text", text: followUp }, ...fileBlocks, ...freshBlocks]) : await reseeded();
   void (async () => {
+    const seq = next + (switched ? 2 : 1);
     try {
-      await runSession({ id, account: account!, candidates, seq: next + (switched ? 2 : 1), message, resume: inv.session_id ?? undefined, kind: "chat", by });
+      try {
+        await runSession({ id, account: account!, candidates, seq, message, resume, kind: "chat", by });
+      } catch (e) {
+        // The saved conversation couldn't be resumed after all: once more, as a fresh one.
+        if (!resume || !/conversation|session/i.test((e as Error).message)) throw e;
+        console.warn(`[chat] #${id}: couldn't resume session (${(e as Error).message}) — starting a fresh one`);
+        const [{ n }] = await q<{ n: number }>(`SELECT COALESCE(max(seq), -1) + 1 AS n FROM investigation_steps WHERE investigation_id=$1`, [id]);
+        await runSession({ id, account: account!, candidates, seq: Math.max(seq, n), message: await reseeded(), kind: "chat", by });
+      }
     } catch (e) {
       await step(id, next + 1, "system", null, { error: true }, `Chat failed: ${(e as Error).message}`).catch(() => {});
     } finally {

@@ -10,7 +10,15 @@ export async function register() {
     const { q } = await import("./lib/db");
     const freed = await q(`UPDATE investigations SET status='failed', error='Interrupted — the server restarted. Try again.', finished_at=now()
                             WHERE status='running' RETURNING id`);
-    await q(`UPDATE investigations SET chat_running=false WHERE chat_running`);
+    // A chat reply cut off by the restart: say so in the chat (otherwise it just looks stuck), then free it.
+    const cut = await q<{ id: number }>(`UPDATE investigations SET chat_running=false WHERE chat_running RETURNING id`);
+    for (const { id } of cut) {
+      await q(`INSERT INTO investigation_steps (investigation_id, seq, kind, tool, input, output)
+               SELECT $1, COALESCE(max(seq), -1) + 1, 'system', NULL, '{"error":true}'::jsonb,
+                      'Chat failed: the server restarted (a new version was deployed) while I was answering. Send your message again.'
+                 FROM investigation_steps WHERE investigation_id=$1`, [id]);
+    }
+    if (cut.length) console.log(`[start] ${cut.length} chat reply(ies) were cut off by the restart — told the reviewer`);
     if (freed.length) console.log(`[start] marked ${freed.length} interrupted investigation(s) as failed`);
   } catch (e) {
     console.error("[start] couldn't clear interrupted investigations:", (e as Error).message);
