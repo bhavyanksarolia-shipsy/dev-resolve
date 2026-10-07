@@ -4,6 +4,19 @@ export async function register() {
   const { settingsSummary } = await import("./lib/settings");
   console.log("[settings]", JSON.stringify(settingsSummary()));
   (await import("./lib/codeSync")).startCodeSync();
+  // Why did the server restart? A planned stop (deploy, Railway restart) sends SIGTERM and is logged here;
+  // an out-of-memory kill leaves no line — so a missing "[shutdown]" before "[start]" points at memory.
+  for (const sig of ["SIGTERM", "SIGINT"] as const) {
+    process.once(sig, () => {
+      const m = process.memoryUsage();
+      console.log(`[shutdown] ${sig} received · memory rss ${Math.round(m.rss / 1048576)} MB, heap ${Math.round(m.heapUsed / 1048576)} MB`);
+    });
+  }
+  // Memory watch: a line every 5 min while the server is using a lot (helps spot the run that pushed it over).
+  setInterval(() => {
+    const rss = Math.round(process.memoryUsage().rss / 1048576);
+    if (rss > 1024) console.warn(`[memory] rss ${rss} MB`);
+  }, 5 * 60_000).unref();
   // Agent runs live in this process: after a restart, "running" rows are orphans. Free them (they'd also hold the
   // one-running-investigation-per-ticket lock) so the ticket shows Try again.
   try {
@@ -15,7 +28,7 @@ export async function register() {
     for (const { id } of cut) {
       await q(`INSERT INTO investigation_steps (investigation_id, seq, kind, tool, input, output)
                SELECT $1, COALESCE(max(seq), -1) + 1, 'system', NULL, '{"error":true}'::jsonb,
-                      'Chat failed: the server restarted (a new version was deployed) while I was answering. Send your message again.'
+                      'Chat failed: the server restarted while I was answering (an update, or the server ran out of memory or crashed). Send your message again.'
                  FROM investigation_steps WHERE investigation_id=$1`, [id]);
     }
     if (cut.length) console.log(`[start] ${cut.length} chat reply(ies) were cut off by the restart — told the reviewer`);
