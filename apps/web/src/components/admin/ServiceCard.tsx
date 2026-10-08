@@ -380,7 +380,6 @@ function ClaudeCard() {
           <Block title="Last 30 days">
             <div className="flex flex-wrap gap-8">
               {stat(c.usage30.runs.toLocaleString("en-IN"), "agent runs")}
-              {stat(`$${c.usage30.cost.toFixed(2)}`, "cost")}
               {stat(`${Math.round(c.usage30.tokens / 1000).toLocaleString("en-IN")}k`, "tokens")}
             </div>
           </Block>
