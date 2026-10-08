@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { confirmDialog, toast } from "@/components/Dialog";
-import { btn, input, post } from "./ui";
+import { btn, input, post, Select } from "./ui";
 
 interface Row {
   id: number; ticket_display: string; ticket_title: string; account: string; kind: "investigation" | "chat";
@@ -71,16 +71,16 @@ export function InvestigationsTab() {
   const pages = d ? Math.max(1, Math.ceil(d.total / d.pageSize)) : 1;
   return (
     <div className="space-y-4">
-      {/* One fixed line: filters · limits · search. The table below scrolls on its own. */}
-      <div className="flex flex-wrap items-center gap-2 md:flex-nowrap">
-        {FILTERS.map(([k, l]) => (
-          <button key={k} onClick={() => { setStatus(k); setPage(1); }}
-            className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-sm ring-1 ${status === k ? "bg-accent-soft font-medium text-accent-strong ring-emerald-200" : "text-muted ring-line hover:text-fg"}`}>
-            {l}{k === "active" && d ? ` · ${d.counts.active}` : k === "failed" && d ? ` · ${d.counts.failed}` : ""}
-          </button>
-        ))}
-        {d && <span className="hidden truncate text-xs text-muted xl:inline" title="Change it in Connections → Claude">At most {d.limits.parallel} at once · {d.limits.perPerson} per person</span>}
-        <input className={input} style={{ width: "16rem", marginLeft: "auto", flex: "none" }} value={term} placeholder="Search ticket or title" onChange={(e) => { setTerm(e.target.value); setPage(1); }} />
+      {/* One fixed line: status dropdown · search (takes the rest of the line) · limits. The table scrolls on its own. */}
+      <div className="flex flex-wrap items-center gap-3 md:flex-nowrap">
+        <div className="w-60 shrink-0">
+          <Select value={status} onChange={(v) => { setStatus(v as typeof status); setPage(1); }} options={FILTERS.map(([k, l]) => ({
+            value: k, label: k === "active" && d ? `${l} · ${d.counts.active}` : k === "failed" && d ? `${l} · ${d.counts.failed}` : l,
+            hint: k === "failed" ? "open failures — the ticket's latest run failed" : k === "active" ? "live, refreshes every 10 s" : undefined,
+          }))} />
+        </div>
+        <input className={`${input} min-w-0 flex-1`} value={term} placeholder="Search ticket or title" onChange={(e) => { setTerm(e.target.value); setPage(1); }} />
+        {d && <span className="hidden shrink-0 whitespace-nowrap text-xs text-muted xl:inline" title="Change it in Connections → Claude">At most {d.limits.parallel} at once · {d.limits.perPerson} per person</span>}
       </div>
 
       <div className="card max-h-[calc(100vh-15rem)] overflow-auto">
