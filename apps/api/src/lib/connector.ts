@@ -107,9 +107,13 @@ const carriesGateway = (version?: string) => {
  * Whose laptop carries Claude's requests to the gateway: the person the run is for when their connector can, otherwise
  * the connector that polled most recently (the gateway key is the team's, not personal, so anyone's laptop will do).
  */
-export function gatewayCarrier(prefer?: string | null): string | null {
-  // Skip laptops whose extension says the company VPN is down (an extension that hasn't checked yet still counts).
-  const able = (u: string) => connectorStatus(u).online && carriesGateway(R.conns.get(u)?.version) && R.conns.get(u)?.vpn[gatewayHost() ?? ""] !== false;
+export function gatewayCarrier(prefer?: string | null, opts: { vpnChecked?: boolean } = {}): string | null {
+  // Skip laptops whose extension says the company VPN (Pritunl) is down. vpnChecked: only laptops that have confirmed it
+  // is up — used for live requests, so a laptop off the VPN never makes the agent wait for a request that can't succeed.
+  const able = (u: string) => {
+    const vpn = R.conns.get(u)?.vpn[gatewayHost() ?? ""];
+    return connectorStatus(u).online && carriesGateway(R.conns.get(u)?.version) && (opts.vpnChecked ? vpn === true : vpn !== false);
+  };
   if (prefer && able(prefer)) return prefer;
   const others = [...R.conns.entries()].filter(([u]) => able(u)).sort(([, x], [, y]) => y.lastPoll - x.lastPoll);
   return others[0]?.[0] ?? null;
@@ -175,7 +179,7 @@ export const userAuthDir = (user: string) => {
   return path.join(ROOT, ".auth", "users", user);
 };
 
-function writePrivate(file: string, data: string) {
+export function writePrivate(file: string, data: string) {
   mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   writeFileSync(file, data, { mode: 0o600 });
   void import("./privateStore").then((m) => m.savePrivate(file));

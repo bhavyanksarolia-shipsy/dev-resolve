@@ -8,9 +8,11 @@ import { getPool } from "./db";
 import { settings } from "./settings";
 import { ConnectorOffline, connectorMode, gatewayCarrier, gatewayViaConnector, isVpnOnlyHost, metabaseSession, needsRelay, relay, userToolEnv } from "./connector";
 import { whoAmI, DevrevError } from "./devrev";
+import { fallbackSummary, mainState, mainUpstream, markDown, markUp } from "./claudeRoute";
 import { appLogProjects, ensureAppLogAuth } from "./applog";
 
-export type HealthStatus = "ok" | "vpn_required" | "auth_failed" | "not_configured" | "error";
+/** fallback: the main sign-in isn't working but a fallback is carrying the work (Claude), so nothing is blocked. */
+export type HealthStatus = "ok" | "vpn_required" | "auth_failed" | "not_configured" | "error" | "fallback";
 
 export interface ConnectionHealth {
   id: string;            // e.g. "opensearch:wms", "metabase:qc", "devrev"
@@ -21,6 +23,7 @@ export interface ConnectionHealth {
   message: string;
   fix?: string;
   used_by: string[];     // account names depending on this connection
+  restored_at?: string;  // Claude: the main sign-in started working again at (shown for 15 min)
 }
 
 const vpnFix = () => connectorMode()
@@ -190,7 +193,31 @@ async function checkPostgres(): Promise<ConnectionHealth> {
   }
 }
 
+/**
+ * Claude: the main sign-in's own check, plus the fallback picture — "using the fallback" while the main one is down (work
+ * carries on), and "working fine again" for a while after it comes back. Also tells the relay what it found, so a request
+ * never waits on a sign-in this check already knows is down.
+ */
 export async function checkClaude(): Promise<ConnectionHealth> {
+  const r = await checkMainClaude();
+  const main = mainUpstream();
+  if (!main) return r;
+  if (r.status === "ok") markUp("main");
+  else if (r.status === "error" || r.status === "auth_failed") markDown(main, r.message);
+  const fb = fallbackSummary();
+  if (r.status !== "ok" && fb) {
+    return { ...r, status: "fallback", message: `${main.label} isn't working (${r.message}) — investigations use ${fb} instead, without delay`,
+      fix: `${r.fix ? `${r.fix}. ` : ""}Nothing is blocked meanwhile; it switches back by itself once ${main.label} works again.` };
+  }
+  const st = mainState();
+  if (r.status === "ok" && !st.down && st.restoredAt) {
+    const at = new Date(st.restoredAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" });
+    return { ...r, message: `Claude connection is working fine again since ${at} — back on ${main.label}`, restored_at: new Date(st.restoredAt).toISOString() };
+  }
+  return r;
+}
+
+async function checkMainClaude(): Promise<ConnectionHealth> {
   const base = { id: "claude", kind: "claude" as const, label: "Claude (investigation agent)", host: new URL(settings.anthropicApiUrl()).host, used_by: ["all accounts"] };
   const key = adminSetting("ANTHROPIC_API_KEY");
   if (!key) {
@@ -207,8 +234,8 @@ export async function checkClaude(): Promise<ConnectionHealth> {
   const api = gateway || settings.anthropicApiUrl();
   const headers: Record<string, string> = { "x-api-key": key, "anthropic-version": "2023-06-01", ...(key.startsWith("sk-bf-") && { "x-bf-vk": key }) };
   // A VPN-only gateway is checked through someone's Dev Resolve extension, the same way the agent reaches it.
-  const carrier = gateway && gatewayViaConnector() ? gatewayCarrier() : undefined;
-  if (carrier === null) return { ...base, host: new URL(gateway!).host, status: "error", message: `Nobody's Dev Resolve extension is online to reach ${new URL(gateway!).host}`,
+  const carrier = gateway && gatewayViaConnector() ? gatewayCarrier(null, { vpnChecked: true }) : undefined;
+  if (carrier === null) return { ...base, host: new URL(gateway!).host, status: "error", message: `Nobody's Dev Resolve extension is on the company VPN (Pritunl) to reach ${new URL(gateway!).host}`,
     fix: "Open Chrome with the Dev Resolve extension (1.2 or newer) on a laptop connected to the company VPN (Pritunl) — investigations need one online" };
   const where = gateway ? ` via ${new URL(gateway).host}${carrier ? ` (through ${carrier}'s extension)` : ""}` : "";
   const call = async (url: string, init: { method?: string; headers: Record<string, string>; body?: string; ms: number }) => {

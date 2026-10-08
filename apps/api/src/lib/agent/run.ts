@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { adminSetting, Account, ROOT, getAccount, getAccounts, projectForLogType, resolveDevrevAccount } from "../config";
-import { gatewayCarrier, gatewayViaConnector, relaySecret, userToolEnv } from "../connector";
+import { gatewayCarrier, relaySecret, userToolEnv } from "../connector";
+import { chainFor, endRun, noRouteMessage, takeRouteEvents } from "../claudeRoute";
 import { settings } from "../settings";
 import { LockedError, q } from "../db";
 import { getTicket, listTimeline } from "../devrev";
@@ -17,19 +18,31 @@ import { appLogConfigDir, appLogProjects, ensureAppLogAuth, indexAllowed } from 
 export const DEFAULT_MODEL = "claude-opus-5-5";
 /** Model and Claude sign-in: values saved in Admin → Connections → Claude win over the server variables. */
 export const agentModel = () => adminSetting("DEV_RESOLVE_MODEL") || DEFAULT_MODEL;
-/** Claude sign-in for the agent: an Anthropic API key, an API gateway (e.g. Bifrost: its address + its key), or a login token. */
-function claudeEnv(user?: string): Record<string, string | undefined> {
-  const key = adminSetting("ANTHROPIC_API_KEY"), oauth = adminSetting("CLAUDE_CODE_OAUTH_TOKEN"), gateway = adminSetting("ANTHROPIC_BASE_URL");
-  if (key && gateway) {
-    // Gateways read the key from x-api-key; Bifrost virtual keys (sk-bf-…) are also sent as x-bf-vk for older Bifrost versions.
-    // A VPN-only gateway: requests go to this server's /api/llm-relay, and a connector on the VPN carries them (see there).
-    const via = gatewayViaConnector();
-    const headers = [key.startsWith("sk-bf-") && `x-bf-vk: ${key}`, via && `x-relay-secret: ${relaySecret()}`, via && `x-relay-user: ${user ?? ""}`].filter(Boolean);
-    return { ...process.env, ANTHROPIC_BASE_URL: via ? `${settings.internalUrl()}/api/llm-relay` : gateway, ANTHROPIC_API_KEY: key, CLAUDE_CODE_OAUTH_TOKEN: undefined,
-      ...(headers.length && { ANTHROPIC_CUSTOM_HEADERS: headers.join("\n") }), ...(via && { API_TIMEOUT_MS: "660000" }) };
+/**
+ * Claude sign-in for the agent. The main one is what Admin → Connections → Claude says (Bifrost, an Anthropic API key or
+ * a login token). With a fallback (the person's own Claude token, the server's login) or a VPN-only gateway, the agent
+ * talks to this server's /api/llm-relay, which tries each in turn per request (lib/claudeRoute.ts).
+ */
+function claudeEnv(user?: string, runId?: number): Record<string, string | undefined> {
+  const chain = chainFor(user);
+  const main = chain[0];
+  if (!main) return { ...process.env, ANTHROPIC_BASE_URL: undefined }; // this computer's own Claude Code login (local setups)
+  const clean = { ...process.env, ANTHROPIC_BASE_URL: undefined, ANTHROPIC_API_KEY: undefined, CLAUDE_CODE_OAUTH_TOKEN: undefined };
+  if (chain.length === 1 && !main.viaExtension) {
+    // One way only: straight there. Gateways read the key from x-api-key; Bifrost virtual keys (sk-bf-…) also as x-bf-vk.
+    if (main.auth === "oauth") return { ...clean, CLAUDE_CODE_OAUTH_TOKEN: main.secret };
+    return { ...clean, ANTHROPIC_API_KEY: main.secret, ...(main.base !== "https://api.anthropic.com" && { ANTHROPIC_BASE_URL: main.base }),
+      ...(main.secret.startsWith("sk-bf-") && { ANTHROPIC_CUSTOM_HEADERS: `x-bf-vk: ${main.secret}` }) };
   }
-  return { ...process.env, ANTHROPIC_BASE_URL: undefined, ...(key ? { ANTHROPIC_API_KEY: key, CLAUDE_CODE_OAUTH_TOKEN: undefined } : oauth ? { CLAUDE_CODE_OAUTH_TOKEN: oauth } : {}) };
+  // The agent signs as a login token when any in the chain is one (requests then carry what login tokens need); the relay
+  // re-signs every request for whichever sign-in answers it.
+  const oauth = chain.find((u) => u.auth === "oauth");
+  const headers = [`x-relay-secret: ${relaySecret()}`, `x-relay-user: ${user ?? ""}`, runId ? `x-relay-run: ${runId}` : ""].filter(Boolean);
+  return { ...clean, ANTHROPIC_BASE_URL: `${settings.internalUrl()}/api/llm-relay`, ANTHROPIC_CUSTOM_HEADERS: headers.join("\n"), API_TIMEOUT_MS: "660000",
+    ...(oauth ? { CLAUDE_CODE_OAUTH_TOKEN: oauth.secret } : { ANTHROPIC_API_KEY: main.secret }) };
 }
+/** A session that ended because Claude couldn't be reached (not because of the investigation itself). */
+const CLAUDE_DOWN = /API Error|Connection error|ECONNRESET|ECONNREFUSED|socket hang up|fetch failed|overloaded|timed? ?out|terminated|isn't working right now|isn't reachable|\b5\d\d\b/i;
 /**
  * Is Claude's saved conversation for this session still on this server's disk? The SDK keeps it under
  * projects/<working folder> — and a redeploy on a host without a volume (Railway) wipes it.
@@ -423,7 +436,7 @@ export async function sendChatMessage(id: number, text: string, by = "unknown", 
   })();
 }
 
-type SessionOpts = { id: number; account: Account; candidates: Account[]; seq: number; message: SDKUserMessage; resume?: string; kind: "investigation" | "chat"; by?: string };
+type SessionOpts = { id: number; account: Account; candidates: Account[]; seq: number; message: SDKUserMessage; resume?: string; kind: "investigation" | "chat"; by?: string; attempt?: number };
 
 /*
  * At most AGENT_MAX_PARALLEL agent runs (investigations + chat replies) at once — each is a Claude process plus its
@@ -482,9 +495,9 @@ async function runSessionNow(opts: SessionOpts) {
     appLogReady = auth.ok;
     if (!auth.ok) await step(id, seq++, "connection_error", `mcp__${APP_LOG}__login`, { connection: `opensearch_mcp:${appLogProject.name}`, tag: "AUTH_FAILED" }, auth.message);
   }
-  if (gatewayViaConnector() && !gatewayCarrier(opts.by)) {
-    throw new Error("Claude is reached through the Dev Resolve extension, and nobody's extension (1.2 or newer) is online right now. Open Chrome with the extension on a laptop connected to the company VPN (Pritunl), then try again.");
-  }
+  // Decided now, not mid-run: start only if some Claude sign-in can be tried (the main one or a fallback).
+  const chain = chainFor(opts.by);
+  if (chain.length && !chain.some((u) => !u.viaExtension || gatewayCarrier(opts.by, { vpnChecked: true }))) throw new Error(noRouteMessage(chain));
   const abort = new AbortController();
   running.set(id, abort);
   const pending = new Map<string, { name: string; input: Record<string, unknown> }>();
@@ -542,15 +555,19 @@ async function runSessionNow(opts: SessionOpts) {
       },
       maxTurns: 60,
       abortController: abort,
-      env: { ...userToolEnv(opts.by), ...claudeEnv(opts.by), CLAUDE_AGENT_SDK_CLIENT_APP: "dev-resolve/0.1.0" },
+      env: { ...userToolEnv(opts.by), ...claudeEnv(opts.by, id), CLAUDE_AGENT_SDK_CLIENT_APP: "dev-resolve/0.1.0" },
     },
   });
 
-  let sessionSaved = false;
+  let sessionSaved = false, sessionId = opts.resume;
+  let claudeDown: string | null = null; // the session ended because Claude couldn't be reached → resume on the fallback
   const [run] = await q<{ id: number }>(`INSERT INTO agent_runs (investigation_id, kind, started_by) VALUES ($1,$2,$3) RETURNING id`, [id, opts.kind, opts.by ?? null]);
   try {
     for await (const msg of stream as AsyncIterable<SDKMessage>) {
+      // Claude switched to a fallback (or came back) during the last request: say so in the timeline.
+      for (const t of takeRouteEvents(id)) await step(id, seq++, "system", null, { claude_route: true }, t);
       const sid = (msg as { session_id?: string }).session_id;
+      if (sid) sessionId = sid;
       if (!sessionSaved && sid) {
         sessionSaved = true;
         await q(`UPDATE investigations SET session_id=$2 WHERE id=$1`, [id, sid]);
@@ -586,11 +603,25 @@ async function runSessionNow(opts: SessionOpts) {
         );
         // Chat turns add to the investigation's running cost / turn count.
         await q(`UPDATE investigations SET cost_usd=COALESCE(cost_usd,0)+$2, num_turns=COALESCE(num_turns,0)+$3 WHERE id=$1`, [id, cost, msg.num_turns]);
-        if (msg.subtype !== "success") await step(id, seq++, "system", null, { subtype: msg.subtype }, "Agent stopped before finishing");
+        const failText = msg.subtype === "success" ? (msg.is_error ? String(msg.result ?? "") : "") : ("errors" in msg ? (msg.errors as string[]).join("; ") : "");
+        if (failText && CLAUDE_DOWN.test(failText) && !abort.signal.aborted) claudeDown = failText.slice(0, 300);
+        else if (msg.subtype !== "success") await step(id, seq++, "system", null, { subtype: msg.subtype }, "Agent stopped before finishing");
         break; // one-shot turn: don't keep the streaming-input session open
       }
     }
+  } catch (e) {
+    if (abort.signal.aborted || !CLAUDE_DOWN.test((e as Error).message)) throw e;
+    claudeDown = (e as Error).message.slice(0, 300);
   } finally {
     running.delete(id);
+    for (const t of takeRouteEvents(id)) await step(id, seq++, "system", null, { claude_route: true }, t).catch(() => {});
   }
+  if (!claudeDown) { endRun(id); return; }
+  // Claude dropped mid-investigation: resume the same session (everything so far is kept) — the relay sends it to the
+  // fallback. Twice at most, then give up with the reason.
+  const attempt = (opts.attempt ?? 0) + 1;
+  if (!sessionId || attempt > 2) { endRun(id); throw new Error(`Claude couldn't be reached: ${claudeDown}`); }
+  await step(id, seq++, "system", null, { claude_route: true }, `The Claude connection dropped (${claudeDown.slice(0, 160)}) — resuming the same investigation where it stopped${chain.length > 1 ? " on the fallback" : ""}.`);
+  return runSessionNow({ ...opts, seq, attempt, resume: sessionId,
+    message: userMessage([{ type: "text", text: "The connection to Claude dropped in the middle of your work. Continue exactly where you left off — don't repeat checks you already finished." }]) });
 }

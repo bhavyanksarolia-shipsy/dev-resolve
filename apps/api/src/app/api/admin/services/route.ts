@@ -5,6 +5,7 @@ import { q } from "@/lib/db";
 import { writeEnv } from "@/lib/adminConfig";
 import { adminSetting, readConfigEnv } from "@/lib/config";
 import { gatewayViaConnector } from "@/lib/connector";
+import { fallbackPersonalOn, fallbackServerOn, fallbackSummary, mainState } from "@/lib/claudeRoute";
 import { agentModel, DEFAULT_MODEL } from "@/lib/agent/run";
 import { AGENT_LIMITS, AGENT_TOOLS, SENT_TO_ANTHROPIC, storageSummary } from "@/lib/agent/transparency";
 import { checkMail, cleanTemplate, connectorStep, EMAIL_THEMES, defaultWelcomeTemplate, mailSettings, revokeGmail, saveWelcomeTemplate, sendMail, WELCOME_PLACEHOLDERS, welcomeEmail, welcomeTemplate, type WelcomeTemplate } from "@/lib/mail";
@@ -51,6 +52,7 @@ export async function GET(req: Request) {
       method: adminSetting("ANTHROPIC_API_KEY") && adminSetting("ANTHROPIC_BASE_URL") ? `API gateway ${new URL(adminSetting("ANTHROPIC_BASE_URL")!).host}${gatewayViaConnector() ? " through the Dev Resolve extension" : ""} (${source("ANTHROPIC_API_KEY")})`
         : adminSetting("ANTHROPIC_API_KEY") ? `API key (${source("ANTHROPIC_API_KEY")})` : adminSetting("CLAUDE_CODE_OAUTH_TOKEN") ? `Claude login token (${source("CLAUDE_CODE_OAUTH_TOKEN")})` : "Local Claude Code login",
       model: agentModel(), defaultModel: DEFAULT_MODEL, gatewayUrl: adminSetting("ANTHROPIC_BASE_URL") ?? null, gatewayViaConnector: gatewayViaConnector(),
+      fallback: { personal: fallbackPersonalOn(), server: fallbackServerOn(), now: fallbackSummary(), mainDown: mainState().down },
       usage30: usage,
       tokenPreview: mask(claudeToken()),
       // Who the key / token belongs to: from Anthropic for a login token, else the name an admin entered.
@@ -70,7 +72,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const g = await requireAdmin(req);
   if (g.error) return g.error;
-  const b = (await req.json().catch(() => ({}))) as { service?: string; apiKey?: string; gatewayUrl?: string; gatewayViaConnector?: boolean; useServerDefault?: boolean; oauthToken?: string; model?: string; token?: string; owner?: string; clear?: string[]; reveal?: boolean;
+  const b = (await req.json().catch(() => ({}))) as { service?: string; apiKey?: string; gatewayUrl?: string; gatewayViaConnector?: boolean; fallbackPersonal?: boolean; fallbackServer?: boolean; useServerDefault?: boolean; oauthToken?: string; model?: string; token?: string; owner?: string; clear?: string[]; reveal?: boolean;
     user?: string; pass?: string; fromName?: string; host?: string; port?: number; check?: boolean; test?: boolean; appUrl?: string; disconnect?: "gmail" | "smtp";
     template?: Partial<WelcomeTemplate>; saveTemplate?: boolean; previewTemplate?: boolean; resetTemplate?: boolean; getTemplate?: boolean };
   // Admin → Email → Edit email: the welcome mail's text and steps.
@@ -145,6 +147,9 @@ export async function POST(req: Request) {
       updates.DEV_RESOLVE_MODEL = m && m !== DEFAULT_MODEL ? m : null;
     }
     for (const k of b.clear ?? []) if (["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"].includes(k)) updates[k] = null;
+    // When the main sign-in isn't working: the person's own Claude token, then the server's Claude login (both on by default).
+    if (b.fallbackPersonal !== undefined) updates.CLAUDE_FALLBACK_PERSONAL = b.fallbackPersonal ? null : "off";
+    if (b.fallbackServer !== undefined) updates.CLAUDE_FALLBACK_SERVER = b.fallbackServer ? null : "off";
     if (b.owner !== undefined) updates.CLAUDE_TOKEN_OWNER = String(b.owner).replace(/[\r\n]/g, " ").trim().slice(0, 120) || null;
   } else if (b.service === "devrev") {
     if (v(b.token)) updates.DEVREV_TOKEN = v(b.token);

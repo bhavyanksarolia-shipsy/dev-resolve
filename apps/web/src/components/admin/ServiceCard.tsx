@@ -7,7 +7,8 @@ import { SkillsCard } from "./SkillsCard";
 
 interface Svc { status: string; message: string; fix?: string; host?: string }
 interface Data {
-  claude: Svc & { method: string; model: string; defaultModel: string; gatewayUrl: string | null; gatewayViaConnector?: boolean; usage30: { runs: number; cost: number; tokens: number };
+  claude: Svc & { method: string; model: string; defaultModel: string; gatewayUrl: string | null; gatewayViaConnector?: boolean;
+    fallback?: { personal: boolean; server: boolean; now: string | null; mainDown: boolean }; usage30: { runs: number; cost: number; tokens: number };
     tokenPreview: string | null; owner: string | null; ownerDetected: boolean; ownerNote: string;
     tools: { group: string; tools: { name: string; does: string }[] }[]; limits: string[]; sent: string;
     stored: { label: string; what: string; count: number; bytes: number; since: string | null }[] };
@@ -136,17 +137,17 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
   useEffect(() => { let live = true; load().then((x) => live && setD(x)); return () => { live = false; }; }, []);
   const recheck = async () => { setBusy(true); setD(await load(true)); setBusy(false); };
   const [edit, setEdit] = useState(false);
-  const [f, setF] = useState({ mode: "keep", secret: "", model: "", owner: "", gateway: "", viaExt: false });
+  const [f, setF] = useState({ mode: "keep", secret: "", model: "", owner: "", gateway: "", viaExt: false, fbPersonal: true, fbServer: true });
   const setMsg = toast;
   const save = async () => {
     setBusy(true); setMsg(null);
     const body = which === "devrev" ? { service: "devrev", token: f.secret }
-      : { service: "claude", model: f.model, owner: f.owner,
+      : { service: "claude", model: f.model, owner: f.owner, fallbackPersonal: f.fbPersonal, fallbackServer: f.fbServer,
           ...(f.mode === "api" ? { apiKey: f.secret } : f.mode === "oauth" ? { oauthToken: f.secret } : f.mode === "gateway" ? { gatewayUrl: f.gateway, apiKey: f.secret, gatewayViaConnector: f.viaExt } : f.mode === "server" ? { useServerDefault: true } : {}) };
     const r = await post("/api/admin/services", body);
     setBusy(false);
     if (r.error) return setMsg({ ok: false, text: r.error });
-    setEdit(false); setF({ mode: "keep", secret: "", model: "", owner: "", gateway: "", viaExt: false });
+    setEdit(false); setF({ mode: "keep", secret: "", model: "", owner: "", gateway: "", viaExt: false, fbPersonal: true, fbServer: true });
     setD(await load(true));
     setMsg({ ok: true, text: "Saved — used from the next investigation" });
   };
@@ -159,7 +160,7 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
         <h3 className="font-semibold">{which === "claude" ? "Claude — investigation agent" : "DevRev — tickets & comments"}</h3>
         <Status s={s} />
         <button className={`${btn} ml-auto`} disabled={busy} onClick={recheck}>{busy ? "Checking…" : "Check connection"}</button>
-        <button className={btnPrimary} onClick={() => { setF({ mode: "keep", secret: "", model: which === "claude" ? d.claude.model : "", owner: which === "claude" ? d.claude.ownerNote : "", gateway: which === "claude" ? d.claude.gatewayUrl ?? "" : "", viaExt: which === "claude" && !!d.claude.gatewayViaConnector }); setEdit((e) => !e); }}>{edit ? "Close" : "Edit"}</button>
+        <button className={btnPrimary} onClick={() => { setF({ mode: "keep", secret: "", model: which === "claude" ? d.claude.model : "", owner: which === "claude" ? d.claude.ownerNote : "", gateway: which === "claude" ? d.claude.gatewayUrl ?? "" : "", viaExt: which === "claude" && !!d.claude.gatewayViaConnector, fbPersonal: d.claude.fallback?.personal ?? true, fbServer: d.claude.fallback?.server ?? true }); setEdit((e) => !e); }}>{edit ? "Close" : "Edit"}</button>
       </div>
       {edit && (
         <div className="mb-4 grid gap-3 rounded-lg bg-bg p-4 sm:grid-cols-2">
@@ -200,6 +201,18 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
                 <input className={input} type="password" autoComplete="off" value={f.secret} onChange={(e) => setF({ ...f, secret: e.target.value })} />
               </Field>
             )}
+            <div className="space-y-2 rounded-lg border border-line bg-panel p-3 text-sm sm:col-span-2">
+              <div className="font-medium">If the main sign-in isn&apos;t working</div>
+              <p className="text-xs text-muted">The same request goes to the next one at once, so investigations carry on where they were without waiting. It switches back by itself once the main one works again.</p>
+              <label className="flex items-start gap-2">
+                <input type="checkbox" className="mt-1" checked={f.fbPersonal} onChange={(e) => setF({ ...f, fbPersonal: e.target.checked })} />
+                <span>1. The person&apos;s own Claude token <span className="block text-xs text-muted">Each person adds theirs on the Connector page; used only for investigations they start.</span></span>
+              </label>
+              <label className="flex items-start gap-2">
+                <input type="checkbox" className="mt-1" checked={f.fbServer} onChange={(e) => setF({ ...f, fbServer: e.target.checked })} />
+                <span>2. The server&apos;s Claude login <span className="block text-xs text-muted">The Claude sign-in set in the server&apos;s own settings, if there is one.</span></span>
+              </label>
+            </div>
             <Field label="Token owner" hint={d.claude.ownerDetected ? `Anthropic says: ${d.claude.owner}` : "Who generated this key / token — Anthropic doesn't tell us for API keys"}>
               <input className={input} value={f.owner} placeholder="e.g. Bhavyank Sarolia (support team account)" onChange={(e) => setF({ ...f, owner: e.target.value })} />
             </Field>
@@ -222,6 +235,9 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
             ? <>{d.claude.owner}{d.claude.ownerDetected && <span className="ml-2 text-xs text-muted">from Anthropic</span>}</>
             : <span className="text-muted">not set — add it under Edit</span>} />
           <Row k="Model" v={<code className="text-xs">{d.claude.model}</code>} />
+          <Row k="Fallback" v={d.claude.fallback?.now
+            ? <>{d.claude.fallback.mainDown && <b className="mr-1 text-warn">In use now ·</b>}{d.claude.fallback.now}</>
+            : <span className="text-muted">none — {d.claude.fallback?.personal ? "nobody has added their own Claude token yet (Connector page)" : "switched off"}</span>} />
           <Row k="Status" v={d.claude.message} />
           <Row k="Last 30 days" v={`${d.claude.usage30.runs} agent runs · $${d.claude.usage30.cost.toFixed(2)} · ${Math.round(d.claude.usage30.tokens / 1000).toLocaleString("en-IN")}k tokens`} />
         </> : <>

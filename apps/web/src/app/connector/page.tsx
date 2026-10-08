@@ -1,5 +1,6 @@
 "use client";
 import { CopyButton } from "@/components/CopyButton";
+import { MyClaudeCard } from "@/components/MyClaudeCard";
 import { useEffect, useRef, useState } from "react";
 
 interface Status {
@@ -152,6 +153,8 @@ export default function ConnectorPage() {
             ))}
             {msg && <div className="px-5 py-3 text-xs text-muted">{msg}</div>}
           </section>
+
+          <MyClaudeCard />
 
           <section className="card">
             <button type="button" onClick={() => setShowHosts((v) => !v)} className="flex w-full items-center gap-2 px-5 py-3 text-left">
