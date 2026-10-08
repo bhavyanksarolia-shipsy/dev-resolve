@@ -1,0 +1,51 @@
+# Dev Resolve backend on one Oracle Cloud VM: the app, its Postgres and Caddy (HTTPS, automatic certificate).
+# Use it through the `dr` command that setup.sh installs (it adds the right files):  dr ps · dr logs -f app · dr restart app
+# Secrets live in /etc/dev-resolve/*.env on the VM (root-only), never in this repo.
+services:
+  app:
+    build: ../../apps/api
+    image: dev-resolve:latest
+    restart: unless-stopped
+    env_file:
+      - /etc/dev-resolve/app.env   # copied from Railway by send-env.sh (DevRev, Claude, Google login, …)
+      - /etc/dev-resolve/db.env    # this VM's database (written by setup.sh) — wins over anything in app.env
+    environment:
+      NODE_ENV: production
+      DEV_RESOLVE_CONNECTOR: "on"
+      DATABASE_SSL: "off"          # Postgres is on the same private Docker network
+      BACKEND_PUBLIC_URL: https://${DOMAIN}
+      AGENT_MAX_PARALLEL: ${AGENT_MAX_PARALLEL:-4}
+    volumes:
+      - app-data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    env_file: /etc/dev-resolve/db.env  # POSTGRES_PASSWORD (admin) — only reachable inside this VM, no port opened
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      retries: 10
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [app]
+
+volumes:
+  app-data:
+  pg-data:
+  caddy-data:
+  caddy-config:
