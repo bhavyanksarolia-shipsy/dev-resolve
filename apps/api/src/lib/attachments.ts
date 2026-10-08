@@ -1,7 +1,7 @@
 import "server-only";
 import { simpleParser, type ParsedMail } from "mailparser";
-import * as XLSX from "xlsx";
-import mammoth from "mammoth";
+import { spawn } from "node:child_process";
+import path from "node:path";
 import { locateArtifact, revUser, type TimelineEntry } from "./devrev";
 
 export interface Attachment {
@@ -154,6 +154,31 @@ const tooBig = (name: string, size: number) =>
   `(not read: "${name}" unpacks to ${Number.isFinite(size) ? MB(size) : "an unknown, very large size"} — too large to open safely here. ` +
   "Ask for a smaller extract (only the rows / columns that matter) if its contents are needed.)";
 
+/**
+ * Spreadsheet / Word → text in its own process (scripts/file-text.mjs) with at most PARSE_HEAP_MB of memory and
+ * PARSE_TIMEOUT_MS of time. If the file is too big or damaged, only that process dies and the agent gets a note.
+ */
+const PARSE_HEAP_MB = 512, PARSE_TIMEOUT_MS = 60_000;
+function parseIsolated(kind: "sheet" | "doc", name: string, body: Buffer): Promise<string> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [`--max-old-space-size=${PARSE_HEAP_MB}`, path.join(process.cwd(), "scripts", "file-text.mjs"), kind],
+      { stdio: ["pipe", "pipe", "pipe"], timeout: PARSE_TIMEOUT_MS });
+    const out: Buffer[] = [];
+    let err = "";
+    child.stdout.on("data", (c: Buffer) => out.push(c));
+    child.stderr.on("data", (c: Buffer) => { if (err.length < 2000) err += c; });
+    child.stdin.on("error", () => {}); // the child may exit before reading everything
+    child.on("error", () => resolve(`(not read: "${name}" — couldn't start the file reader.)`));
+    child.on("close", (code, signal) => {
+      if (code === 0) return resolve(Buffer.concat(out).toString("utf8"));
+      const why = signal === "SIGTERM" ? "took too long to open" : /heap|memory/i.test(err) ? "too large to open safely here" : "damaged or in a format that couldn't be read";
+      console.warn(`[attachments] "${name}" not read (${why}; exit ${code ?? signal})`);
+      resolve(`(not read: "${name}" — ${why}. Ask for a smaller extract (only the rows / columns that matter) if its contents are needed.)`);
+    });
+    child.stdin.end(body);
+  });
+}
+
 /** Plain text of a spreadsheet / Word / text-like file, or null when it isn't one of those. */
 async function fileText(a: Attachment, body: Buffer): Promise<string | null> {
   const e = ext(a.name);
@@ -163,16 +188,7 @@ async function fileText(a: Attachment, body: Buffer): Promise<string | null> {
   if ((isSheet || isDoc) && unpacked != null && unpacked > MAX_UNPACKED) return tooBig(a.name, unpacked);
   // Old binary .xls / .xlsb aren't ZIPs: judge them by file size.
   if (isSheet && unpacked == null && body.length > MAX_UNPACKED / 4) return tooBig(a.name, body.length);
-  if (isSheet) {
-    // sheetRows: at most this many rows per sheet are parsed — far more than the ~40k characters the agent gets.
-    const wb = XLSX.read(body, { type: "buffer", cellDates: true, dense: true, sheetRows: 5000 });
-    return wb.SheetNames.map((n) => {
-      const csv = XLSX.utils.sheet_to_csv(wb.Sheets[n], { blankrows: false });
-      const rows = csv.split("\n").length;
-      return `### Sheet "${n}" (${rows} rows)\n${csv}`;
-    }).join("\n\n");
-  }
-  if (isDoc) return (await mammoth.extractRawText({ buffer: body })).value;
+  if (isSheet || isDoc) return parseIsolated(isSheet ? "sheet" : "doc", a.name, body);
   if (TEXT_EXT.includes(e) || a.type.startsWith("text/") || a.type === "application/json") {
     const t = body.toString("utf8");
     return e === "html" || e === "htm" || a.type === "text/html" ? htmlToText(t) : t;

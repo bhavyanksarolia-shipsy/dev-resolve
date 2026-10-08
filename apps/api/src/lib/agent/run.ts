@@ -419,7 +419,51 @@ export async function sendChatMessage(id: number, text: string, by = "unknown", 
   })();
 }
 
-async function runSession(opts: { id: number; account: Account; candidates: Account[]; seq: number; message: SDKUserMessage; resume?: string; kind: "investigation" | "chat"; by?: string }) {
+type SessionOpts = { id: number; account: Account; candidates: Account[]; seq: number; message: SDKUserMessage; resume?: string; kind: "investigation" | "chat"; by?: string };
+
+/*
+ * At most AGENT_MAX_PARALLEL agent runs (investigations + chat replies) at once — each is a Claude process plus its
+ * tools, and many together can run the server out of memory. The rest wait their turn (said so in the trail) and
+ * start by themselves; Cancel works while waiting too.
+ */
+const maxParallel = () => Math.max(1, Number(process.env.AGENT_MAX_PARALLEL) || 2);
+let activeRuns = 0;
+const waiting: (() => void)[] = [];
+async function takeSlot(id: number, seq: number): Promise<number> {
+  if (activeRuns < maxParallel()) { activeRuns++; return seq; }
+  await step(id, seq++, "system", null, { waiting: true },
+    `Waiting to start — ${activeRuns} other investigation(s) / chat replies are running. This starts by itself as soon as one finishes.`);
+  const ac = new AbortController();
+  running.set(id, ac);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      waiting.push(resolve);
+      ac.signal.addEventListener("abort", () => {
+        const i = waiting.indexOf(resolve);
+        if (i >= 0) waiting.splice(i, 1);
+        reject(new Error("Cancelled while waiting to start"));
+      });
+    });
+  } finally {
+    running.delete(id);
+  }
+  return seq; // the finished run handed its slot straight over (activeRuns unchanged)
+}
+function releaseSlot() {
+  const next = waiting.shift();
+  if (next) next(); else activeRuns--;
+}
+
+async function runSession(opts: SessionOpts) {
+  const seq = await takeSlot(opts.id, opts.seq);
+  try {
+    return await runSessionNow({ ...opts, seq });
+  } finally {
+    releaseSlot();
+  }
+}
+
+async function runSessionNow(opts: SessionOpts) {
   const { id, account, candidates } = opts;
   let seq = opts.seq;
   const scope = [account, ...candidates];
@@ -458,8 +502,10 @@ async function runSession(opts: { id: number; account: Account; candidates: Acco
             env: { ...userToolEnv(opts.by), MCP_REMOTE_CONFIG_DIR: appLogConfigDir(appLogProject, opts.by) } },
         }),
       },
-      allowedTools: ["mcp__devresolve__*"],
       canUseTool: async (name, input) => {
+        // Dev Resolve's own tools (in-process, read-only, scoped to this ticket) are always allowed. Allowed here rather
+        // than via allowedTools, which skips this callback and makes the SDK print a warning on every run.
+        if (name.startsWith("mcp__devresolve__")) return { behavior: "allow", updatedInput: input };
         if (name === `mcp__${OS_SERVER}__search_logs`) {
           const lt = String(input.log_type || "");
           if (!allowedLogTypes.has(lt)) return { behavior: "deny", message: `log_type must be one of ${[...allowedLogTypes].join(", ")} for this ticket` };
