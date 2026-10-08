@@ -6,35 +6,39 @@ import { cancelInvestigation, isLive, queueState, startInvestigation, type Start
 /**
  * Admin → Investigations: every investigation (and chat reply) with who started it, when, how long it ran and where it
  * is now — and the admin actions: stop a running one, take one out of the queue, retry a failed one.
- *   GET  ?status=active|failed|done|all &q=<ticket or title> &page=1
+ *   GET  ?status=all|active|failed|done &q=<ticket or title> &page=1
+ *        failed = open failures only: the ticket's latest investigation failed (one investigated again since isn't counted)
  *   POST { id, action: "stop" | "dequeue" | "retry" }
  */
 const PAGE = 20;
+/** A newer investigation of the same ticket exists (this one was tried again). */
+const LATER = `EXISTS (SELECT 1 FROM investigations j WHERE j.ticket_display = i.ticket_display AND j.id > i.id)`;
 
 export async function GET(req: Request) {
   const g = await requireAdmin(req);
   if (g.error) return g.error;
   const sp = new URL(req.url).searchParams;
-  const status = sp.get("status") || "active";
+  const status = sp.get("status") || "all";
   const page = Math.max(1, Number(sp.get("page")) || 1);
   const term = (sp.get("q") || "").trim();
   const where: string[] = [], args: unknown[] = [];
   if (status === "active") where.push(`(i.status = 'running' OR i.chat_running)`);
-  else if (status === "failed") where.push(`i.status = 'failed'`);
+  else if (status === "failed") where.push(`i.status = 'failed' AND NOT ${LATER}`);
   else if (status === "done") where.push(`i.status IN ('draft_ready','posted')`);
   if (term) { args.push(`%${term}%`); where.push(`(i.ticket_display ILIKE $${args.length} OR i.ticket_title ILIKE $${args.length})`); }
   const w = where.length ? `WHERE ${where.join(" AND ")}` : "";
   const [{ n }] = await q<{ n: number }>(`SELECT count(*)::int n FROM investigations i ${w}`, args);
   const rows = await q<{ id: number; ticket_display: string; ticket_title: string; account_slug: string; status: string; chat_running: boolean; chat_by: string | null;
-    started_by: string | null; who: string | null; email: string | null; created_at: string; finished_at: string | null; error: string | null; confidence: string | null }>(
+    started_by: string | null; who: string | null; email: string | null; created_at: string; finished_at: string | null; error: string | null; confidence: string | null; superseded: boolean }>(
     `SELECT i.id, i.ticket_display, i.ticket_title, i.account_slug, i.status, i.chat_running, i.chat_by, i.started_by,
-            u.display_name AS who, u.email, i.created_at, i.finished_at, i.error, i.confidence
+            u.display_name AS who, u.email, i.created_at, i.finished_at, i.error, i.confidence,
+            ${LATER} AS superseded
        FROM investigations i LEFT JOIN app_users u ON u.name = i.started_by
        ${w} ORDER BY i.id DESC LIMIT ${PAGE} OFFSET ${(page - 1) * PAGE}`, args);
   // Where each active one is right now (from the live queue), and whether a "running" one is really alive.
   const st = await queueState();
   const counts = await q<{ active: number; failed: number }>(
-    `SELECT count(*) FILTER (WHERE status = 'running' OR chat_running)::int active, count(*) FILTER (WHERE status = 'failed' AND finished_at > now() - interval '24 hours')::int failed FROM investigations`);
+    `SELECT count(*) FILTER (WHERE status = 'running' OR chat_running)::int active, count(*) FILTER (WHERE status = 'failed' AND NOT ${LATER})::int failed FROM investigations i`);
   return Response.json({
     page, pageSize: PAGE, total: n, counts: counts[0], limits: { parallel: st.max, perPerson: st.perPerson },
     rows: rows.map((r) => {

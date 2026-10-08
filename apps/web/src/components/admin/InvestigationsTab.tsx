@@ -9,11 +9,11 @@ interface Row {
   state: "running" | "queued" | "starting" | "stuck" | "failed" | "draft_ready" | "posted" | string;
   started_by: string | null; who: string | null; email: string | null; chat_by: string | null;
   created_at: string; finished_at: string | null; runningSince: string | null; position: number | null; waitMin: number | null;
-  error: string | null; confidence: string | null;
+  error: string | null; confidence: string | null; superseded: boolean;
 }
 interface Page { page: number; pageSize: number; total: number; rows: Row[]; counts: { active: number; failed: number }; limits: { parallel: number; perPerson: number } }
 
-const FILTERS = [["active", "Running & queued"], ["failed", "Failed"], ["done", "Finished"], ["all", "All"]] as const;
+const FILTERS = [["all", "All"], ["active", "Running & queued"], ["failed", "Failed"], ["done", "Finished"]] as const;
 const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
 const dur = (ms: number) => {
   const s = Math.max(0, Math.round(ms / 1000));
@@ -33,7 +33,7 @@ const CHIP: Record<string, [string, string]> = {
  * Remove from queue (waiting) and Retry (failed, runs again for the person who started it, with their notes and files).
  */
 export function InvestigationsTab() {
-  const [status, setStatus] = useState<(typeof FILTERS)[number][0]>("active");
+  const [status, setStatus] = useState<(typeof FILTERS)[number][0]>("all");
   const [term, setTerm] = useState("");
   const [page, setPage] = useState(1);
   const [d, setD] = useState<Page | null>(null);
@@ -75,7 +75,7 @@ export function InvestigationsTab() {
         {FILTERS.map(([k, l]) => (
           <button key={k} onClick={() => { setStatus(k); setPage(1); }}
             className={`rounded-full px-3 py-1 text-sm ring-1 ${status === k ? "bg-accent-soft font-medium text-accent-strong ring-emerald-200" : "text-muted ring-line hover:text-fg"}`}>
-            {l}{k === "active" && d ? ` · ${d.counts.active}` : k === "failed" && d && d.counts.failed ? ` · ${d.counts.failed} today` : ""}
+            {l}{k === "active" && d ? ` · ${d.counts.active}` : k === "failed" && d ? ` · ${d.counts.failed}` : ""}
           </button>
         ))}
         <input className={`${input} ml-auto w-56`} value={term} placeholder="Search ticket or title" onChange={(e) => { setTerm(e.target.value); setPage(1); }} />
@@ -89,13 +89,14 @@ export function InvestigationsTab() {
           </thead>
           <tbody className="divide-y divide-line">
             {!d && [0, 1, 2].map((i) => <tr key={i}><td colSpan={7} className="px-4 py-3"><div className="skeleton h-5 w-full" /></td></tr>)}
-            {d && !d.rows.length && <tr><td colSpan={7} className="px-4 py-10 text-center text-muted">{status === "active" ? "Nothing running or waiting right now." : "No investigations here."}</td></tr>}
+            {d && !d.rows.length && <tr><td colSpan={7} className="px-4 py-10 text-center text-muted">{status === "active" ? "Nothing running or waiting right now." : status === "failed" ? "No open failures — every failed ticket has been investigated again since." : "No investigations here."}</td></tr>}
             {d?.rows.map((r) => {
               const live = ["running", "queued", "starting", "stuck"].includes(r.state);
               const time = r.state === "queued" ? `waiting ${dur(now - new Date(r.created_at).getTime())}`
                 : live ? dur(now - new Date(r.runningSince ?? r.created_at).getTime())
                 : r.finished_at ? dur(new Date(r.finished_at).getTime() - new Date(r.created_at).getTime()) : "—";
-              const [label, tone] = CHIP[r.state] ?? [r.state, "text-muted ring-line"];
+              const tried = r.state === "failed" && r.superseded; // investigated again since — not an open failure
+              const [label, tone] = tried ? ["failed · tried again", "text-muted ring-line"] : CHIP[r.state] ?? [r.state, "text-muted ring-line"];
               return (
                 <tr key={r.id} className="align-top hover:bg-bg/60">
                   <td className="px-4 py-3">
@@ -115,13 +116,13 @@ export function InvestigationsTab() {
                       {r.kind === "chat" && live ? "chat · " : ""}{label}{r.state === "queued" && r.position ? ` · ${ordinal(r.position)} · ~${r.waitMin} min` : ""}{r.confidence && !live ? ` · ${r.confidence}` : ""}
                     </span>
                     {r.state === "stuck" && <div className="mt-1 text-xs text-bad">Not running on the server — clear it to free the ticket</div>}
-                    {r.state === "failed" && r.error && <div className="mt-1 max-w-xs text-xs text-muted" title={r.error}>{r.error.slice(0, 120)}</div>}
+                    {r.state === "failed" && r.error && !tried && <div className="mt-1 max-w-xs text-xs text-muted" title={r.error}>{r.error.slice(0, 120)}</div>}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right">
                     {(r.state === "running" || r.state === "starting") && <button className={`${btn} hover:border-bad hover:text-bad`} disabled={busy === r.id} onClick={() => act(r, "stop")}>Stop</button>}
                     {r.state === "stuck" && <button className={`${btn} hover:border-bad hover:text-bad`} disabled={busy === r.id} onClick={() => act(r, "stop")}>Clear</button>}
                     {r.state === "queued" && <button className={`${btn} hover:border-bad hover:text-bad`} disabled={busy === r.id} onClick={() => act(r, "dequeue")}>Remove from queue</button>}
-                    {r.state === "failed" && <button className={btn} disabled={busy === r.id} onClick={() => act(r, "retry")}>Retry</button>}
+                    {r.state === "failed" && !tried && <button className={btn} disabled={busy === r.id} onClick={() => act(r, "retry")}>Retry</button>}
                   </td>
                 </tr>
               );
