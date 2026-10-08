@@ -6,11 +6,10 @@ import { cancelInvestigation, isLive, queueState, startInvestigation, type Start
 /**
  * Admin → Investigations: every investigation (and chat reply) with who started it, when, how long it ran and where it
  * is now — and the admin actions: stop a running one, take one out of the queue, retry a failed one.
- *   GET  ?status=all|active|failed|done &q=<ticket or title> &page=1
+ *   GET  ?status=all|active|failed|done &q=<ticket or title> &page=1 &size=10|25|50|100
  *        failed = open failures only: the ticket's latest investigation failed (one investigated again since isn't counted)
  *   POST { id, action: "stop" | "dequeue" | "retry" }
  */
-const PAGE = 20;
 /** A newer investigation of the same ticket exists (this one was tried again). */
 const LATER = `EXISTS (SELECT 1 FROM investigations j WHERE j.ticket_display = i.ticket_display AND j.id > i.id)`;
 
@@ -20,6 +19,7 @@ export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
   const status = sp.get("status") || "all";
   const page = Math.max(1, Number(sp.get("page")) || 1);
+  const PAGE = [10, 25, 50, 100].includes(Number(sp.get("size"))) ? Number(sp.get("size")) : 25;
   const term = (sp.get("q") || "").trim();
   const where: string[] = [], args: unknown[] = [];
   if (status === "active") where.push(`(i.status = 'running' OR i.chat_running)`);
