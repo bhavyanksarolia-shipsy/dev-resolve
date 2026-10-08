@@ -66,6 +66,7 @@ function Login() {
           <h1 className="text-2xl font-semibold tracking-tight">Welcome back</h1>
           <p className="mt-1.5 text-sm text-muted">{opts?.google ? "Sign in with your work Google account." : "Sign in with the login your admin gave you."}</p>
 
+          {!error && params.get("ended") && <div role="status" className="mt-5 rounded-lg bg-amber-50 px-3.5 py-2.5 text-sm text-warn ring-1 ring-amber-200">You were signed out — no activity for 12 hours (or your session was ended). Sign in again to continue.</div>}
           {error && <div role="alert" className="mt-5 rounded-lg bg-red-50 px-3.5 py-2.5 text-sm text-bad ring-1 ring-red-200">{error}</div>}
 
           <div className="mt-6 space-y-3">

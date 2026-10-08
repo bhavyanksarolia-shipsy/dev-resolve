@@ -12,6 +12,8 @@ import { settings } from "./settings";
  * out, disabling a user or resetting a password takes effect immediately.
  *
  * Env (optional): SESSION_IDLE_HOURS (default 12), SESSION_MAX_DAYS (default 7).
+ * Idle = no one used the page: an open tab's background checks (connections, notifications, progress) don't count —
+ * only requests the page marks as made within 5 minutes of a click / key / scroll (x-dr-idle-ms), and any change (POST…).
  */
 export const SESSION_COOKIE = "dr_session";
 const IDLE_MS = Number(process.env.SESSION_IDLE_HOURS || 12) * 3600e3;
@@ -101,7 +103,14 @@ export async function loginWithGoogle(email: string, displayName: string, meta: 
   return { ok: true, ...(await openSession(u.id, meta)), user: { name: u.name, isAdmin: u.is_admin } };
 }
 
-export async function verifySession(token: string | undefined): Promise<SessionUser | null> {
+/** Did a person just use the page? (Not an open tab polling in the background.) */
+export function userActive(req: Request) {
+  if (!["GET", "HEAD"].includes(req.method)) return true;
+  const idle = Number(req.headers.get("x-dr-idle-ms") ?? NaN);
+  return Number.isFinite(idle) && idle < 5 * 60e3;
+}
+
+export async function verifySession(token: string | undefined, opts: { active?: boolean } = {}): Promise<SessionUser | null> {
   if (!token || token.length > 100) return null;
   // Checked against the DB on every request (one primary-key lookup), so sign-out / disable / reset is instant.
   const [s] = await q<{ name: string; is_admin: boolean; last_seen_at: string }>(
@@ -109,7 +118,7 @@ export async function verifySession(token: string | undefined): Promise<SessionU
       WHERE s.token_hash = $1 AND u.disabled_at IS NULL AND ${LIVE_SESSION_SQL("$2")}`,
     [sha256(token), String(IDLE_MS)]);
   const user = s ? { name: s.name, isAdmin: s.is_admin } : null;
-  if (s && Date.now() - new Date(s.last_seen_at).getTime() > 5 * 60e3) {
+  if (s && opts.active !== false && Date.now() - new Date(s.last_seen_at).getTime() > 5 * 60e3) {
     q(`UPDATE app_sessions SET last_seen_at = now() WHERE token_hash = $1`, [sha256(token)]).catch(() => {});
   }
   return user;
@@ -125,7 +134,7 @@ const tokenFrom = (req: Request) =>
 
 /** The signed-in user for an API route (the proxy already rejected unauthenticated requests). */
 export async function sessionUser(req: Request) {
-  return verifySession(tokenFrom(req));
+  return verifySession(tokenFrom(req), { active: userActive(req) });
 }
 export async function currentUser(req: Request): Promise<string> {
   return (await sessionUser(req))?.name ?? "unknown";

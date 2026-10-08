@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE, verifySession } from "@/lib/auth";
+import { SESSION_COOKIE, userActive, verifySession } from "@/lib/auth";
 import { settings } from "@/lib/settings";
 
 /**
@@ -29,7 +29,7 @@ export async function proxy(req: NextRequest) {
   if (pathname.startsWith("/api/auth/") || pathname === "/api/healthz" || pathname === "/dev-resolve-connector.mjs") {
     return NextResponse.next();
   }
-  const user = await verifySession(req.cookies.get(SESSION_COOKIE)?.value).catch(() => null);
+  const user = await verifySession(req.cookies.get(SESSION_COOKIE)?.value, { active: userActive(req) }).catch(() => null);
   if (user) return NextResponse.next();
   // API-only service: the UI (apps/web) shows the login page when it gets this 401.
   return NextResponse.json({ error: "Sign in required" }, { status: 401 });
