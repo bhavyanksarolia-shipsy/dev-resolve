@@ -24,6 +24,7 @@ export function MyClaudeCard() {
   const [full, setFull] = useState<string | null>(null);
   const [shown, setShown] = useState(false);
   const [help, setHelp] = useState(false);
+  const [open, setOpen] = useState(false); // closed: one line with the status; open: details and buttons
   const load = () => fetch("/api/my-claude", { cache: "no-store" }).then((r) => r.json()).then(setD).catch(() => {});
   useEffect(() => { load(); }, []);
 
@@ -63,15 +64,18 @@ export function MyClaudeCard() {
 
   return (
     <section className="card">
-      <div className="flex flex-wrap items-center gap-2 border-b border-line px-5 py-3">
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex w-full items-center gap-2 px-5 py-3 text-left">
         <h2 className="font-semibold">Your Claude token</h2>
-        <span className="text-xs text-muted">· fallback for your investigations</span>
+        <span className="hidden text-xs text-muted sm:inline">· fallback for your investigations</span>
         <span className={`ml-auto inline-flex items-center gap-1.5 text-xs font-medium ${state.tone}`}><span className={`h-2 w-2 rounded-full ${state.dot}`} />{state.text}</span>
-        {t && <button className={btn} disabled={!!busy} onClick={check}>{busy === "check" ? "Checking…" : "Check connection"}</button>}
-        <button className={btnPrimary} onClick={() => { setF({ kind: t?.kind ?? "oauth", token: "" }); setMsg(null); setEdit((e) => !e); }}>{edit ? "Close" : t ? "Edit" : "Add"}</button>
-      </div>
+        <span className={`text-muted transition-transform ${open ? "rotate-90" : ""}`}>›</span>
+      </button>
 
-      <div className="space-y-3 px-5 py-4">
+      {open && <div className="space-y-3 border-t border-line px-5 py-4">
+        <div className="flex flex-wrap gap-2">
+          {t && <button className={btn} disabled={!!busy} onClick={check}>{busy === "check" ? "Checking…" : "Check connection"}</button>}
+          <button className={btnPrimary} onClick={() => { setF({ kind: t?.kind ?? "oauth", token: "" }); setMsg(null); setEdit((e) => !e); }}>{edit ? "Close" : t ? "Edit" : "Add your token"}</button>
+        </div>
         {!d.enabled && <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-warn ring-1 ring-amber-200">An admin has switched personal fallback off, so your token isn&apos;t used right now.</p>}
 
         {edit && (
@@ -129,7 +133,7 @@ export function MyClaudeCard() {
           {d.chain.length > 0 && row("Order", <span className="text-xs">{d.chain.map((c, i) => <span key={c}>{i > 0 && <span className="text-muted"> → </span>}<b className="font-medium">{c}</b></span>)}</span>)}
         </dl>
         {msg && <p className={`text-xs ${msg.ok ? "text-ok" : "text-bad"}`}>{msg.text}</p>}
-      </div>
+      </div>}
     </section>
   );
 }

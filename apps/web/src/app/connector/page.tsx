@@ -132,7 +132,7 @@ export default function ConnectorPage() {
             <div className="flex items-center gap-2 px-5 py-3">
               <button type="button" onClick={() => setShowSignins((v) => !v)} aria-expanded={openSignins} className="flex min-w-0 flex-1 items-center gap-2 text-left">
                 <h2 className="font-semibold">Google sign-ins</h2>
-                {!openSignins && <span className="flex min-w-0 items-center gap-2 truncate text-xs text-muted">{signins.map((x) => <span key={x.key} className="inline-flex items-center gap-1"><span className={`h-1.5 w-1.5 rounded-full ${x.ok ? "bg-ok" : "bg-bad"}`} />{label(x)}</span>)}</span>}
+                <span className={`h-2 w-2 rounded-full ${signedIn === signins.length ? "bg-ok" : "bg-bad"}`} title={signedIn === signins.length ? "All connected" : "Something isn't connected"} />
                 <span className={`ml-auto text-muted transition-transform ${openSignins ? "rotate-90" : ""}`}>›</span>
               </button>
               {signedIn < signins.length && running && (

@@ -23,9 +23,10 @@ const load = (force = false) => {
 
 function Status({ s }: { s: Svc }) {
   const ok = s.status === "ok";
+  const fb = s.status === "fallback";
   return (
-    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${ok ? "bg-accent-soft text-accent-strong" : s.status === "not_configured" ? "bg-amber-50 text-warn" : "bg-red-50 text-bad"}`}>
-      {ok ? "connected" : s.status === "not_configured" ? "not set up" : "not working"}
+    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${ok ? "bg-accent-soft text-accent-strong" : s.status === "not_configured" || fb ? "bg-amber-50 text-warn" : "bg-red-50 text-bad"}`}>
+      {ok ? "connected" : fb ? "on fallback" : s.status === "not_configured" ? "not set up" : "not working"}
     </span>
   );
 }
@@ -131,140 +132,250 @@ function ClaudeTransparency({ c }: { c: Data["claude"] }) {
   );
 }
 
-/** Claude or DevRev: read-only status card (keys are set on the server — Railway variables). */
+/** DevRev: status + token (Claude has its own card below). */
 export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
+  if (which === "claude") return <ClaudeCard />;
+  return <DevrevCard />;
+}
+
+function DevrevCard() {
   const [d, setD] = useState<Data | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
+  const [edit, setEdit] = useState(false);
+  const [secret, setSecret] = useState("");
   useEffect(() => { let live = true; load().then((x) => live && setD(x)); return () => { live = false; }; }, []);
   const recheck = async () => { setBusy(true); setD(await load(true)); setBusy(false); };
-  const [edit, setEdit] = useState(false);
-  const [f, setF] = useState({ mode: "keep", secret: "", model: "", owner: "", gateway: "", viaExt: false, fbPersonal: true, fbServer: true, parallel: "", perPerson: "" });
-  const setMsg = toast;
   const save = async () => {
-    setBusy(true); setMsg(null);
-    const body = which === "devrev" ? { service: "devrev", token: f.secret }
-      : { service: "claude", model: f.model, owner: f.owner, fallbackPersonal: f.fbPersonal, fallbackServer: f.fbServer, maxParallel: f.parallel, maxPerPerson: f.perPerson,
-          ...(f.mode === "api" ? { apiKey: f.secret } : f.mode === "oauth" ? { oauthToken: f.secret } : f.mode === "gateway" ? { gatewayUrl: f.gateway, apiKey: f.secret, gatewayViaConnector: f.viaExt } : f.mode === "server" ? { useServerDefault: true } : {}) };
-    const r = await post("/api/admin/services", body);
+    setBusy(true); toast(null);
+    const r = await post("/api/admin/services", { service: "devrev", token: secret });
     setBusy(false);
-    if (r.error) return setMsg({ ok: false, text: r.error });
-    setEdit(false); setF({ mode: "keep", secret: "", model: "", owner: "", gateway: "", viaExt: false, fbPersonal: true, fbServer: true, parallel: "", perPerson: "" });
-    setD(await load(true));
-    setMsg({ ok: true, text: "Saved — used from the next investigation" });
+    if (r.error) return toast({ ok: false, text: r.error });
+    setEdit(false); setSecret(""); setD(await load(true));
+    toast({ ok: true, text: "Saved" });
   };
   if (d === undefined) return <div className="skeleton h-40 w-full rounded-2xl" />;
   if (!d) return <div className="card p-5 text-sm text-bad">Couldn&apos;t load the status.</div>;
-  const s = which === "claude" ? d.claude : d.devrev;
+  const s = d.devrev;
   return (
     <section className="card p-5">
       <div className="mb-3 flex items-center gap-3">
-        <h3 className="font-semibold">{which === "claude" ? "Claude — investigation agent" : "DevRev — tickets & comments"}</h3>
+        <h3 className="font-semibold">DevRev — tickets &amp; comments</h3>
         <Status s={s} />
         <button className={`${btn} ml-auto`} disabled={busy} onClick={recheck}>{busy ? "Checking…" : "Check connection"}</button>
-        <button className={btnPrimary} onClick={() => { setF({ mode: "keep", secret: "", model: which === "claude" ? d.claude.model : "", owner: which === "claude" ? d.claude.ownerNote : "", gateway: which === "claude" ? d.claude.gatewayUrl ?? "" : "", viaExt: which === "claude" && !!d.claude.gatewayViaConnector, fbPersonal: d.claude.fallback?.personal ?? true, fbServer: d.claude.fallback?.server ?? true, parallel: String(d.claude.queue?.parallel ?? ""), perPerson: String(d.claude.queue?.perPerson ?? "") }); setEdit((e) => !e); }}>{edit ? "Close" : "Edit"}</button>
+        <button className={btnPrimary} onClick={() => setEdit((e) => !e)}>{edit ? "Close" : "Edit"}</button>
       </div>
       {edit && (
-        <div className="mb-4 grid gap-3 rounded-lg bg-bg p-4 sm:grid-cols-2">
-          {which === "claude" ? <>
-            <Field label="Sign-in">
-              <Select value={f.mode} onChange={(v) => setF({ ...f, mode: v })} options={[
-                { value: "keep", label: `Keep current (${d.claude.method})` },
-                { value: "api", label: "Anthropic API key", hint: "sk-ant-… from console.anthropic.com" },
-                { value: "oauth", label: "Claude login token", hint: "from `claude setup-token` (uses a Claude subscription)" },
-                { value: "gateway", label: "API gateway (e.g. Bifrost)", hint: "the gateway's address + the key it gave you (sk-bf-…)" },
-                { value: "server", label: "Server's Claude login (default)", hint: "forget the key / gateway saved here and use the server's own login" },
-              ]} />
-            </Field>
-            <Field label="Model" hint={`Default ${d.claude.defaultModel}`}>
-              <Select value={f.model} onChange={(v) => setF({ ...f, model: v })} options={[
-                { value: "claude-opus-5-5", label: "Claude Opus 5.5", hint: "most capable — default" },
-                { value: "claude-sonnet-5", label: "Claude Sonnet 5", hint: "faster and cheaper" },
-                { value: "claude-fable-5-1", label: "Claude Fable 5.1" },
-                { value: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5", hint: "fastest, for light tickets" },
-              ]} />
-            </Field>
-            {f.mode === "gateway" && (
-              <Field label="Gateway address" hint="Ask whoever issued the key; for Bifrost it usually ends in /anthropic">
-                <input className={input} value={f.gateway} placeholder="https://bifrost.example.com/anthropic" onChange={(e) => setF({ ...f, gateway: e.target.value })} />
-              </Field>
-            )}
-            {f.mode === "gateway" && (
-              <label className="flex items-start gap-2 text-sm sm:col-span-2">
-                <input type="checkbox" className="mt-1" checked={f.viaExt} onChange={(e) => setF({ ...f, viaExt: e.target.checked })} />
-                <span>Reach it through the Dev Resolve extension
-                  <span className="block text-xs text-muted">For a gateway that only works on the company VPN (e.g. Bifrost behind Pritunl). Investigations then need at least one
-                    person with Chrome open, the extension (1.2 or newer, download it again from the Connector page after saving) and the VPN connected.</span>
-                </span>
-              </label>
-            )}
-            {f.mode !== "keep" && f.mode !== "server" && (
-              <Field label={f.mode === "api" ? "New API key" : f.mode === "gateway" ? (d.claude.gatewayUrl ? "Gateway key (empty = keep)" : "Gateway key") : "New login token"} hint="Stored on the server; admins can reveal it with the eye">
-                <input className={input} type="password" autoComplete="off" value={f.secret} onChange={(e) => setF({ ...f, secret: e.target.value })} />
-              </Field>
-            )}
-            <div className="grid gap-3 rounded-lg border border-line bg-panel p-3 text-sm sm:col-span-2 sm:grid-cols-2">
-              <div className="font-medium sm:col-span-2">Queue <span className="font-normal text-muted">— investigations and chat replies beyond these wait in line and start by themselves</span></div>
-              <Field label="Running at once" hint="Each one is a Claude process plus its tools: 2 for a 1 GB server, 6–8 on the Oracle VM (24 GB)">
-                <input className={input} inputMode="numeric" value={f.parallel} onChange={(e) => setF({ ...f, parallel: e.target.value.replace(/\D/g, "") })} placeholder="2" />
-              </Field>
-              <Field label="Per person" hint="Most one person can have running while others are waiting (with nobody waiting, free slots are used anyway)">
-                <input className={input} inputMode="numeric" value={f.perPerson} onChange={(e) => setF({ ...f, perPerson: e.target.value.replace(/\D/g, "") })} placeholder="2" />
-              </Field>
-            </div>
-            <div className="space-y-2 rounded-lg border border-line bg-panel p-3 text-sm sm:col-span-2">
-              <div className="font-medium">If the main sign-in isn&apos;t working</div>
-              <p className="text-xs text-muted">The same request goes to the next one at once, so investigations carry on where they were without waiting. It switches back by itself once the main one works again.</p>
-              <label className="flex items-start gap-2">
-                <input type="checkbox" className="mt-1" checked={f.fbPersonal} onChange={(e) => setF({ ...f, fbPersonal: e.target.checked })} />
-                <span>1. The person&apos;s own Claude token <span className="block text-xs text-muted">Each person adds theirs on the Connector page; used only for investigations they start.</span></span>
-              </label>
-              <label className="flex items-start gap-2">
-                <input type="checkbox" className="mt-1" checked={f.fbServer} onChange={(e) => setF({ ...f, fbServer: e.target.checked })} />
-                <span>2. The server&apos;s Claude login <span className="block text-xs text-muted">The Claude sign-in set in the server&apos;s own settings, if there is one.</span></span>
-              </label>
-            </div>
-            <Field label="Token owner" hint={d.claude.ownerDetected ? `Anthropic says: ${d.claude.owner}` : "Who generated this key / token — Anthropic doesn't tell us for API keys"}>
-              <input className={input} value={f.owner} placeholder="e.g. Bhavyank Sarolia (support team account)" onChange={(e) => setF({ ...f, owner: e.target.value })} />
-            </Field>
-          </> : (
-            <Field label="New DevRev token" hint="DevRev → Settings → Account → Personal access token. Posts and updates appear as its owner.">
-              <input className={input} type="password" autoComplete="off" value={f.secret} onChange={(e) => setF({ ...f, secret: e.target.value })} />
-            </Field>
-          )}
-          <div className="flex items-end gap-2 sm:col-span-2">
-            <button className={btnPrimary} disabled={busy || (which === "devrev" ? !f.secret : f.mode === "gateway" ? !f.gateway.trim() || (!f.secret && !d.claude.gatewayUrl) : f.mode !== "keep" && f.mode !== "server" && !f.secret)} onClick={save}>{busy ? "Saving…" : "Save"}</button>
+        <div className="mb-4 space-y-3 rounded-lg bg-bg p-4">
+          <Field label="New DevRev token" hint="DevRev → Settings → Account → Personal access token. Posts and updates appear as its owner.">
+            <input className={`${input} max-w-xl`} type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} />
+          </Field>
+          <div className="flex gap-2">
+            <button className={btnPrimary} disabled={busy || !secret} onClick={save}>{busy ? "Saving…" : "Save"}</button>
             <button className={btn} onClick={() => setEdit(false)}>Cancel</button>
           </div>
         </div>
       )}
       <dl className="divide-y divide-line">
-        {which === "claude" ? <>
-          <Row k="Signed in with" v={d.claude.method} />
-          <Row k="Token" v={<TokenField which="claude" preview={d.claude.tokenPreview} />} />
-          <Row k="Token owner" v={d.claude.owner
-            ? <>{d.claude.owner}{d.claude.ownerDetected && <span className="ml-2 text-xs text-muted">from Anthropic</span>}</>
-            : <span className="text-muted">not set — add it under Edit</span>} />
-          <Row k="Model" v={<code className="text-xs">{d.claude.model}</code>} />
-          {d.claude.queue && <Row k="Queue" v={<>
-            <b className="font-medium">{d.claude.queue.parallel}</b> running at once · <b className="font-medium">{d.claude.queue.perPerson}</b> per person
-            <span className="ml-2 text-xs text-muted">now: {d.claude.queue.running} running{d.claude.queue.waiting ? `, ${d.claude.queue.waiting} waiting` : ""}</span>
-          </>} />}
-          <Row k="Fallback" v={d.claude.fallback?.now
-            ? <>{d.claude.fallback.mainDown && <b className="mr-1 text-warn">In use now ·</b>}{d.claude.fallback.now}</>
-            : <span className="text-muted">none — {d.claude.fallback?.personal ? "nobody has added their own Claude token yet (Connector page)" : "switched off"}</span>} />
-          <Row k="Status" v={d.claude.message} />
-          <Row k="Last 30 days" v={`${d.claude.usage30.runs} agent runs · $${d.claude.usage30.cost.toFixed(2)} · ${Math.round(d.claude.usage30.tokens / 1000).toLocaleString("en-IN")}k tokens`} />
-        </> : <>
-          <Row k="Token" v={<span className="flex flex-wrap items-center gap-2"><TokenField which="devrev" preview={d.devrev.tokenPreview} />{d.devrev.tokenSource && <span className="text-xs text-muted">{d.devrev.tokenSource}</span>}</span>} />
-          <Row k="Token owner" v={d.devrev.as ? <>{d.devrev.as}<span className="ml-2 text-xs text-muted">from DevRev — posts and updates appear as this user</span></> : "—"} />
-          <Row k="Status" v={d.devrev.message} />
-          <Row k="Used for" v="Reading tickets, conversations and attachments; posting internal RCAs; Stage / Pod / Part / owner / resolve updates" />
-        </>}
+        <Row k="Token" v={<span className="flex flex-wrap items-center gap-2"><TokenField which="devrev" preview={s.tokenPreview} />{s.tokenSource && <span className="text-xs text-muted">{s.tokenSource}</span>}</span>} />
+        <Row k="Token owner" v={s.as ? <>{s.as}<span className="ml-2 text-xs text-muted">from DevRev — posts and updates appear as this user</span></> : "—"} />
+        <Row k="Status" v={s.message} />
+        <Row k="Used for" v="Reading tickets, conversations and attachments; posting internal RCAs; Stage / Pod / Part / owner / resolve updates" />
         {s.fix && <Row k="To fix" v={<span className="text-warn">{s.fix}</span>} />}
       </dl>
-      {which === "devrev" && <p className="mt-3 text-xs text-muted">Posts and updates appear in DevRev as this token&apos;s owner.</p>}
-      {which === "claude" && <SkillsCard />}
-      {which === "claude" && <ClaudeTransparency c={d.claude} />}
+    </section>
+  );
+}
+
+/** A labelled group inside the Claude card / its edit form. */
+function Block({ title, hint, children, className = "" }: { title: string; hint?: React.ReactNode; children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`rounded-xl border border-line bg-panel p-4 ${className}`}>
+      <div className="text-xs font-semibold uppercase tracking-wide text-muted">{title}</div>
+      {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
+      <div className="mt-3">{children}</div>
+    </div>
+  );
+}
+const MODELS = [
+  { value: "claude-opus-5-5", label: "Claude Opus 5.5", hint: "most capable — default" },
+  { value: "claude-sonnet-5", label: "Claude Sonnet 5", hint: "faster and cheaper" },
+  { value: "claude-fable-5-1", label: "Claude Fable 5.1" },
+  { value: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5", hint: "fastest, for light tickets" },
+];
+
+/**
+ * Claude — the investigation agent: what it signs in with, the queue, what happens when the main sign-in fails, and
+ * usage. One status box at the top says what's wrong (if anything) and what to do; the rest is grouped in sections.
+ */
+function ClaudeCard() {
+  const [d, setD] = useState<Data | null | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+  const [edit, setEdit] = useState(false);
+  const blank = { mode: "keep", secret: "", model: "", owner: "", gateway: "", viaExt: false, fbPersonal: true, fbServer: true, parallel: "", perPerson: "" };
+  const [f, setF] = useState(blank);
+  useEffect(() => { let live = true; load().then((x) => live && setD(x)); return () => { live = false; }; }, []);
+  const recheck = async () => { setBusy(true); setD(await load(true)); setBusy(false); };
+  if (d === undefined) return <div className="skeleton h-40 w-full rounded-2xl" />;
+  if (!d) return <div className="card p-5 text-sm text-bad">Couldn&apos;t load the status.</div>;
+  const c = d.claude;
+  const gwHost = c.gatewayUrl ? new URL(c.gatewayUrl).host : null;
+  const mainName = gwHost ? (/bifrost/i.test(gwHost) ? "Bifrost" : "API gateway") : c.method.split(" (")[0];
+  const open = () => {
+    // Editing an API gateway starts in the gateway form with what's saved (the key stays unless a new one is pasted).
+    setF({ ...blank, mode: c.gatewayUrl ? "gateway" : "keep", model: c.model, owner: c.ownerNote, gateway: c.gatewayUrl ?? "", viaExt: !!c.gatewayViaConnector,
+      fbPersonal: c.fallback?.personal ?? true, fbServer: c.fallback?.server ?? true, parallel: String(c.queue?.parallel ?? ""), perPerson: String(c.queue?.perPerson ?? "") });
+    setEdit(true);
+  };
+  const save = async () => {
+    setBusy(true); toast(null);
+    const r = await post("/api/admin/services", { service: "claude", model: f.model, owner: f.owner, fallbackPersonal: f.fbPersonal, fallbackServer: f.fbServer,
+      maxParallel: f.parallel, maxPerPerson: f.perPerson,
+      ...(f.mode === "api" ? { apiKey: f.secret } : f.mode === "oauth" ? { oauthToken: f.secret } : f.mode === "gateway" ? { gatewayUrl: f.gateway, apiKey: f.secret, gatewayViaConnector: f.viaExt } : f.mode === "server" ? { useServerDefault: true } : {}) });
+    setBusy(false);
+    if (r.error) return toast({ ok: false, text: r.error });
+    setEdit(false); setF(blank); setD(await load(true));
+    toast({ ok: true, text: "Saved — used from the next investigation" });
+  };
+  const fallbackOn = c.fallback?.mainDown || c.status === "fallback";
+  const canSave = !busy && (f.mode === "gateway" ? !!f.gateway.trim() && (!!f.secret || !!c.gatewayUrl) : f.mode === "keep" || f.mode === "server" || !!f.secret);
+  const stat = (v: React.ReactNode, label: string) => <div><div className="text-xl font-semibold tabular-nums">{v}</div><div className="text-xs text-muted">{label}</div></div>;
+
+  return (
+    <section className="card p-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <h3 className="font-semibold">Claude — investigation agent</h3>
+        <Status s={c} />
+        <div className="ml-auto flex gap-2">
+          <button className={btn} disabled={busy} onClick={recheck}>{busy && !edit ? "Checking…" : "Check connection"}</button>
+          <button className={btnPrimary} onClick={() => (edit ? setEdit(false) : open())}>{edit ? "Close" : "Edit"}</button>
+        </div>
+      </div>
+
+      {/* One place for "what's wrong and what to do". */}
+      {c.status !== "ok" && (
+        <div className={`mt-4 rounded-xl px-4 py-3 text-sm ring-1 ${fallbackOn ? "bg-amber-50 ring-amber-200" : "bg-red-50 ring-red-200"}`}>
+          <div className={`font-semibold ${fallbackOn ? "text-warn" : "text-bad"}`}>
+            {fallbackOn ? `${mainName} isn't reachable — investigations are running on the fallback, nothing is blocked` : `${mainName} isn't working`}
+          </div>
+          {fallbackOn && c.fallback?.now && <div className="mt-1 text-muted">Using now: {c.fallback.now}. It switches back to {mainName} by itself once it works again.</div>}
+          {c.fix && <div className="mt-1.5 text-muted"><b className="font-medium text-fg">To fix:</b> {c.fix.replace(/\s*Nothing is blocked meanwhile;.*$/, "")}</div>}
+        </div>
+      )}
+
+      {edit ? (
+        <div className="mt-4 space-y-4 rounded-xl bg-bg p-4">
+          <Block title="1 · Sign-in" hint="What the agent uses to reach Claude">
+            <div className="grid max-w-3xl gap-4">
+              <Field label="Sign in with">
+                <Select value={f.mode} onChange={(v) => setF({ ...f, mode: v, secret: "" })} options={[
+                  ...(c.gatewayUrl ? [] : [{ value: "keep", label: `Keep current — ${mainName}` }]),
+                  { value: "gateway", label: "API gateway (e.g. Bifrost)", hint: "its address + the key it gave you (sk-bf-…)" },
+                  { value: "api", label: "Anthropic API key", hint: "sk-ant-api03-… from console.anthropic.com" },
+                  { value: "oauth", label: "Claude login token", hint: "from `claude setup-token` (a Claude subscription)" },
+                  { value: "server", label: "Server's own Claude login", hint: "forget what's saved here" },
+                ]} />
+              </Field>
+              {f.mode === "gateway" && <>
+                <Field label="Gateway address" hint="For Bifrost it ends in /anthropic">
+                  <input className={input} value={f.gateway} placeholder="https://bifrost.example.com/anthropic" onChange={(e) => setF({ ...f, gateway: e.target.value })} />
+                </Field>
+                {c.gatewayUrl && (
+                  <div className="text-sm">
+                    <div className="mb-1 font-medium">Current key</div>
+                    <TokenField which="claude" preview={c.tokenPreview} />
+                  </div>
+                )}
+                <Field label={c.gatewayUrl ? "Replace the key (leave empty to keep it)" : "Gateway key"} hint="sk-bf-… — stored on the server; admins can show it with the eye">
+                  <input className={input} type="password" autoComplete="off" value={f.secret} onChange={(e) => setF({ ...f, secret: e.target.value })} />
+                </Field>
+                <label className="flex items-start gap-2 text-sm">
+                  <input type="checkbox" className="mt-1" checked={f.viaExt} onChange={(e) => setF({ ...f, viaExt: e.target.checked })} />
+                  <span>Reach it through the Dev Resolve extension
+                    <span className="block text-xs text-muted">For a gateway only on the company VPN (Bifrost behind Pritunl): someone&apos;s Chrome with the extension (1.2+) and Pritunl carries the requests.</span>
+                  </span>
+                </label>
+              </>}
+              {(f.mode === "api" || f.mode === "oauth") && (
+                <Field label={f.mode === "api" ? "Anthropic API key" : "Claude login token"} hint="Stored on the server; admins can show it with the eye">
+                  <input className={input} type="password" autoComplete="off" value={f.secret} onChange={(e) => setF({ ...f, secret: e.target.value })} />
+                </Field>
+              )}
+              <Field label="Model" hint={`Default ${c.defaultModel}`}>
+                <Select value={f.model} onChange={(v) => setF({ ...f, model: v })} options={MODELS} />
+              </Field>
+              <Field label="Key owner" hint={c.ownerDetected ? `Anthropic says: ${c.owner}` : "Who the key belongs to — gateways and API keys don't say"}>
+                <input className={input} value={f.owner} placeholder="e.g. Bhavyank Sarolia (support team)" onChange={(e) => setF({ ...f, owner: e.target.value })} />
+              </Field>
+            </div>
+          </Block>
+          <Block title="2 · Queue" hint="Investigations and chat replies beyond these wait in line and start by themselves">
+            <div className="flex flex-wrap gap-6">
+              <label className="text-sm"><div className="mb-1 font-medium">Running at once</div>
+                <input className={`${input} w-24`} inputMode="numeric" value={f.parallel} placeholder="2" onChange={(e) => setF({ ...f, parallel: e.target.value.replace(/\D/g, "") })} />
+                <div className="mt-1 max-w-xs text-xs text-muted">2 for a 1 GB server; more with more memory</div>
+              </label>
+              <label className="text-sm"><div className="mb-1 font-medium">Per person</div>
+                <input className={`${input} w-24`} inputMode="numeric" value={f.perPerson} placeholder="2" onChange={(e) => setF({ ...f, perPerson: e.target.value.replace(/\D/g, "") })} />
+                <div className="mt-1 max-w-xs text-xs text-muted">While others are waiting (with nobody waiting, free slots are used anyway)</div>
+              </label>
+            </div>
+          </Block>
+          <Block title={`3 · If ${mainName} isn't working`} hint="The same request goes to the next one at once — investigations carry on without waiting, and come back by themselves">
+            <div className="space-y-3 text-sm">
+              <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={f.fbPersonal} onChange={(e) => setF({ ...f, fbPersonal: e.target.checked })} />
+                <span>The person&apos;s own Claude token<span className="block text-xs text-muted">Each person adds theirs on the Connector page; only for investigations they start</span></span></label>
+              <label className="flex items-start gap-2"><input type="checkbox" className="mt-1" checked={f.fbServer} onChange={(e) => setF({ ...f, fbServer: e.target.checked })} />
+                <span>Then the server&apos;s own Claude login<span className="block text-xs text-muted">If the server has one set</span></span></label>
+            </div>
+          </Block>
+          <div className="flex gap-2">
+            <button className={btnPrimary} disabled={!canSave} onClick={save}>{busy ? "Saving…" : "Save"}</button>
+            <button className={btn} onClick={() => setEdit(false)}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <Block title="Sign-in">
+            <dl className="divide-y divide-line">
+              <Row k="Using" v={<span className="flex flex-wrap items-center gap-2"><b className="font-medium">{mainName}</b>{gwHost && <span className="text-xs text-muted">{gwHost}</span>}
+                {c.gatewayViaConnector && <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs text-accent-strong">through the extension</span>}</span>} />
+              <Row k="Key" v={<TokenField which="claude" preview={c.tokenPreview} />} />
+              <Row k="Owner" v={c.owner ?? <span className="text-muted">not set — add it under Edit</span>} />
+              <Row k="Model" v={<code className="text-xs">{c.model}</code>} />
+            </dl>
+          </Block>
+          <Block title="If it isn't working, use">
+            <ol className="space-y-2 text-sm">
+              {[{ on: true, label: `${mainName} (main)`, now: !fallbackOn },
+                { on: !!c.fallback?.personal, label: "Each person's own Claude token", note: c.fallback?.now?.match(/personal Claude tokens \((\d+ \w+)\)/)?.[1] ?? "nobody added one yet", now: fallbackOn },
+                { on: !!c.fallback?.server, label: "The server's own Claude login" },
+              ].map((x, i) => (
+                <li key={i} className={`flex items-center gap-2 ${x.on ? "" : "text-muted line-through"}`}>
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-bg text-xs font-medium ring-1 ring-line">{i + 1}</span>
+                  <span>{x.label}{x.note && <span className="ml-1 text-xs text-muted">· {x.note}</span>}</span>
+                  {x.now && x.on && <span className={`ml-auto rounded-full px-2 py-0.5 text-xs ${i === 0 ? "bg-accent-soft text-accent-strong" : "bg-amber-50 text-warn"}`}>in use now</span>}
+                </li>
+              ))}
+            </ol>
+          </Block>
+          <Block title="Queue">
+            <div className="flex flex-wrap gap-8">
+              {stat(c.queue?.parallel ?? "—", "running at once")}
+              {stat(c.queue?.perPerson ?? "—", "per person")}
+              {stat(<>{c.queue?.running ?? 0}<span className="text-sm font-normal text-muted"> / {c.queue?.waiting ?? 0}</span></>, "running / waiting now")}
+            </div>
+          </Block>
+          <Block title="Last 30 days">
+            <div className="flex flex-wrap gap-8">
+              {stat(c.usage30.runs.toLocaleString("en-IN"), "agent runs")}
+              {stat(`$${c.usage30.cost.toFixed(2)}`, "cost")}
+              {stat(`${Math.round(c.usage30.tokens / 1000).toLocaleString("en-IN")}k`, "tokens")}
+            </div>
+          </Block>
+        </div>
+      )}
+      <SkillsCard />
+      <ClaudeTransparency c={c} />
     </section>
   );
 }
