@@ -2,6 +2,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { confirmDialog, toast } from "@/components/Dialog";
 import { btn, btnPrimary, Field, input, post } from "./ui";
+import { StorageCard } from "./StorageCard";
 
 type Info = Record<string, { present: boolean; size?: number; updated?: string; files?: number; by?: string | null }>;
 const FILES = [
@@ -53,6 +54,7 @@ export function FilesTab() {
   };
   return (
     <div className="space-y-5">
+      <StorageCard />
       <section className="card space-y-3 p-5">
         <h2 className="font-semibold">Chrome extension</h2>
         <p className="text-sm text-muted">Users need the Dev Resolve extension for VPN-only systems and their Google sign-ins. Publish it once on the Chrome Web Store
