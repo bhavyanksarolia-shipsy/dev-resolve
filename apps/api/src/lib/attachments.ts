@@ -120,18 +120,59 @@ const isPdf = (a: Attachment) => a.type === "application/pdf" || ext(a.name) ===
 const SHEET_EXT = ["xlsx", "xlsm", "xls", "xlsb", "ods", "csv", "tsv"];
 const TEXT_EXT = ["txt", "log", "json", "xml", "html", "htm", "md", "yaml", "yml", "sql"];
 
+/**
+ * How big a ZIP-based file (xlsx, docx, ods…) gets once unpacked, read from its central directory without unpacking
+ * anything. null = not a ZIP. Infinity = ZIP64 / unreadable sizes (treat as too big).
+ */
+function zipUnpackedSize(buf: Buffer): number | null {
+  if (buf.length < 22 || buf.readUInt32LE(0) !== 0x04034b50) return null;
+  // End-of-central-directory record: last 22 bytes + up to 64 KB of comment.
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 65535); i--) if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  if (eocd < 0) return Infinity;
+  const count = buf.readUInt16LE(eocd + 10);
+  let p = buf.readUInt32LE(eocd + 16), total = 0;
+  if (count === 0xffff || p === 0xffffffff) return Infinity;
+  for (let n = 0; n < count; n++) {
+    if (p + 46 > buf.length || buf.readUInt32LE(p) !== 0x02014b50) return Infinity;
+    const size = buf.readUInt32LE(p + 24);
+    if (size === 0xffffffff) return Infinity;
+    total += size;
+    p += 46 + buf.readUInt16LE(p + 28) + buf.readUInt16LE(p + 30) + buf.readUInt16LE(p + 32);
+  }
+  return total;
+}
+
+/**
+ * Spreadsheets / Word files are unpacked fully in memory (several times their unpacked size while parsing), so a
+ * small .xlsx that unpacks to hundreds of MB can take the whole server down (it did: a 210 MB sheet, 8 Oct 2026).
+ * Above this, the file is skipped with a note instead. Only ~40k characters are sent to the agent anyway.
+ */
+const MAX_UNPACKED = 40 * 1024 * 1024;
+const MB = (n: number) => `${Math.round(n / 1048576)} MB`;
+const tooBig = (name: string, size: number) =>
+  `(not read: "${name}" unpacks to ${Number.isFinite(size) ? MB(size) : "an unknown, very large size"} — too large to open safely here. ` +
+  "Ask for a smaller extract (only the rows / columns that matter) if its contents are needed.)";
+
 /** Plain text of a spreadsheet / Word / text-like file, or null when it isn't one of those. */
 async function fileText(a: Attachment, body: Buffer): Promise<string | null> {
   const e = ext(a.name);
-  if (SHEET_EXT.includes(e) || /spreadsheet|excel|text\/csv/.test(a.type)) {
-    const wb = XLSX.read(body, { type: "buffer", cellDates: true, dense: true });
+  const unpacked = zipUnpackedSize(body);
+  const isSheet = SHEET_EXT.includes(e) || /spreadsheet|excel|text\/csv/.test(a.type);
+  const isDoc = e === "docx" || a.type.includes("wordprocessingml");
+  if ((isSheet || isDoc) && unpacked != null && unpacked > MAX_UNPACKED) return tooBig(a.name, unpacked);
+  // Old binary .xls / .xlsb aren't ZIPs: judge them by file size.
+  if (isSheet && unpacked == null && body.length > MAX_UNPACKED / 4) return tooBig(a.name, body.length);
+  if (isSheet) {
+    // sheetRows: at most this many rows per sheet are parsed — far more than the ~40k characters the agent gets.
+    const wb = XLSX.read(body, { type: "buffer", cellDates: true, dense: true, sheetRows: 5000 });
     return wb.SheetNames.map((n) => {
       const csv = XLSX.utils.sheet_to_csv(wb.Sheets[n], { blankrows: false });
       const rows = csv.split("\n").length;
       return `### Sheet "${n}" (${rows} rows)\n${csv}`;
     }).join("\n\n");
   }
-  if (e === "docx" || a.type.includes("wordprocessingml")) return (await mammoth.extractRawText({ buffer: body })).value;
+  if (isDoc) return (await mammoth.extractRawText({ buffer: body })).value;
   if (TEXT_EXT.includes(e) || a.type.startsWith("text/") || a.type === "application/json") {
     const t = body.toString("utf8");
     return e === "html" || e === "htm" || a.type === "text/html" ? htmlToText(t) : t;
