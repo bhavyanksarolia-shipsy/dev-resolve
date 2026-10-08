@@ -8,7 +8,7 @@ interface Status {
   vpn: Record<string, boolean>; vpnHosts: string[];
   /** The two different VPNs: the client's (Cisco AnyConnect) and the company's (Pritunl, for the Claude gateway). */
   vpns?: { id: string; name: string; app: string; purpose: string; hosts: string[] }[];
-  signins: { metabase: { project: string; label?: string; baseUrl?: string; signedIn: boolean }[]; appLog: { project: string; signedIn: boolean; expired?: boolean } | null };
+  signins: { metabase: { project: string; label?: string; baseUrl?: string; signedIn: boolean }[]; appLog: { project: string; label?: string; signedIn: boolean; expired?: boolean } | null };
 }
 type Tone = "ok" | "bad" | "wait";
 
@@ -35,6 +35,7 @@ export default function ConnectorPage() {
   const [ext, setExt] = useState<{ version: string; linked?: boolean } | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [showHosts, setShowHosts] = useState(false);
+  const [showSignins, setShowSignins] = useState<boolean | null>(null); // null = open only while something is missing
   const [showNode, setShowNode] = useState(false);
   const [token, setToken] = useState<{ token: string; server: string } | null>(null);
   const linking = useRef(false);
@@ -89,9 +90,12 @@ export default function ConnectorPage() {
   const viaExt = s.online && s.version?.startsWith("ext-");
   const running = s.online;
   const installedHere = !!ext || viaExt;
-  const signins = [...s.signins.metabase.map((m) => ({ key: m.project, label: `Metabase · ${m.label ?? m.project}`, ok: m.signedIn })),
-    ...(s.signins.appLog ? [{ key: "app_log", label: "App logs", ok: s.signins.appLog.signedIn, expired: s.signins.appLog.expired }] : [])] as { key: string; label: string; ok: boolean; expired?: boolean }[];
+  // Each Google-login connection as "name — tool" (e.g. "Neo — OpenSearch", "Bi Neo — Metabase").
+  const signins = [...(s.signins.appLog ? [{ key: "app_log", name: s.signins.appLog.label || "App logs", tool: "OpenSearch", ok: s.signins.appLog.signedIn, expired: s.signins.appLog.expired }] : []),
+    ...s.signins.metabase.map((m) => ({ key: m.project, name: m.label ?? m.project, tool: "Metabase", ok: m.signedIn }))] as { key: string; name: string; tool: string; ok: boolean; expired?: boolean }[];
+  const label = (x: { name: string; tool: string }) => `${x.name} — ${x.tool}`;
   const signedIn = signins.filter((x) => x.ok).length;
+  const openSignins = showSignins ?? signedIn < signins.length;
   const vpns = (s.vpns ?? [{ id: "client", name: "Client VPN", app: "", purpose: "VPN-only systems", hosts: s.vpnHosts }]).map((g) => {
     const okCount = g.hosts.filter((h) => s.vpn[h]).length;
     return { ...g, okCount, up: okCount === g.hosts.length };
@@ -130,23 +134,31 @@ export default function ConnectorPage() {
             detail={`${g.app ? `${g.app} · ` : ""}${!running ? "shows once the extension runs" : g.up ? `for ${g.purpose}` : `connect it for ${g.purpose}`}`} />
         ))}
         <Tile tone={signedIn === signins.length ? "ok" : "bad"} title="Google sign-ins" value={`${signedIn} of ${signins.length}`}
-          detail={signedIn === signins.length ? "all signed in" : `${signins.length - signedIn} need signing in`} />
+          detail={signedIn === signins.length ? signins.map(label).join(" · ") : `not connected: ${signins.filter((x) => !x.ok).map(label).join(", ")}`} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[3fr_2fr]">
         <div className="space-y-6">
           <section className="card divide-y divide-line">
             <div className="flex items-center gap-2 px-5 py-3">
-              <h2 className="font-semibold">Google sign-ins</h2>
+              <button type="button" onClick={() => setShowSignins((v) => !(v ?? signedIn < signins.length))} aria-expanded={openSignins} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+                <h2 className="font-semibold">Google sign-ins</h2>
+                <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs ${signedIn === signins.length ? "bg-emerald-50 text-ok" : "bg-red-50 text-bad"}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${signedIn === signins.length ? "bg-ok" : "bg-bad"}`} />
+                  {signedIn === signins.length ? `${signins.length} of ${signins.length} connected` : `${signins.length - signedIn} not connected`}
+                </span>
+                {!openSignins && <span className="hidden truncate text-xs text-muted sm:inline">{signins.map(label).join(" · ")}</span>}
+                <span className={`ml-auto text-muted transition-transform ${openSignins ? "rotate-90" : ""}`}>›</span>
+              </button>
               {signedIn < signins.length && running && (
-                <button onClick={() => signin(signins.filter((x) => !x.ok).map((x) => x.key))} className="ml-auto rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-strong">Sign in to all missing</button>
+                <button onClick={() => signin(signins.filter((x) => !x.ok).map((x) => x.key))} className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-strong">Sign in to all missing</button>
               )}
             </div>
-            {signins.map((x) => (
+            {openSignins && signins.map((x) => (
               <div key={x.key} className="flex items-center gap-3 px-5 py-3 text-sm">
-                <span className={`h-2.5 w-2.5 rounded-full ${x.ok ? "bg-ok" : "bg-bad"}`} />
-                <span className="flex-1">{x.label}</span>
-                <span className={`text-xs ${x.ok ? "text-ok" : "text-bad"}`}>{x.ok ? "signed in" : x.expired ? "login expired — sign in again" : "not signed in"}</span>
+                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${x.ok ? "bg-ok" : "bg-bad"}`} title={x.ok ? "Connected" : "Not connected"} />
+                <span className="flex-1">{x.name} <span className="text-muted">— {x.tool}</span></span>
+                <span className={`text-xs ${x.ok ? "text-ok" : "text-bad"}`}>{x.ok ? "connected" : x.expired ? "login expired — sign in again" : "not connected"}</span>
                 <button onClick={() => signin([x.key])} disabled={!running} title={running ? "" : "Needs the extension running"}
                   className="rounded-md border border-line px-2.5 py-1 text-xs hover:border-accent disabled:opacity-40">{x.ok ? "Sign in again" : "Sign in"}</button>
               </div>

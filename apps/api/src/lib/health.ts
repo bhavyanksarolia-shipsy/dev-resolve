@@ -303,7 +303,7 @@ export async function checkAll(filter?: { accountSlug?: string; force?: boolean;
     if (acc && acc.app_log?.project !== p.name) continue;
     checks.push(cached(per(`opensearch_mcp:${p.name}`, true), force, () =>
       ensureAppLogAuth(p, viewer).then((r): ConnectionHealth => ({
-        id: `opensearch_mcp:${p.name}`, kind: "opensearch_mcp", label: p.display_name || "Shipsy app logs (MCP)", host: hostOf(p.args.find((a) => a.startsWith("https://"))),
+        id: `opensearch_mcp:${p.name}`, kind: "opensearch_mcp", label: `${p.display_name || "Shipsy"} · OpenSearch (app logs)`, host: hostOf(p.args.find((a) => a.startsWith("https://"))),
         used_by: getAccounts().filter((a) => a.status === "active" && a.app_log?.project === p.name).map((a) => a.name),
         status: r.ok ? "ok" : r.status, message: r.message,
         ...(r.ok ? {} : { fix: connectorMode() ? "Sign in to app logs from your local connector (Connector page)" : `Run in a terminal: ${p.login_command}  (signs in with your Shipsy Google account)` }),

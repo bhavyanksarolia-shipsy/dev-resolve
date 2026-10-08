@@ -229,7 +229,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
         connected: Date.now() - lastOk < 60000 || (polling && !lastError),
         connecting: !lastError && Date.now() - startedAt < 45000 && Date.now() - lastOk >= 60000,
         lastOk, lastError,
-        signins: s ? [...s.metabase.map((m) => ({ label: `Metabase · ${m.project}`, ok: m.signedIn })), ...(s.appLog ? [{ label: "App logs", ok: s.appLog.signedIn }] : [])] : [],
+        signins: s ? [...s.metabase.map((m) => ({ label: `${m.label || m.project} — Metabase`, ok: m.signedIn })), ...(s.appLog ? [{ label: `${s.appLog.label || "App logs"} — OpenSearch`, ok: s.appLog.signedIn }] : [])] : [],
       };
     }
     if (msg.type === "recheck") {

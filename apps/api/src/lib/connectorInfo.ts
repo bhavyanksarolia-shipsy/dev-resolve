@@ -48,6 +48,6 @@ export async function signinsFor(user: string) {
   const saved = existsSync(dir) && readdirSync(dir).some((f) => f.endsWith("_tokens.json"));
   const p = appLogProjects()[0];
   const works = saved && p ? (await ensureAppLogAuth(p, user)).ok : false;
-  const appLog = appLogInfo() && { ...appLogInfo()!, signedIn: works, expired: saved && !works };
+  const appLog = appLogInfo() && { ...appLogInfo()!, label: p?.display_name || p?.name || "App logs", signedIn: works, expired: saved && !works };
   return { metabase, appLog };
 }
