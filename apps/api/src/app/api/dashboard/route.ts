@@ -5,8 +5,8 @@ import { q } from "@/lib/db";
 
 const DAY = 864e5;
 /** Why a DevRev account isn't a client row — shown next to it (same wording as the account picker). */
-const accountNote = (kind: string) => kind === "ambiguous" ? "not routed — could be several clients"
-  : kind === "ignored" ? "default / internal account — move tickets to the right client" : "not set up on a client";
+const accountNote = (kind: string) => kind === "ambiguous" ? "Not mapped — this account could be several clients"
+  : kind === "ignored" ? "Default / internal account — move its tickets to the right client" : "Not mapped to a client — set it up in Admin → Clients";
 const owner = (w: WorkRow) => (w.owned_by || []).map((o) => o.full_name || o.display_name).filter((n) => n && !/^unassigned$/i.test(n)).join(", ");
 const pod = (w: WorkRow) => (typeof w.custom_fields?.tnt__pod === "string" ? w.custom_fields.tnt__pod : "");
 const tally = (xs: string[]) => {
