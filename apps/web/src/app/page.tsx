@@ -222,7 +222,9 @@ function Bars({ items, tone }: { items: { label: string; count: number; href?: s
           <>
             <span className={`w-36 shrink-0 truncate text-sm ${it.muted ? "text-muted" : ""}`} title={it.label}>{it.label}</span>
             <span className="h-2 flex-1 overflow-hidden rounded-full bg-bg">
-              <span className={`block h-full rounded-full ${tone ? tone(i) : it.muted ? "bg-line" : "bg-accent"}`} style={{ width: `${(it.count / max) * 100}%` }} />
+              {/* Fills left to right (staggered); the key replays it when the number changes. */}
+              <span key={it.count} className={`bar-grow block h-full rounded-full ${tone ? tone(i) : it.muted ? "bg-line" : "bg-accent"}`}
+                style={{ width: `${(it.count / max) * 100}%`, ["--bar-delay" as string]: `${i * 60}ms` }} />
             </span>
             <span className="w-8 text-right text-sm font-medium tabular-nums">{it.count}</span>
           </>
@@ -243,13 +245,15 @@ function FlowChart({ rows }: { rows: { day: string; opened: number; closed: numb
   return (
     <div className="flex min-h-56 flex-1 flex-col">
       <div className={`flex min-h-40 flex-1 items-end ${few ? "justify-center gap-10" : "gap-[3px]"}`}>
-        {rows.map((r) => (
-          <div key={r.day} className={`group flex h-full flex-col ${few ? "w-24" : "flex-1"}`} title={`${label(r.day)} · opened ${r.opened}, closed ${r.closed}`}>
+        {rows.map((r, i) => (
+          <div key={`${r.day}-${r.opened}-${r.closed}`} className={`group flex h-full flex-col ${few ? "w-24" : "flex-1"}`} title={`${label(r.day)} · opened ${r.opened}, closed ${r.closed}`}>
             <div className="flex flex-1 items-end gap-px">
               {([["opened", r.opened, "bg-accent"], ["closed", r.closed, "bg-muted/40"]] as const).map(([k, n, c]) => (
                 <div key={k} className="flex h-full flex-1 flex-col justify-end">
                   {few && <span className="mb-1 text-center text-xs font-semibold tabular-nums">{n}</span>}
-                  <span className={`rounded-t ${c} transition group-hover:opacity-80`} style={{ height: `${(n / max) * (few ? 85 : 100)}%`, minHeight: n ? 3 : 0 }} />
+                  {/* Rises from the bottom, day by day from left to right. */}
+                  <span className={`bar-rise rounded-t ${c} transition-opacity group-hover:opacity-80`}
+                    style={{ height: `${(n / max) * (few ? 85 : 100)}%`, minHeight: n ? 3 : 0, ["--bar-delay" as string]: `${Math.min(i * 18, 600)}ms` }} />
                 </div>
               ))}
             </div>

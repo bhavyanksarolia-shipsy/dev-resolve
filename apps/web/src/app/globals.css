@@ -182,3 +182,7 @@ html { background: var(--bg); }
 @keyframes bar-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 .bar-grow { transform-origin: left; animation: bar-grow .7s cubic-bezier(.2,.8,.2,1) both; animation-delay: var(--bar-delay, 0ms); }
 @media (prefers-reduced-motion: reduce) { .bar-grow { animation: none; } }
+/* Column charts rise from the bottom when they appear (staggered with --bar-delay). */
+@keyframes bar-rise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+.bar-rise { transform-origin: bottom; animation: bar-rise .6s cubic-bezier(.2,.8,.2,1) both; animation-delay: var(--bar-delay, 0ms); }
+@media (prefers-reduced-motion: reduce) { .bar-rise { animation: none; } }
