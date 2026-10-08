@@ -2,21 +2,24 @@ import "server-only";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { ROOT } from "./config";
-import { relaySuffixes, ssoMetabaseProjects } from "./connector";
+import { gatewayViaConnector, relaySuffixes, ssoMetabaseProjects } from "./connector";
+import { adminSetting } from "./config";
 import { appLogInfo } from "./connectorInfo";
 import { iconPng } from "./icon";
 
-export const EXTENSION_VERSION = "1.1.3";
+export const EXTENSION_VERSION = "1.2.0";
 
 /**
  * The Chrome extension's files for one deployment: the manifest lists exactly the hosts it may talk to (this server,
- * the client-VPN suffix, the Google-login Metabase hosts, the app-logs sign-in) and config.json holds the addresses.
+ * the client-VPN suffix, the Google-login Metabase hosts, the app-logs sign-in, the Claude gateway when it goes through
+ * the connector) and config.json holds the addresses.
  * Used by the download on the Connector page and by `npm run extension:package` (Chrome Web Store upload).
  */
 export async function extensionFiles(opts: { app: string; server: string }) {
   const origin = (x: string) => `${new URL(x).origin}/*`;
   const hosts = new Set<string>([origin(opts.server), origin(opts.app)]);
   for (const s of relaySuffixes()) hosts.add(`https://*${s.startsWith(".") ? s : `.${s}`}/*`);
+  if (gatewayViaConnector()) hosts.add(origin(adminSetting("ANTHROPIC_BASE_URL")!));
   for (const m of ssoMetabaseProjects()) if (m.baseUrl) hosts.add(origin(m.baseUrl));
   const al = appLogInfo();
   if (al) {

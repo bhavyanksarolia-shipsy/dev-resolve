@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { adminSetting, Account, ROOT, getAccount, getAccounts, projectForLogType, resolveDevrevAccount } from "../config";
-import { userToolEnv } from "../connector";
+import { gatewayCarrier, gatewayViaConnector, relaySecret, userToolEnv } from "../connector";
+import { settings } from "../settings";
 import { LockedError, q } from "../db";
 import { getTicket, listTimeline } from "../devrev";
 import { accountKnowledge } from "../knowledge";
@@ -17,12 +18,15 @@ export const DEFAULT_MODEL = "claude-opus-5-5";
 /** Model and Claude sign-in: values saved in Admin → Connections → Claude win over the server variables. */
 export const agentModel = () => adminSetting("DEV_RESOLVE_MODEL") || DEFAULT_MODEL;
 /** Claude sign-in for the agent: an Anthropic API key, an API gateway (e.g. Bifrost: its address + its key), or a login token. */
-function claudeEnv(): Record<string, string | undefined> {
+function claudeEnv(user?: string): Record<string, string | undefined> {
   const key = adminSetting("ANTHROPIC_API_KEY"), oauth = adminSetting("CLAUDE_CODE_OAUTH_TOKEN"), gateway = adminSetting("ANTHROPIC_BASE_URL");
   if (key && gateway) {
     // Gateways read the key from x-api-key; Bifrost virtual keys (sk-bf-…) are also sent as x-bf-vk for older Bifrost versions.
-    return { ...process.env, ANTHROPIC_BASE_URL: gateway, ANTHROPIC_API_KEY: key, CLAUDE_CODE_OAUTH_TOKEN: undefined,
-      ...(key.startsWith("sk-bf-") && { ANTHROPIC_CUSTOM_HEADERS: `x-bf-vk: ${key}` }) };
+    // A VPN-only gateway: requests go to this server's /api/llm-relay, and a connector on the VPN carries them (see there).
+    const via = gatewayViaConnector();
+    const headers = [key.startsWith("sk-bf-") && `x-bf-vk: ${key}`, via && `x-relay-secret: ${relaySecret()}`, via && `x-relay-user: ${user ?? ""}`].filter(Boolean);
+    return { ...process.env, ANTHROPIC_BASE_URL: via ? `${settings.internalUrl()}/api/llm-relay` : gateway, ANTHROPIC_API_KEY: key, CLAUDE_CODE_OAUTH_TOKEN: undefined,
+      ...(headers.length && { ANTHROPIC_CUSTOM_HEADERS: headers.join("\n") }), ...(via && { API_TIMEOUT_MS: "660000" }) };
   }
   return { ...process.env, ANTHROPIC_BASE_URL: undefined, ...(key ? { ANTHROPIC_API_KEY: key, CLAUDE_CODE_OAUTH_TOKEN: undefined } : oauth ? { CLAUDE_CODE_OAUTH_TOKEN: oauth } : {}) };
 }
@@ -478,6 +482,9 @@ async function runSessionNow(opts: SessionOpts) {
     appLogReady = auth.ok;
     if (!auth.ok) await step(id, seq++, "connection_error", `mcp__${APP_LOG}__login`, { connection: `opensearch_mcp:${appLogProject.name}`, tag: "AUTH_FAILED" }, auth.message);
   }
+  if (gatewayViaConnector() && !gatewayCarrier(opts.by)) {
+    throw new Error("Claude is reached through the Dev Resolve extension, and nobody's extension (1.2 or newer) is online right now. Open Chrome with the extension on a laptop connected to the VPN, then try again.");
+  }
   const abort = new AbortController();
   running.set(id, abort);
   const pending = new Map<string, { name: string; input: Record<string, unknown> }>();
@@ -535,7 +542,7 @@ async function runSessionNow(opts: SessionOpts) {
       },
       maxTurns: 60,
       abortController: abort,
-      env: { ...userToolEnv(opts.by), ...claudeEnv(), CLAUDE_AGENT_SDK_CLIENT_APP: "dev-resolve/0.1.0" },
+      env: { ...userToolEnv(opts.by), ...claudeEnv(opts.by), CLAUDE_AGENT_SDK_CLIENT_APP: "dev-resolve/0.1.0" },
     },
   });
 

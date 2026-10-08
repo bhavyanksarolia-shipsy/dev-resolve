@@ -12,6 +12,9 @@ export default function PrivacyPage() {
         <li>When the signed-in person starts an investigation, Dev Resolve asks the extension to make read-only requests to
           internal systems that are only reachable from that person&apos;s laptop (company VPN). The extension makes those
           requests and returns the answers to Dev Resolve. It only contacts the hosts listed in its manifest.</li>
+        <li>If the company&apos;s Claude gateway is only reachable on the company VPN, the extension also passes the
+          investigation agent&apos;s requests to that gateway and returns its answers, for anyone&apos;s investigation while it
+          is online. These contain ticket details and the investigation so far; the extension doesn&apos;t keep them.</li>
         <li>For internal tools that use Google sign-in, it reads that tool&apos;s session cookie from the person&apos;s own
           browser (after they sign in there) and sends it to Dev Resolve, so their investigations run with their own access.</li>
       </ul>

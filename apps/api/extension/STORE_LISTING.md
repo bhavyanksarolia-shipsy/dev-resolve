@@ -36,8 +36,8 @@
 - `cookies` — reads the session cookie of the listed Google-login internal tools (only those hosts) after the user signs
   in, so Dev Resolve uses the user's own access.
 - `tabs` — opens the sign-in page of an internal tool when the user asks, and closes it when sign-in completes.
-- Host permissions — the company's Dev Resolve frontend/backend, the company VPN-only hosts it relays read requests to,
-  and the sign-in hosts of the internal tools. No other sites.
+- Host permissions — the company's Dev Resolve frontend/backend, the company VPN-only hosts it relays read requests to
+  (including the company's Claude gateway when it is VPN-only), and the sign-in hosts of the internal tools. No other sites.
 - Remote code: **No** (all code is in the package).
 
 **Data usage:** collects "Authentication information" (session cookies of the listed internal tools) and "Website

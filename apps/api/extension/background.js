@@ -1,6 +1,6 @@
 // Dev Resolve connector — Chrome extension (Manifest V3 service worker).
-// While Chrome is open it (1) carries the signed-in person's VPN-only requests from this laptop (on the client VPN) and
-// (2) keeps that person's Google-login Metabase / app-logs sessions synced to Dev Resolve. Nothing else.
+// While Chrome is open it (1) carries the signed-in person's VPN-only requests from this laptop (on the client VPN, and the
+// Claude gateway on the company VPN when Dev Resolve is set up that way) and (2) keeps that person's Google-login Metabase / app-logs sessions synced to Dev Resolve. Nothing else.
 // config.json (written by the server when you downloaded this) holds the Dev Resolve addresses.
 const VERSION = chrome.runtime.getManifest().version;
 let cfg = null;               // { server, app }
@@ -50,9 +50,18 @@ async function api(path, { method = "GET", body, headers = {}, timeout = 40000 }
 }
 
 // ── VPN relay ──────────────────────────────────────────────────────────────────────────────────────────────
+// The Claude gateway (e.g. Bifrost on the company VPN), when Dev Resolve sends the agent's requests through here: only
+// the exact host Dev Resolve names, and only if this extension's own permissions (fixed when it was installed) cover it.
+const permitted = (u) => (chrome.runtime.getManifest().host_permissions || []).some((p) => {
+  try { const m = new URL(p.replace("*.", "")); return m.protocol === u.protocol && (p.includes("*.") ? u.hostname.endsWith(`.${m.hostname}`) : u.hostname === m.hostname); } catch { return false; }
+});
 async function allowed(url) {
   const pinned = (await store.get("allowSuffixes")) || [];
-  try { const u = new URL(url); return ["https:", "http:"].includes(u.protocol) && pinned.some((s) => u.hostname.toLowerCase().endsWith(s)); } catch { return false; }
+  try {
+    const u = new URL(url), host = u.hostname.toLowerCase();
+    if (!["https:", "http:"].includes(u.protocol)) return false;
+    return pinned.some((s) => host.endsWith(s)) || ((hello?.gatewayHosts || []).includes(host) && permitted(u));
+  } catch { return false; }
 }
 
 async function doRequest(req) {
@@ -64,7 +73,7 @@ async function doRequest(req) {
     const r = await fetch(req.url, {
       method: req.method, headers, credentials: "omit", redirect: "manual",
       body: req.body_b64 ? unb64(req.body_b64) : undefined,
-      signal: AbortSignal.timeout(Math.min(req.timeout_ms || 30000, 300000)),
+      signal: AbortSignal.timeout(Math.min(req.timeout_ms || 30000, 600000)), // Claude answers can take minutes
     });
     return { status: r.status, headers: { "content-type": r.headers.get("content-type") || "" }, body_b64: b64(await r.arrayBuffer()) };
   } catch (e) {

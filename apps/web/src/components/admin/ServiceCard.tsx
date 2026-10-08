@@ -7,7 +7,7 @@ import { SkillsCard } from "./SkillsCard";
 
 interface Svc { status: string; message: string; fix?: string; host?: string }
 interface Data {
-  claude: Svc & { method: string; model: string; defaultModel: string; gatewayUrl: string | null; usage30: { runs: number; cost: number; tokens: number };
+  claude: Svc & { method: string; model: string; defaultModel: string; gatewayUrl: string | null; gatewayViaConnector?: boolean; usage30: { runs: number; cost: number; tokens: number };
     tokenPreview: string | null; owner: string | null; ownerDetected: boolean; ownerNote: string;
     tools: { group: string; tools: { name: string; does: string }[] }[]; limits: string[]; sent: string;
     stored: { label: string; what: string; count: number; bytes: number; since: string | null }[] };
@@ -136,17 +136,17 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
   useEffect(() => { let live = true; load().then((x) => live && setD(x)); return () => { live = false; }; }, []);
   const recheck = async () => { setBusy(true); setD(await load(true)); setBusy(false); };
   const [edit, setEdit] = useState(false);
-  const [f, setF] = useState({ mode: "keep", secret: "", model: "", owner: "", gateway: "" });
+  const [f, setF] = useState({ mode: "keep", secret: "", model: "", owner: "", gateway: "", viaExt: false });
   const setMsg = toast;
   const save = async () => {
     setBusy(true); setMsg(null);
     const body = which === "devrev" ? { service: "devrev", token: f.secret }
       : { service: "claude", model: f.model, owner: f.owner,
-          ...(f.mode === "api" ? { apiKey: f.secret } : f.mode === "oauth" ? { oauthToken: f.secret } : f.mode === "gateway" ? { gatewayUrl: f.gateway, apiKey: f.secret } : f.mode === "server" ? { useServerDefault: true } : {}) };
+          ...(f.mode === "api" ? { apiKey: f.secret } : f.mode === "oauth" ? { oauthToken: f.secret } : f.mode === "gateway" ? { gatewayUrl: f.gateway, apiKey: f.secret, gatewayViaConnector: f.viaExt } : f.mode === "server" ? { useServerDefault: true } : {}) };
     const r = await post("/api/admin/services", body);
     setBusy(false);
     if (r.error) return setMsg({ ok: false, text: r.error });
-    setEdit(false); setF({ mode: "keep", secret: "", model: "", owner: "", gateway: "" });
+    setEdit(false); setF({ mode: "keep", secret: "", model: "", owner: "", gateway: "", viaExt: false });
     setD(await load(true));
     setMsg({ ok: true, text: "Saved — used from the next investigation" });
   };
@@ -159,7 +159,7 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
         <h3 className="font-semibold">{which === "claude" ? "Claude — investigation agent" : "DevRev — tickets & comments"}</h3>
         <Status s={s} />
         <button className={`${btn} ml-auto`} disabled={busy} onClick={recheck}>{busy ? "Checking…" : "Check connection"}</button>
-        <button className={btnPrimary} onClick={() => { setF({ mode: "keep", secret: "", model: which === "claude" ? d.claude.model : "", owner: which === "claude" ? d.claude.ownerNote : "", gateway: which === "claude" ? d.claude.gatewayUrl ?? "" : "" }); setEdit((e) => !e); }}>{edit ? "Close" : "Edit"}</button>
+        <button className={btnPrimary} onClick={() => { setF({ mode: "keep", secret: "", model: which === "claude" ? d.claude.model : "", owner: which === "claude" ? d.claude.ownerNote : "", gateway: which === "claude" ? d.claude.gatewayUrl ?? "" : "", viaExt: which === "claude" && !!d.claude.gatewayViaConnector }); setEdit((e) => !e); }}>{edit ? "Close" : "Edit"}</button>
       </div>
       {edit && (
         <div className="mb-4 grid gap-3 rounded-lg bg-bg p-4 sm:grid-cols-2">
@@ -185,6 +185,15 @@ export function ServiceCard({ which }: { which: "claude" | "devrev" }) {
               <Field label="Gateway address" hint="Ask whoever issued the key; for Bifrost it usually ends in /anthropic">
                 <input className={input} value={f.gateway} placeholder="https://bifrost.example.com/anthropic" onChange={(e) => setF({ ...f, gateway: e.target.value })} />
               </Field>
+            )}
+            {f.mode === "gateway" && (
+              <label className="flex items-start gap-2 text-sm sm:col-span-2">
+                <input type="checkbox" className="mt-1" checked={f.viaExt} onChange={(e) => setF({ ...f, viaExt: e.target.checked })} />
+                <span>Reach it through the Dev Resolve extension
+                  <span className="block text-xs text-muted">For a gateway that only works on the company VPN (e.g. Bifrost behind Pritunl). Investigations then need at least one
+                    person with Chrome open, the extension (1.2 or newer, download it again from the Connector page after saving) and the VPN connected.</span>
+                </span>
+              </label>
             )}
             {f.mode !== "keep" && f.mode !== "server" && (
               <Field label={f.mode === "api" ? "New API key" : f.mode === "gateway" ? (d.claude.gatewayUrl ? "Gateway key (empty = keep)" : "Gateway key") : "New login token"} hint="Stored on the server; admins can reveal it with the eye">

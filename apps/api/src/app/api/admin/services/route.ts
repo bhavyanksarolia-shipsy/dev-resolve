@@ -4,6 +4,7 @@ import { whoAmI } from "@/lib/devrev";
 import { q } from "@/lib/db";
 import { writeEnv } from "@/lib/adminConfig";
 import { adminSetting, readConfigEnv } from "@/lib/config";
+import { gatewayViaConnector } from "@/lib/connector";
 import { agentModel, DEFAULT_MODEL } from "@/lib/agent/run";
 import { AGENT_LIMITS, AGENT_TOOLS, SENT_TO_ANTHROPIC, storageSummary } from "@/lib/agent/transparency";
 import { checkMail, cleanTemplate, connectorStep, EMAIL_THEMES, defaultWelcomeTemplate, mailSettings, revokeGmail, saveWelcomeTemplate, sendMail, WELCOME_PLACEHOLDERS, welcomeEmail, welcomeTemplate, type WelcomeTemplate } from "@/lib/mail";
@@ -47,9 +48,9 @@ export async function GET(req: Request) {
   return Response.json({
     claude: {
       ...claude,
-      method: adminSetting("ANTHROPIC_API_KEY") && adminSetting("ANTHROPIC_BASE_URL") ? `API gateway ${new URL(adminSetting("ANTHROPIC_BASE_URL")!).host} (${source("ANTHROPIC_API_KEY")})`
+      method: adminSetting("ANTHROPIC_API_KEY") && adminSetting("ANTHROPIC_BASE_URL") ? `API gateway ${new URL(adminSetting("ANTHROPIC_BASE_URL")!).host}${gatewayViaConnector() ? " through the Dev Resolve extension" : ""} (${source("ANTHROPIC_API_KEY")})`
         : adminSetting("ANTHROPIC_API_KEY") ? `API key (${source("ANTHROPIC_API_KEY")})` : adminSetting("CLAUDE_CODE_OAUTH_TOKEN") ? `Claude login token (${source("CLAUDE_CODE_OAUTH_TOKEN")})` : "Local Claude Code login",
-      model: agentModel(), defaultModel: DEFAULT_MODEL, gatewayUrl: adminSetting("ANTHROPIC_BASE_URL") ?? null,
+      model: agentModel(), defaultModel: DEFAULT_MODEL, gatewayUrl: adminSetting("ANTHROPIC_BASE_URL") ?? null, gatewayViaConnector: gatewayViaConnector(),
       usage30: usage,
       tokenPreview: mask(claudeToken()),
       // Who the key / token belongs to: from Anthropic for a login token, else the name an admin entered.
@@ -69,7 +70,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const g = await requireAdmin(req);
   if (g.error) return g.error;
-  const b = (await req.json().catch(() => ({}))) as { service?: string; apiKey?: string; gatewayUrl?: string; useServerDefault?: boolean; oauthToken?: string; model?: string; token?: string; owner?: string; clear?: string[]; reveal?: boolean;
+  const b = (await req.json().catch(() => ({}))) as { service?: string; apiKey?: string; gatewayUrl?: string; gatewayViaConnector?: boolean; useServerDefault?: boolean; oauthToken?: string; model?: string; token?: string; owner?: string; clear?: string[]; reveal?: boolean;
     user?: string; pass?: string; fromName?: string; host?: string; port?: number; check?: boolean; test?: boolean; appUrl?: string; disconnect?: "gmail" | "smtp";
     template?: Partial<WelcomeTemplate>; saveTemplate?: boolean; previewTemplate?: boolean; resetTemplate?: boolean; getTemplate?: boolean };
   // Admin → Email → Edit email: the welcome mail's text and steps.
@@ -120,7 +121,7 @@ export async function POST(req: Request) {
   if (b.service === "claude") {
     if (b.useServerDefault) {
       // Back to the server's own Claude login (its variables): forget the key / gateway / token saved in Admin.
-      updates.ANTHROPIC_API_KEY = null; updates.ANTHROPIC_BASE_URL = null; updates.CLAUDE_CODE_OAUTH_TOKEN = null;
+      updates.ANTHROPIC_API_KEY = null; updates.ANTHROPIC_BASE_URL = null; updates.CLAUDE_CODE_OAUTH_TOKEN = null; updates.GATEWAY_VIA_CONNECTOR = null;
     } else if (b.gatewayUrl !== undefined) {
       // An API gateway in front of Anthropic (e.g. Bifrost): its address + the key it issued (sk-bf-… for Bifrost).
       const url = String(b.gatewayUrl).trim().replace(/\/+$/, "");
@@ -128,13 +129,15 @@ export async function POST(req: Request) {
       const key = v(b.apiKey) || (adminSetting("ANTHROPIC_BASE_URL") ? adminSetting("ANTHROPIC_API_KEY") : "") || "";
       if (!key) return Response.json({ error: "Paste the key the gateway gave you" }, { status: 400 });
       updates.ANTHROPIC_BASE_URL = url; updates.ANTHROPIC_API_KEY = key; updates.CLAUDE_CODE_OAUTH_TOKEN = null;
+      // Only on the VPN (e.g. Bifrost behind Pritunl): the team's Dev Resolve extensions carry the agent's requests to it.
+      updates.GATEWAY_VIA_CONNECTOR = b.gatewayViaConnector ? "on" : null;
     } else if (v(b.apiKey)) {
       if (!/^sk-ant-/.test(v(b.apiKey))) return Response.json({ error: v(b.apiKey).startsWith("sk-bf-")
         ? "That's a Bifrost key — choose \"API gateway (e.g. Bifrost)\" under Sign-in and add the gateway address"
         : "That doesn't look like an Anthropic API key (sk-ant-…)" }, { status: 400 });
-      updates.ANTHROPIC_API_KEY = v(b.apiKey); updates.CLAUDE_CODE_OAUTH_TOKEN = null; updates.ANTHROPIC_BASE_URL = null;
+      updates.ANTHROPIC_API_KEY = v(b.apiKey); updates.CLAUDE_CODE_OAUTH_TOKEN = null; updates.ANTHROPIC_BASE_URL = null; updates.GATEWAY_VIA_CONNECTOR = null;
     } else if (v(b.oauthToken)) {
-      updates.CLAUDE_CODE_OAUTH_TOKEN = v(b.oauthToken); updates.ANTHROPIC_API_KEY = null; updates.ANTHROPIC_BASE_URL = null;
+      updates.CLAUDE_CODE_OAUTH_TOKEN = v(b.oauthToken); updates.ANTHROPIC_API_KEY = null; updates.ANTHROPIC_BASE_URL = null; updates.GATEWAY_VIA_CONNECTOR = null;
     }
     if (b.model !== undefined) {
       const m = String(b.model).trim();

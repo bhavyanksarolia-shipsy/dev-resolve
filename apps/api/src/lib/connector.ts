@@ -2,7 +2,7 @@ import "server-only";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { cfgValue, getConnectionProjects, ROOT, toolEnv } from "./config";
+import { adminSetting, cfgValue, getConnectionProjects, ROOT, toolEnv } from "./config";
 import { q } from "./db";
 import { settings } from "./settings";
 
@@ -35,6 +35,19 @@ export const needsRelay = (url: string) => {
   } catch {
     return false;
   }
+};
+
+/**
+ * Claude through an API gateway that only a VPN reaches (e.g. Bifrost behind Pritunl), switched on in Admin → Connections
+ * → Claude: the agent's requests to it are carried by a connector (Chrome extension 1.2+) on a laptop that is on that VPN.
+ */
+export const gatewayViaConnector = () =>
+  adminSetting("GATEWAY_VIA_CONNECTOR") === "on" && !!adminSetting("ANTHROPIC_BASE_URL") && !!adminSetting("ANTHROPIC_API_KEY");
+export const gatewayHost = () => {
+  try { return new URL(adminSetting("ANTHROPIC_BASE_URL") || "").hostname.toLowerCase(); } catch { return null; }
+};
+const isGatewayUrl = (url: string) => {
+  try { return gatewayViaConnector() && new URL(url).hostname.toLowerCase() === gatewayHost(); } catch { return false; }
 };
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -81,8 +94,25 @@ export function connectorStatus(user: string) {
   return { online, lastSeen: c ? new Date(c.lastPoll).toISOString() : null, vpnUp: online && vpnHosts.length > 0 && vpnHosts.every(([, ok]) => ok), vpn: c?.vpn ?? {}, version: c?.version };
 }
 
+/** Extensions from 1.2.0 can carry the Claude gateway's requests (older ones only know the client-VPN hosts). */
+const carriesGateway = (version?: string) => {
+  const [a = 0, b = 0] = (version?.match(/^ext-(\d+)\.(\d+)/) ?? []).slice(1).map(Number);
+  return a > 1 || (a === 1 && b >= 2);
+};
+
+/**
+ * Whose laptop carries Claude's requests to the gateway: the person the run is for when their connector can, otherwise
+ * the connector that polled most recently (the gateway key is the team's, not personal, so anyone's laptop will do).
+ */
+export function gatewayCarrier(prefer?: string | null): string | null {
+  const able = (u: string) => connectorStatus(u).online && carriesGateway(R.conns.get(u)?.version);
+  if (prefer && able(prefer)) return prefer;
+  const others = [...R.conns.entries()].filter(([u]) => able(u)).sort(([, x], [, y]) => y.lastPoll - x.lastPoll);
+  return others[0]?.[0] ?? null;
+}
+
 export function relay(user: string, req: RelayRequest): Promise<RelayResponse> {
-  if (!needsRelay(req.url)) return Promise.reject(new Error("host is not a VPN host"));
+  if (!needsRelay(req.url) && !isGatewayUrl(req.url)) return Promise.reject(new Error("host is not a VPN host"));
   if (!connectorStatus(user).online) return Promise.reject(new ConnectorOffline(`CONNECTOR_OFFLINE: ${user}'s local connector isn't running`));
   return new Promise((resolve, reject) => {
     const id = randomUUID();

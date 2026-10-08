@@ -6,7 +6,7 @@ import path from "node:path";
 import { adminSetting, cfgValue, getAccounts, getConnectionProjects, projectsFileExists, ROOT } from "./config";
 import { getPool } from "./db";
 import { settings } from "./settings";
-import { ConnectorOffline, connectorMode, isVpnOnlyHost, metabaseSession, needsRelay, relay, userToolEnv } from "./connector";
+import { ConnectorOffline, connectorMode, gatewayCarrier, gatewayViaConnector, isVpnOnlyHost, metabaseSession, needsRelay, relay, userToolEnv } from "./connector";
 import { whoAmI, DevrevError } from "./devrev";
 import { appLogProjects, ensureAppLogAuth } from "./applog";
 
@@ -206,21 +206,31 @@ export async function checkClaude(): Promise<ConnectionHealth> {
   const gateway = adminSetting("ANTHROPIC_BASE_URL")?.replace(/\/+$/, "");
   const api = gateway || settings.anthropicApiUrl();
   const headers: Record<string, string> = { "x-api-key": key, "anthropic-version": "2023-06-01", ...(key.startsWith("sk-bf-") && { "x-bf-vk": key }) };
-  const where = gateway ? ` via ${new URL(gateway).host}` : "";
+  // A VPN-only gateway is checked through someone's Dev Resolve extension, the same way the agent reaches it.
+  const carrier = gateway && gatewayViaConnector() ? gatewayCarrier() : undefined;
+  if (carrier === null) return { ...base, host: new URL(gateway!).host, status: "error", message: `Nobody's Dev Resolve extension is online to reach ${new URL(gateway!).host}`,
+    fix: "Open Chrome with the Dev Resolve extension (1.2 or newer) on a laptop connected to the VPN — investigations need one online" };
+  const where = gateway ? ` via ${new URL(gateway).host}${carrier ? ` (through ${carrier}'s extension)` : ""}` : "";
+  const call = async (url: string, init: { method?: string; headers: Record<string, string>; body?: string; ms: number }) => {
+    if (!carrier) return fetch(url, { method: init.method, headers: init.headers, body: init.body, cache: "no-store", signal: AbortSignal.timeout(init.ms) });
+    const r = await relay(carrier, { method: init.method || "GET", url, headers: init.headers, body_b64: init.body && Buffer.from(init.body).toString("base64"), timeout_ms: init.ms });
+    return { status: r.status, ok: r.status >= 200 && r.status < 300 };
+  };
   try {
-    let res = await fetch(`${api}/v1/models?limit=1`, { headers, cache: "no-store", signal: AbortSignal.timeout(15_000) });
+    let res = await call(`${api}/v1/models?limit=1`, { headers, ms: 15_000 });
     // Some gateways don't list models: try the smallest possible request instead.
     if (gateway && (res.status === 404 || res.status === 405)) {
-      res = await fetch(`${api}/v1/messages`, { method: "POST", cache: "no-store", signal: AbortSignal.timeout(30_000),
-        headers: { ...headers, "content-type": "application/json" },
+      res = await call(`${api}/v1/messages`, { method: "POST", ms: 30_000, headers: { ...headers, "content-type": "application/json" },
         body: JSON.stringify({ model: adminSetting("DEV_RESOLVE_MODEL") || "claude-opus-5-5", max_tokens: 1, messages: [{ role: "user", content: "ping" }] }) });
     }
     if (res.status === 401 || res.status === 403) return { ...base, ...(gateway && { host: new URL(gateway).host }), status: "auth_failed", message: `HTTP ${res.status}${where}`, fix: `The ${gateway ? "gateway" : "API"} refused the key — paste a valid one in Admin → Connections → Claude` };
     if (!res.ok) return { ...base, ...(gateway && { host: new URL(gateway).host }), status: "error", message: `HTTP ${res.status}${where}${gateway ? " — check the gateway address (it usually ends in /anthropic)" : ""}` };
     return { ...base, ...(gateway && { host: new URL(gateway).host }), status: "ok", message: `API key valid${where}` };
   } catch (e) {
+    if (carrier) return { ...base, host: new URL(gateway!).host, status: "error", message: `Can't reach ${new URL(gateway!).host} through ${carrier}'s extension`,
+      fix: `Check that ${carrier}'s laptop is on the VPN, and that their extension was downloaded after this was switched on (Connector page)` };
     if (gateway) return { ...base, host: new URL(gateway).host, status: "error", message: `Can't reach ${new URL(gateway).host}`,
-      fix: "This server can't reach the gateway — gateways on a private network (e.g. Bifrost behind Pritunl VPN) must allow this server first. Until then, switch Sign-in back to the server's Claude login" };
+      fix: "This server can't reach the gateway — gateways on a private network (e.g. Bifrost behind Pritunl VPN) must allow this server first, or turn on \"Reach it through the Dev Resolve extension\" in Admin → Connections → Claude" };
     return { ...base, status: "error", message: (e as Error).message };
   }
 }
