@@ -39,6 +39,7 @@ export function FilesTab() {
     load();
   }
   const [open, setOpen] = useState(false);
+  const [extOpen, setExtOpen] = useState(false);
   const meta = (k: string) => info?.[k === "knowledge.tgz" ? "knowledge" : k];
   const when = (iso?: string) => (iso ? new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" }) : "—");
   const kb = (n?: number) => (n == null ? "—" : n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
@@ -55,8 +56,16 @@ export function FilesTab() {
   return (
     <div className="space-y-5">
       <StorageCard />
-      <section className="card space-y-3 p-5">
-        <h2 className="font-semibold">Chrome extension</h2>
+      <section className="card overflow-hidden">
+        {/* Opens and closes like Private files below; closed it says whether it's on the Web Store yet. */}
+        <button type="button" aria-expanded={extOpen} onClick={() => setExtOpen((o) => !o)} className={`flex w-full items-center gap-3 px-5 py-4 text-left transition hover:bg-bg ${extOpen ? "bg-bg" : ""}`}>
+          <h2 className="font-semibold">Chrome extension</h2>
+          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${settings?.EXTENSION_STORE_URL?.value ? "bg-accent-soft text-accent-strong" : "bg-amber-50 text-warn"}`}>
+            {settings?.EXTENSION_STORE_URL?.value ? "on the Web Store" : "not on the Web Store yet"}</span>
+          <span className="hidden truncate text-xs text-muted sm:inline">Package, Web Store steps and the store link</span>
+          <svg className={`ml-auto shrink-0 text-muted transition-transform duration-200 ${extOpen ? "rotate-180" : ""}`} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden><path d="m6 9 6 6 6-6" /></svg>
+        </button>
+        {extOpen && <div className="chat-pop space-y-3 border-t border-line p-5">
         <p className="text-sm text-muted">Users need the Dev Resolve extension for VPN-only systems and their Google sign-ins. Publish it once on the Chrome Web Store
           (visibility <b>Private</b> = only your Google Workspace) so everyone gets an <b>Add to Chrome</b> button.</p>
         <div className="flex flex-wrap gap-2">
@@ -73,9 +82,10 @@ export function FilesTab() {
           <div className="flex gap-2">
             <input className={input} value={store} placeholder="https://" onChange={(e) => setStore(e.target.value)} />
             <button className={btnPrimary} disabled={busy === "store" || store === (settings?.EXTENSION_STORE_URL?.value ?? "")}
-              onClick={async () => { setBusy("store"); const r = await post("/api/admin/settings", { EXTENSION_STORE_URL: store }); setBusy(null); toast({ ok: !r.error, text: r.error || "Saved — the Connector page now shows Add to Chrome" }); }}>Save</button>
+              onClick={async () => { setBusy("store"); const r = await post("/api/admin/settings", { EXTENSION_STORE_URL: store }); setBusy(null); toast({ ok: !r.error, text: r.error || "Saved — the Connector page now shows Add to Chrome" }); if (!r.error) setSettings((x) => (x ? { ...x, EXTENSION_STORE_URL: { label: x.EXTENSION_STORE_URL?.label ?? "", value: store } } : x)); }}>Save</button>
           </div>
         </Field>
+        </div>}
       </section>
 
       <section className="card overflow-hidden">
