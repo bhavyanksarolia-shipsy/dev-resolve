@@ -10,7 +10,8 @@ export const isAccountEntry = (slug: string) => slug.startsWith("acct:");
 export function pickerAccounts(d: { accounts?: PickerAccount[]; other_accounts?: { slug: string; name: string; open: number; kind: string }[] }): PickerAccount[] {
   return [...(d.accounts ?? []), ...(d.other_accounts ?? []).map((o) => ({
     name: o.name, slug: o.slug, status: "account", client_active: true, devrev_names: [o.name], open_tickets: o.open,
-    note: o.kind === "ambiguous" ? "not routed — could be several clients" : "not set up on a client",
+    note: o.kind === "ambiguous" ? "not routed — could be several clients"
+      : o.kind === "ignored" ? "default / internal account — move tickets to the right client" : "not set up on a client",
   }))];
 }
 
@@ -98,7 +99,7 @@ export function AccountPicker({ accounts, value, onChange, label = true }: { acc
             {filtered.active.map((a) => row(a))}
             {filtered.waiting.length > 0 && <li className="px-3 pb-1 pt-2 text-xs uppercase tracking-wide text-muted">Awaiting logs / DB credentials</li>}
             {filtered.waiting.map((a) => row(a))}
-            {filtered.others.length > 0 && <li className="px-3 pb-1 pt-2 text-xs uppercase tracking-wide text-muted">Not set up on a client</li>}
+            {filtered.others.length > 0 && <li className="px-3 pb-1 pt-2 text-xs uppercase tracking-wide text-muted">Other DevRev accounts</li>}
             {filtered.others.map((a) => row(a))}
             {filtered.inactive.length > 0 && <li className="px-3 pb-1 pt-2 text-xs uppercase tracking-wide text-muted">Inactive clients</li>}
             {filtered.inactive.map((a) => row(a, true))}

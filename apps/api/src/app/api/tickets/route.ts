@@ -25,7 +25,7 @@ export async function GET(req: Request) {
       all ? loadAll() : listTickets(account.ids, { limit: 25, cursor: sp.get("cursor") || undefined }),
       null, // per-account counts weren't shown anywhere — skipped (5 DevRev calls)
     ]);
-    const works = inTicketScope(fetched, account); // All clients: minus inactive clients / ignored orgs
+    const works = inTicketScope(fetched, account); // All clients: DevRev's whole Support view
     const ids = works.map((w) => w.display_id);
     const invs = ids.length
       ? await q<{ ticket_display: string; id: number; status: string; confidence: string | null }>(

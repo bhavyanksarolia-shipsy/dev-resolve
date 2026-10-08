@@ -4,6 +4,9 @@ import { apiError } from "@/lib/apiError";
 import { q } from "@/lib/db";
 
 const DAY = 864e5;
+/** Why a DevRev account isn't a client row — shown next to it (same wording as the account picker). */
+const accountNote = (kind: string) => kind === "ambiguous" ? "not routed — could be several clients"
+  : kind === "ignored" ? "default / internal account — move tickets to the right client" : "not set up on a client";
 const owner = (w: WorkRow) => (w.owned_by || []).map((o) => o.full_name || o.display_name).filter((n) => n && !/^unassigned$/i.test(n)).join(", ");
 const pod = (w: WorkRow) => (typeof w.custom_fields?.tnt__pod === "string" ? w.custom_fields.tnt__pod : "");
 const tally = (xs: string[]) => {
@@ -41,7 +44,7 @@ export async function GET(req: Request) {
       q<{ status: string; confidence: string | null; created_at: string; finished_at: string | null; posted_at: string | null; ticket_display: string }>(
         `SELECT status, confidence, created_at, finished_at, posted_at, ticket_display FROM investigations WHERE account_slug = ANY($1) AND created_at BETWEEN $2 AND $3`, [account.slugs, since, until]),
     ]);
-    // All clients = DevRev's whole Support view, minus inactive clients / ignored orgs (dropped here).
+    // All clients = DevRev's whole Support view (ignored orgs included, so the count matches DevRev).
     const openAll = inTicketScope(openFetched, account), createdAll = inTicketScope(createdFetched, account), closedAll = inTicketScope(closedFetched, account);
     // Exact DevRev totals only fit a plain account scope; with exclusions, count what was fetched.
     const totalsExact = !account.exclude.size;
@@ -103,7 +106,7 @@ export async function GET(req: Request) {
           const r = accountRole(w.account?.id);
           const key = r.kind === "client" ? `c:${r.slug}` : `a:${w.account?.id ?? "-"}`;
           const row = rows.get(key) ?? (r.kind === "client" ? { slug: r.slug, name: r.name, open: 0, ...(getAccount(r.slug)?.client_active === false && { note: "inactive client" }) }
-            : { slug: null, account_id: w.account?.id ?? null, name: w.account?.display_name || "No account", open: 0, note: r.kind === "ambiguous" ? "not routed — could be several clients" : "account not set up on a client" });
+            : { slug: null, account_id: w.account?.id ?? null, name: w.account?.display_name || "No account", open: 0, note: accountNote(r.kind) });
           row.open++;
           rows.set(key, row);
         }

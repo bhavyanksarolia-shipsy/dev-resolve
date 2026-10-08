@@ -36,10 +36,10 @@ export async function GET(req: Request) {
 }
 
 /**
- * Open tickets under "All clients" (DevRev's whole Support view minus ignored test orgs), Pod scope applied, plus the
+ * Open tickets under "All clients" (DevRev's whole Support view), Pod scope applied, plus the
  * accounts among them that aren't a client (not routed / not set up) — offered in the account picker. Cached 2 min.
  */
-type AllOpen = { total: number; others: { slug: string; name: string; open: number; kind: "ambiguous" | "unknown" }[] };
+type AllOpen = { total: number; others: { slug: string; name: string; open: number; kind: "ambiguous" | "unknown" | "ignored" }[] };
 const allCache = new Map<string, { at: number; value: Promise<AllOpen> }>();
 function allClientsOpen(pods: Set<string> | null, force: boolean) {
   const key = pods ? [...pods].sort().join("|") : "*";
@@ -57,7 +57,7 @@ function allClientsOpen(pods: Set<string> | null, force: boolean) {
       const id = w.account?.id;
       if (!id) continue;
       const r = accountRole(id);
-      if (r.kind === "client" || r.kind === "ignored") continue;
+      if (r.kind === "client") continue;
       const o = others.get(id) ?? { slug: `${ACCOUNT_PREFIX}${id}`, name: w.account?.display_name || "Unnamed account", open: 0, kind: r.kind };
       o.open++;
       others.set(id, o);

@@ -211,13 +211,14 @@ export interface TicketScope {
   slug: string; name: string;
   /** DevRev accounts to ask for; empty = every account (ALL_CLIENTS — the same tickets as DevRev's Support view). */
   ids: string[];
-  /** ALL_CLIENTS only: accounts left out — the internal / test orgs on the ignore list. */
+  /** Accounts left out of the scope (none today: All clients counts everything in DevRev's view, ignored orgs too). */
   exclude: Set<string>;
   slugs: string[]; inactive: boolean;
 }
 /**
  * The tickets a page is about: one client, or ALL_CLIENTS = every Support ticket in DevRev's view — inactive clients,
- * accounts that map to several clients (ambiguous) and accounts not set up yet included — minus ignored test orgs.
+ * accounts that map to several clients (ambiguous), accounts not set up yet and ignored orgs (e.g. the default
+ * [WMS] Shipsy account) included, so the count matches DevRev. Ignored orgs still can't be investigated.
  */
 export function ticketScope(slug: string | null | undefined): TicketScope | null {
   // One DevRev account that isn't a client (not routed / not set up) — picked in the account picker as "acct:<id>".
@@ -228,9 +229,7 @@ export function ticketScope(slug: string | null | undefined): TicketScope | null
   }
   if (slug === ALL_CLIENTS) {
     const clients = getAccounts().filter((a) => a.devrev?.account_ids?.length);
-    const exclude = new Set((loadProjectsFile().devrev_routing?.ignore ?? []).map((x) => x.account_id));
-    for (const a of clients) for (const id of a.devrev.account_ids) exclude.delete(id); // a client's account always counts
-    return { slug: ALL_CLIENTS, name: "All clients", ids: [], exclude, slugs: clients.map((a) => a.slug), inactive: false };
+    return { slug: ALL_CLIENTS, name: "All clients", ids: [], exclude: new Set(), slugs: clients.map((a) => a.slug), inactive: false };
   }
   const a = slug ? getAccount(slug) : undefined;
   return a ? { slug: a.slug, name: a.name, ids: a.devrev.account_ids, exclude: new Set(), slugs: [a.slug], inactive: a.client_active === false } : null;
