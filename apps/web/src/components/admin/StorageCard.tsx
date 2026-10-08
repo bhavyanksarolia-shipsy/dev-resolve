@@ -20,8 +20,24 @@ function Bar({ used, total }: { used: number; total: number }) {
   const tone = p >= 90 ? "bg-bad" : p >= 75 ? "bg-warn" : "bg-ok";
   return (
     <div>
-      <div className="h-2.5 overflow-hidden rounded-full bg-bg ring-1 ring-line"><div className={`h-full rounded-full ${tone}`} style={{ width: `${Math.max(p, 1)}%` }} /></div>
+      <div className="h-2.5 overflow-hidden rounded-full bg-bg ring-1 ring-line"><div className={`bar-grow h-full rounded-full ${tone}`} style={{ width: `${Math.max(p, 1)}%` }} /></div>
       <div className="mt-1.5 flex justify-between text-xs text-muted"><span><b className="font-medium text-fg">{size(used)}</b> used</span><span>{p.toFixed(p < 1 ? 1 : 0)}% of {size(total)}</span></div>
+    </div>
+  );
+}
+
+/** "Details ⌄": the breakdown under a section's total, sliding open on click. */
+function Details({ children, label = "Details" }: { children: React.ReactNode; label?: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-3 border-t border-line pt-2">
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="inline-flex items-center gap-1 text-xs font-medium text-accent-strong hover:underline">
+        {open ? "Hide" : label}
+        <svg className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden><path d="m6 9 6 6 6-6" /></svg>
+      </button>
+      <div className={`grid transition-[grid-template-rows] duration-200 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+        <div className="overflow-hidden">{open && <div className="pt-3">{children}</div>}</div>
+      </div>
     </div>
   );
 }
@@ -54,7 +70,9 @@ export function StorageCard() {
   const ownTotal = d.own.reduce((n, x) => n + x.bytes, 0);
   const worst = Math.max(dbPct ?? 0, diskPct ?? 0);
   const monthsLeft = d.db.limitBytes && d.growth.perMonth > 0 ? (d.db.limitBytes - d.db.disk.used) / d.growth.perMonth : null;
-  const biggest = d.parts[0]?.bytes || 1;
+  const parts = [...d.parts].sort((a, b) => b.bytes - a.bytes);
+  const biggest = parts[0]?.bytes || 1;
+  const partsTotal = parts.reduce((n, p) => n + p.bytes, 0);
 
   return (
     <section className="card p-5">
@@ -96,36 +114,46 @@ export function StorageCard() {
             <div className="mb-1.5 text-xs font-medium">Postgres disk</div>
             {d.db.limitBytes ? <Bar used={d.db.disk.used} total={d.db.limitBytes} />
               : <p className="text-xs"><b className="font-medium">{size(d.db.disk.used)}</b> used · <span className="text-muted">set the disk size under <b>Edit</b> to see how full it is</span></p>}
-            <ul className="mt-2 space-y-0.5 text-xs text-muted">
-              <li className="flex justify-between"><span>Dev Resolve&apos;s data</span><span className="tabular-nums">{size(d.db.disk.data)}</span></li>
-              <li className="flex justify-between"><span>Postgres&apos;s system databases</span><span className="tabular-nums">{size(d.db.disk.system)}</span></li>
-              {d.db.disk.wal != null && <li className="flex justify-between"><span>Change log (kept for crash safety)</span><span className="tabular-nums">{size(d.db.disk.wal)}</span></li>}
-            </ul>
-            <p className="mt-2 text-[11px] text-muted">The host&apos;s own volume page may show a little more (file-system overhead).</p>
+            <Details>
+              <ul className="space-y-1 text-sm">
+                <li className="flex justify-between"><span className="text-muted">Dev Resolve&apos;s data</span><span className="tabular-nums">{size(d.db.disk.data)}</span></li>
+                <li className="flex justify-between"><span className="text-muted">Postgres&apos;s system databases</span><span className="tabular-nums">{size(d.db.disk.system)}</span></li>
+                {d.db.disk.wal != null && <li className="flex justify-between"><span className="text-muted">Change log (kept for crash safety)</span><span className="tabular-nums">{size(d.db.disk.wal)}</span></li>}
+              </ul>
+              <p className="mt-2 text-[11px] text-muted">The host&apos;s own volume page may show a little more (file-system overhead).</p>
+            </Details>
           </Block>
           <Block title="Server files">
             <div className="text-2xl font-semibold tabular-nums">{size(ownTotal)}</div>
             <div className="mb-3 text-xs text-muted">Dev Resolve&apos;s own files on the server</div>
-            <ul className="mb-3 space-y-1 text-sm">
-              {d.own.map((x) => <li key={x.label} className="flex justify-between gap-3"><span className="text-muted">{x.label}</span><span className="tabular-nums">{size(x.bytes)}</span></li>)}
-            </ul>
-            {d.volume ? <Bar used={diskUsed} total={d.volume.total} />
-              : <p className="rounded-lg bg-bg px-3 py-2 text-xs text-muted">No disk of its own: these files live on the server&apos;s temporary space and are cleared on every deploy (code is copied again; chats rebuild their context). Add a volume at <code>/data</code> in Railway to keep them and see its size here.</p>}
+            {d.volume ? <Bar used={diskUsed} total={d.volume.total} /> : <p className="text-xs text-muted">No disk of its own — cleared on every deploy</p>}
+            <Details>
+              <ul className="space-y-1 text-sm">
+                {d.own.map((x) => <li key={x.label} className="flex justify-between gap-3"><span className="text-muted">{x.label}</span><span className="tabular-nums">{size(x.bytes)}</span></li>)}
+              </ul>
+              {!d.volume && <p className="mt-2 rounded-lg bg-bg px-3 py-2 text-xs text-muted">These files live on the server&apos;s temporary space and are cleared on every deploy (code is copied again; chats rebuild their context). Add a volume at <code>/data</code> in Railway to keep them and see its size here.</p>}
+            </Details>
           </Block>
           <Block title="What takes the space">
-            <ul className="space-y-2.5 text-sm">
-              {d.parts.map((p) => (
-                <li key={p.key}>
-                  <div className="flex items-baseline gap-2"><span className="min-w-0 flex-1 truncate">{p.label}</span>
-                    {p.rows != null && <span className="text-xs text-muted">{p.rows.toLocaleString("en-IN")} items</span>}
-                    <span className="w-20 text-right font-medium tabular-nums">{size(p.bytes)}</span></div>
-                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-bg"><div className="h-full rounded-full bg-accent/70" style={{ width: `${Math.max(pct(p.bytes, biggest), 1)}%` }} /></div>
+            <div className="text-2xl font-semibold tabular-nums">{size(partsTotal)}</div>
+            <div className="text-xs text-muted">in {parts.length} parts · biggest: {parts[0]?.label.toLowerCase()} ({size(parts[0]?.bytes ?? 0)})</div>
+            <Details label="Show all parts">
+              <ul className="space-y-2.5 text-sm">
+                {parts.map((p, i) => (
+                  <li key={p.key}>
+                    <div className="flex items-baseline gap-2"><span className="min-w-0 flex-1 truncate">{p.label}</span>
+                      {p.rows != null && <span className="text-xs text-muted">{p.rows.toLocaleString("en-IN")} items</span>}
+                      <span className="w-20 text-right font-medium tabular-nums">{size(p.bytes)}</span></div>
+                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-bg">
+                      <div className="bar-grow h-full rounded-full bg-accent/70" style={{ width: `${Math.max(pct(p.bytes, biggest), 1)}%`, ["--bar-delay" as string]: `${i * 60}ms` }} />
+                    </div>
+                  </li>
+                ))}
+                <li className="flex items-baseline gap-2 border-t border-line pt-2.5 font-semibold">
+                  <span className="flex-1">Total</span><span className="w-20 text-right tabular-nums">{size(partsTotal)}</span>
                 </li>
-              ))}
-              <li className="flex items-baseline gap-2 border-t border-line pt-2.5 font-semibold">
-                <span className="flex-1">Total</span><span className="w-20 text-right tabular-nums">{size(d.parts.reduce((n, p) => n + p.bytes, 0))}</span>
-              </li>
-            </ul>
+              </ul>
+            </Details>
           </Block>
           <Block title="Growth">
             <div className="flex flex-wrap gap-8">

@@ -177,3 +177,8 @@ html { background: var(--bg); }
 .toast-timer { transform-origin: left; animation: toast-timer var(--toast-ms, 6000ms) linear forwards; }
 .toast-card:hover .toast-timer { animation-play-state: paused; }
 @media (prefers-reduced-motion: reduce) { .toast-in, .toast-out { animation-duration: 1ms; } }
+
+/* Storage bars fill from left to right when they appear (staggered with --bar-delay). */
+@keyframes bar-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.bar-grow { transform-origin: left; animation: bar-grow .7s cubic-bezier(.2,.8,.2,1) both; animation-delay: var(--bar-delay, 0ms); }
+@media (prefers-reduced-motion: reduce) { .bar-grow { animation: none; } }
