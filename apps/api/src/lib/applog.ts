@@ -76,14 +76,24 @@ async function refresh(p: AppLogProject, t: Tokens): Promise<Tokens | null> {
 export type AppLogAuth = { ok: true; message: string } | { ok: false; status: "auth_failed" | "error" | "not_configured"; message: string };
 
 const lastGood = new Map<string, number>();
+// A failed check is remembered for 30 s, so pages that ask often (Connector page, every 5 s) don't hammer the gateway.
+const lastBad = new Map<string, { at: number; res: AppLogAuth }>();
 
 /** Make sure the saved login works (refreshing it silently if needed). Never opens a browser. */
 export async function ensureAppLogAuth(p: AppLogProject, user?: string | null): Promise<AppLogAuth> {
   const dir = appLogConfigDir(p, user);
   const signIn = connectorMode() ? "sign in to app logs from your local connector (Connector page)" : `run \`${p.login_command}\``;
   if (Date.now() - (lastGood.get(dir) ?? 0) < 60_000) return { ok: true, message: "Signed in (checked <1 min ago)" };
+  const bad = lastBad.get(dir);
   const f = tokenFile(p, user);
   if (!f) return { ok: false, status: "not_configured", message: `No saved login yet — ${signIn}` };
+  if (bad && Date.now() - bad.at < 30_000 && statSync(f).mtimeMs < bad.at) return bad.res; // unless a new login arrived since
+  const res = await check(p, f, dir, signIn);
+  if (res.ok) lastBad.delete(dir); else lastBad.set(dir, { at: Date.now(), res });
+  return res;
+}
+
+async function check(p: AppLogProject, f: string, dir: string, signIn: string): Promise<AppLogAuth> {
   try {
     const t = JSON.parse(readFileSync(f, "utf8")) as Tokens;
     if (t.access_token && (await tokenWorks(p, t.access_token))) {

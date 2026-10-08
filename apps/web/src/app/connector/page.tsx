@@ -8,7 +8,7 @@ interface Status {
   vpn: Record<string, boolean>; vpnHosts: string[];
   /** The two different VPNs: the client's (Cisco AnyConnect) and the company's (Pritunl, for the Claude gateway). */
   vpns?: { id: string; name: string; app: string; purpose: string; hosts: string[] }[];
-  signins: { metabase: { project: string; label?: string; baseUrl?: string; signedIn: boolean }[]; appLog: { project: string; signedIn: boolean } | null };
+  signins: { metabase: { project: string; label?: string; baseUrl?: string; signedIn: boolean }[]; appLog: { project: string; signedIn: boolean; expired?: boolean } | null };
 }
 type Tone = "ok" | "bad" | "wait";
 
@@ -90,7 +90,7 @@ export default function ConnectorPage() {
   const running = s.online;
   const installedHere = !!ext || viaExt;
   const signins = [...s.signins.metabase.map((m) => ({ key: m.project, label: `Metabase · ${m.label ?? m.project}`, ok: m.signedIn })),
-    ...(s.signins.appLog ? [{ key: "app_log", label: "App logs", ok: s.signins.appLog.signedIn }] : [])];
+    ...(s.signins.appLog ? [{ key: "app_log", label: "App logs", ok: s.signins.appLog.signedIn, expired: s.signins.appLog.expired }] : [])] as { key: string; label: string; ok: boolean; expired?: boolean }[];
   const signedIn = signins.filter((x) => x.ok).length;
   const vpns = (s.vpns ?? [{ id: "client", name: "Client VPN", app: "", purpose: "VPN-only systems", hosts: s.vpnHosts }]).map((g) => {
     const okCount = g.hosts.filter((h) => s.vpn[h]).length;
@@ -146,7 +146,7 @@ export default function ConnectorPage() {
               <div key={x.key} className="flex items-center gap-3 px-5 py-3 text-sm">
                 <span className={`h-2.5 w-2.5 rounded-full ${x.ok ? "bg-ok" : "bg-bad"}`} />
                 <span className="flex-1">{x.label}</span>
-                <span className={`text-xs ${x.ok ? "text-ok" : "text-bad"}`}>{x.ok ? "signed in" : "not signed in"}</span>
+                <span className={`text-xs ${x.ok ? "text-ok" : "text-bad"}`}>{x.ok ? "signed in" : x.expired ? "login expired — sign in again" : "not signed in"}</span>
                 <button onClick={() => signin([x.key])} disabled={!running} title={running ? "" : "Needs the extension running"}
                   className="rounded-md border border-line px-2.5 py-1 text-xs hover:border-accent disabled:opacity-40">{x.ok ? "Sign in again" : "Sign in"}</button>
               </div>

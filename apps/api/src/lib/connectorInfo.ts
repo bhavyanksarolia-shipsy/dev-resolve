@@ -1,6 +1,6 @@
 import "server-only";
 import { cfgValue, getConnectionProjects } from "./config";
-import { appLogProjects } from "./applog";
+import { appLogProjects, ensureAppLogAuth } from "./applog";
 import { settings } from "./settings";
 import { gatewayHost, gatewayViaConnector, needsRelay, ssoMetabaseProjects, metabaseSession, appLogUserConfigDir } from "./connector";
 import { existsSync, readdirSync } from "node:fs";
@@ -38,10 +38,16 @@ export function appLogInfo() {
   return { project: p.name, gateway, clientId, callbackPort: port };
 }
 
-/** Which of this person's sign-ins are missing (the connector offers to do them). */
-export function signinsFor(user: string) {
+/**
+ * Which of this person's sign-ins are missing (the connector offers to do them). App logs: a saved login that no longer
+ * works (and couldn't be renewed) counts as missing, with expired: true — the same check the connection banner uses.
+ */
+export async function signinsFor(user: string) {
   const metabase = ssoMetabaseProjects().map((p) => ({ project: p.name, label: getConnectionProjects()[p.name]?.metabase?.display_name || p.name, baseUrl: p.baseUrl, signedIn: !!metabaseSession(user, p.name) }));
   const dir = path.join(appLogUserConfigDir(user), "mcp-remote-v1");
-  const appLog = appLogInfo() && { ...appLogInfo()!, signedIn: existsSync(dir) && readdirSync(dir).some((f) => f.endsWith("_tokens.json")) };
+  const saved = existsSync(dir) && readdirSync(dir).some((f) => f.endsWith("_tokens.json"));
+  const p = appLogProjects()[0];
+  const works = saved && p ? (await ensureAppLogAuth(p, user)).ok : false;
+  const appLog = appLogInfo() && { ...appLogInfo()!, signedIn: works, expired: saved && !works };
   return { metabase, appLog };
 }
