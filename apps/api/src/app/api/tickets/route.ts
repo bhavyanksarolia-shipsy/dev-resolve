@@ -37,10 +37,10 @@ export async function GET(req: Request) {
       : [];
     const byTicket = Object.fromEntries(invs.map((i) => [i.ticket_display, i]));
     return Response.json({
-      tickets: works.map((w) => ({
+      tickets: works.map((w) => { const inv = investigable(w.account?.id); return {
         id: w.id, display_id: w.display_id, title: w.title, stage: w.stage?.display_name || w.stage?.name, stage_name: w.stage?.name,
         severity: w.severity, created_date: w.created_date, account: w.account?.display_name, account_id: w.account?.id,
-        can_investigate: investigable(w.account?.id).ok,
+        can_investigate: inv.ok, ...(!inv.ok && { cant_investigate: inv.reason }),
         part: (w as { applies_to_part?: { name?: string } }).applies_to_part?.name,
         default_part: (w as { applies_to_part?: { id?: string } }).applies_to_part?.id === getDevrevView().default_part_id,
         pod: typeof w.custom_fields?.tnt__pod === "string" ? w.custom_fields.tnt__pod : null,
@@ -48,7 +48,7 @@ export async function GET(req: Request) {
         owner: (w.owned_by || []).map((o) => o.full_name || o.display_name).filter((n) => n && !/^unassigned$/i.test(n)).join(", ") || null,
         devrev_url: devrevUrl(w.display_id),
         investigation: byTicket[w.display_id] ?? null,
-      })),
+      }; }),
       next_cursor,
       counts,
     });

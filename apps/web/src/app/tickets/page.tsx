@@ -14,7 +14,7 @@ import { ColumnMenu, Pager } from "@/components/TableTools";
 type Account = PickerAccount;
 interface Ticket {
   id: string; display_id: string; title: string; stage?: string; severity?: string; created_date: string;
-  part?: string; default_part?: boolean; pod?: string | null; owner?: string | null; account?: string; account_id?: string; can_investigate?: boolean; devrev_url: string;
+  part?: string; default_part?: boolean; pod?: string | null; owner?: string | null; account?: string; account_id?: string; can_investigate?: boolean; cant_investigate?: string; devrev_url: string;
   investigation: { id: number; status: string; confidence: string | null } | null;
 }
 interface Counts { account: { total: number; wms: number; default_part: number }; org: { total: number; wms: number } }
@@ -418,6 +418,9 @@ function Inbox() {
                               {busy && <span className="spin inline-block">↻</span>}
                               {busy ? "Investigating…" : inv ? "Try again" : "Investigate"}
                             </button>
+                          )}
+                          {!inv && t.can_investigate === false && (
+                            <span className="text-xs text-muted" title={t.cant_investigate}>{t.cant_investigate?.includes("inactive") ? "Inactive client" : "Not a client account"}</span>
                           )}
                         </div>
                       </td>

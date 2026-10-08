@@ -73,7 +73,11 @@ export function AccountPicker({ accounts, value, onChange, label = true }: { acc
       <li key={a.slug} className={dim ? "opacity-60" : ""}>
         <button type="button" onMouseEnter={() => setHi(i)} onClick={() => choose(a.slug)}
           className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm ${i === hi ? "bg-accent-soft text-accent-strong" : ""} ${a.slug === value ? "font-semibold" : ""}`}>
-          <span title={a.note ? `${a.name} — ${a.note}` : a.name} className="break-words [overflow-wrap:anywhere]">{a.name}</span>
+          <span title={a.note ? `${a.name} — ${a.note}` : a.name} className="min-w-0 break-words [overflow-wrap:anywhere]">
+            {a.name}
+            {/* DevRev accounts that aren't a client yet: say why, so they can be moved to the right client. */}
+            {a.note && isAccountEntry(a.slug) && <span className="block text-xs font-normal text-muted">{a.note}</span>}
+          </span>
           {a.note && <span title={a.note} className="h-1.5 w-1.5 shrink-0 rounded-full bg-bad" aria-label={a.note} />}
           <span className="ml-auto shrink-0 tabular-nums text-xs text-muted" title="Open Support tickets">{a.open_tickets ?? "…"} open</span>
         </button>
