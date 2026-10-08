@@ -167,3 +167,13 @@ html { background: var(--bg); }
 .drawer-in { animation: drawer-in .55s cubic-bezier(.16, 1, .3, 1) both; }
 .drawer-out { animation: drawer-out .4s cubic-bezier(.5, 0, .75, 0) both; }
 @media (prefers-reduced-motion: reduce) { .drawer-in, .drawer-out { animation: none; } }
+
+/* Notifications (components/Dialog.tsx): pop in, pop out, and a timer bar that pauses while hovered. */
+@keyframes toast-in { from { opacity: 0; transform: translateX(24px) scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes toast-out { from { opacity: 1; transform: none; max-height: 220px; } to { opacity: 0; transform: translateX(24px) scale(.96); max-height: 0; margin-top: -8px; } }
+@keyframes toast-timer { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+.toast-in { animation: toast-in .28s cubic-bezier(.2,.9,.3,1.2) both; }
+.toast-out { animation: toast-out .22s ease-in both; overflow: hidden; }
+.toast-timer { transform-origin: left; animation: toast-timer var(--toast-ms, 6000ms) linear forwards; }
+.toast-card:hover .toast-timer { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) { .toast-in, .toast-out { animation-duration: 1ms; } }

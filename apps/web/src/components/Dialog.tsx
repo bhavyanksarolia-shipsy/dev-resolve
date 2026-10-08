@@ -1,5 +1,7 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { chime } from "@/lib/sound";
 
 /**
  * In-app replacements for the browser's confirm() / alert(), styled like the rest of Dev Resolve.
@@ -8,7 +10,8 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
  * <DialogHost /> (in the root layout) renders them.
  */
 interface ConfirmReq { id: number; title: string; message: string; confirmLabel: string; danger: boolean; requireText?: string; resolve: (ok: boolean) => void }
-interface Toast { id: number; title?: string; message: string; tone: "error" | "ok" | "info" }
+type Tone = "error" | "ok" | "info" | "warn";
+interface Toast { id: number; title?: string; message: string; tone: Tone; action?: { label: string; href: string }; ms: number; leaving?: boolean }
 
 let seq = 0;
 let state: { confirm: ConfirmReq | null; toasts: Toast[] } = { confirm: null, toasts: [] };
@@ -21,10 +24,22 @@ export function confirmDialog(o: { title: string; message: string; confirmLabel?
   return new Promise((resolve) => emit({ ...state, confirm: { id: ++seq, confirmLabel: "Confirm", danger: false, ...o, resolve } }));
 }
 
-export function notify(o: { message: string; title?: string; tone?: Toast["tone"] }) {
-  const t: Toast = { id: ++seq, tone: "info", ...o };
-  emit({ ...state, toasts: [...state.toasts.slice(-3), t] });
-  setTimeout(() => emit({ ...state, toasts: state.toasts.filter((x) => x.id !== t.id) }), t.tone === "error" ? 9000 : 5000);
+/**
+ * Every notification in Dev Resolve: top right under the menu, newest at the bottom, at most 4. Each pops in, plays the
+ * notification sound (sound: false to skip — e.g. another tab already played it), counts down with a timer bar that
+ * pauses while the mouse is over it, then pops out. action = a link button ("Open →").
+ */
+export function notify(o: { message: string; title?: string; tone?: Tone; action?: { label: string; href: string }; ms?: number; sound?: boolean }) {
+  const tone = o.tone ?? "info";
+  const t: Toast = { id: ++seq, tone, title: o.title, message: o.message, action: o.action, ms: o.ms ?? (tone === "error" ? 10_000 : tone === "warn" ? 9_000 : 6_000) };
+  const kept = state.toasts.filter((x) => !x.leaving);
+  emit({ ...state, toasts: [...kept.slice(-3), t] });
+  if (o.sound !== false) chime(tone);
+}
+function dismiss(id: number) {
+  if (!state.toasts.some((x) => x.id === id && !x.leaving)) return;
+  emit({ ...state, toasts: state.toasts.map((x) => (x.id === id ? { ...x, leaving: true } : x)) });
+  setTimeout(() => emit({ ...state, toasts: state.toasts.filter((x) => x.id !== id) }), 220); // after the pop-out
 }
 
 /** Result of an action ({ ok, text }) as a toast that disappears by itself; null is ignored (clearing an old message). */
@@ -33,7 +48,12 @@ export function toast(m: { ok: boolean; text: string } | null) {
 }
 
 const subscribe = (l: () => void) => { listeners.add(l); return () => listeners.delete(l); };
-const TOAST = { error: "border-red-200 bg-red-50 text-bad", ok: "border-emerald-200 bg-emerald-50 text-ok", info: "border-line bg-panel text-fg" };
+const TONE: Record<Tone, { ring: string; icon: string; mark: string; bar: string }> = {
+  ok: { ring: "border-emerald-200", icon: "bg-ok", mark: "✓", bar: "bg-ok" },
+  error: { ring: "border-red-200", icon: "bg-bad", mark: "!", bar: "bg-bad" },
+  warn: { ring: "border-amber-200", icon: "bg-warn", mark: "!", bar: "bg-warn" },
+  info: { ring: "border-line", icon: "bg-accent", mark: "i", bar: "bg-accent" },
+};
 
 export function DialogHost() {
   const s = useSyncExternalStore(subscribe, () => state, () => state);
@@ -82,15 +102,26 @@ export function DialogHost() {
           </div>
         </div>
       )}
-      <div className="pointer-events-none fixed right-4 top-16 z-50 flex w-full max-w-sm flex-col gap-2">
-        {s.toasts.map((t) => (
-          <div key={t.id} role="status" className={`chat-pop pointer-events-auto rounded-xl border px-4 py-3 text-sm shadow-lg ${TOAST[t.tone]}`}>
-            <div className="flex items-start gap-3">
-              <div className="min-w-0 flex-1">{t.title && <div className="font-semibold">{t.title}</div>}<div className="break-words">{t.message}</div></div>
-              <button aria-label="Dismiss" className="text-muted hover:text-fg" onClick={() => emit({ ...state, toasts: state.toasts.filter((x) => x.id !== t.id) })}>✕</button>
+      {/* Top right, just under the menu bar; evenly spaced. */}
+      <div className="pointer-events-none fixed right-4 top-[4.75rem] z-[90] flex w-[23rem] max-w-[calc(100vw-2rem)] flex-col gap-2.5" aria-live="polite">
+        {s.toasts.map((t) => {
+          const k = TONE[t.tone];
+          return (
+            <div key={t.id} role="status" className={`toast-card pointer-events-auto overflow-hidden rounded-2xl border bg-panel shadow-xl ${k.ring} ${t.leaving ? "toast-out" : "toast-in"}`}>
+              <div className="flex gap-3 px-4 pb-3 pt-3.5">
+                <span className={`mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full text-sm font-bold text-white ${k.icon}`}>{k.mark}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold leading-snug">{t.title ?? t.message}</div>
+                  {t.title && <div className="mt-0.5 break-words text-sm text-muted">{t.message}</div>}
+                  {t.action && <Link href={t.action.href} onClick={() => dismiss(t.id)} className="mt-1.5 inline-block text-sm font-medium text-accent-strong hover:underline">{t.action.label} →</Link>}
+                </div>
+                <button aria-label="Dismiss" className="-mr-1 h-7 w-7 shrink-0 rounded-md text-lg leading-none text-muted hover:bg-bg hover:text-fg" onClick={() => dismiss(t.id)}>×</button>
+              </div>
+              {/* The timer: shrinks to nothing, then the notification goes; paused while hovered. */}
+              <div className="h-1 bg-bg"><div className={`toast-timer h-full ${k.bar} opacity-70`} style={{ ["--toast-ms" as string]: `${t.ms}ms` }} onAnimationEnd={() => dismiss(t.id)} /></div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </>
   );

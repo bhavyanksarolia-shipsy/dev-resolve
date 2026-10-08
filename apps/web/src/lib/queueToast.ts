@@ -1,4 +1,4 @@
-import { toast } from "@/components/Dialog";
+import { notify } from "@/components/Dialog";
 
 interface Entry { id: number; mine: boolean; position?: number; waitMin?: number }
 interface Queue { max: number; perPerson: number; running: Entry[]; waiting: Entry[] }
@@ -20,8 +20,9 @@ export function toastIfQueued(id: number, ticket: string, kind: "investigation" 
     const why = mine >= q.perPerson
       ? `you already have ${mine} running — the limit is ${q.perPerson} per person while others are waiting`
       : `all ${q.max} slots are busy`;
-    const what = kind === "chat" ? `Your message on ${ticket}` : ticket;
-    toast({ ok: true, text: `${what} is queued: ${why}. ${me.position === 1 ? "Next up" : `${ordinal(me.position!)} in line`}, about ${me.waitMin} min — it starts by itself and you'll be notified when it's done.` });
+    notify({ tone: "info", title: `${kind === "chat" ? `Your message on ${ticket}` : ticket} is queued · ${me.position === 1 ? "next up" : `${ordinal(me.position!)} in line`}`,
+      message: `${why[0].toUpperCase()}${why.slice(1)}. About ${me.waitMin} min — it starts by itself and you'll be notified when it's done.`,
+      action: { label: "Open", href: `/tickets/${ticket}` }, ms: 10_000 });
   };
   setTimeout(() => void look(4), 1500);
 }

@@ -1,35 +1,19 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { BellIcon, BellOffIcon } from "@/components/icons";
+import { notify } from "@/components/Dialog";
+import { chime, setSoundOn, soundOn, unlockAudio } from "@/lib/sound";
 
 interface Event { kind: "investigation" | "chat"; id: number; ticket_display: string; ticket_title: string; ok: boolean; confidence: string | null; error: string | null; at: string }
 interface Feed { now: string; running: number; waiting: number; mine: { running: number; waiting: number }; events: Event[] }
 interface Toast { key: string; ok: boolean; title: string; body: string; href: string }
+/** Shown with the app's one notification style (Dialog.tsx notify): top right, timer bar, sound. */
+const show = (x: Toast, sound = true) => notify({ title: x.title, message: x.body, tone: x.ok ? "ok" : "error", action: { label: "Open", href: x.href }, ms: x.ok ? 15_000 : 20_000, sound });
 
-const KEY = "dr.notify.since", SOUND = "dr.notify.sound";
+const KEY = "dr.notify.since";
 const get = (k: string) => { try { return localStorage.getItem(k); } catch { return null; } };
 const set = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch {} };
-
-// ── sound: a short chime made in the browser (no file); needs one click on the page first (browser rule) ──────────────
-let audio: AudioContext | null = null;
-const unlockAudio = () => {
-  try {
-    audio ??= new AudioContext();
-    if (audio.state === "suspended") void audio.resume();
-  } catch { /* no audio */ }
-};
-function chime(ok: boolean) {
-  if (get(SOUND) === "off" || !audio || audio.state !== "running") return;
-  const notes = ok ? [660, 880] : [440, 330];
-  notes.forEach((f, i) => {
-    const o = audio!.createOscillator(), g = audio!.createGain(), t = audio!.currentTime + i * 0.16;
-    o.type = "sine"; o.frequency.value = f;
-    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.18, t + 0.02); g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
-    o.connect(g).connect(audio!.destination); o.start(t); o.stop(t + 0.4);
-  });
-}
 
 function describe(e: Event): Toast {
   const what = e.kind === "chat" ? "Chat reply" : "RCA";
@@ -50,22 +34,16 @@ export function InvestigationNotifier() {
   const router = useRouter();
   const [perm, setPerm] = useState<NotificationPermission | "unsupported">("default");
   const [feed, setFeed] = useState<Pick<Feed, "running" | "waiting" | "mine">>({ running: 0, waiting: 0, mine: { running: 0, waiting: 0 } });
-  const [toasts, setToasts] = useState<Toast[]>([]);
   const [menu, setMenu] = useState(false);
   const [sound, setSound] = useState(true);
-  const [mounted, setMounted] = useState(false); // the pop-up area is added to <body> only in the browser
   const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const supported = "Notification" in window;
-    const t0 = setTimeout(() => { setPerm(supported ? Notification.permission : "unsupported"); setSound(get(SOUND) !== "off"); setMounted(true); }, 0);
-    for (const e of ["pointerdown", "keydown"]) window.addEventListener(e, unlockAudio, { capture: true });
+    const t0 = setTimeout(() => { setPerm(supported ? Notification.permission : "unsupported"); setSound(soundOn()); }, 0);
+    // Other Dev Resolve tabs show it too, without playing the sound again.
     const channel = "BroadcastChannel" in window ? new BroadcastChannel("dev-resolve-notify") : null;
-    const show = (list: Toast[]) => {
-      setToasts((cur) => [...cur.filter((c) => !list.some((x) => x.key === c.key)), ...list].slice(-4));
-      for (const x of list) setTimeout(() => setToasts((cur) => cur.filter((c) => c.key !== x.key)), x.ok ? 20_000 : 40_000);
-    };
-    if (channel) channel.onmessage = (m) => show(m.data as Toast[]);
+    if (channel) channel.onmessage = (m) => (m.data as Toast[]).forEach((x) => show(x, false));
     let live = true;
     const tick = async () => {
       try {
@@ -79,8 +57,7 @@ export function InvestigationNotifier() {
         set(KEY, d.events.length ? d.events[d.events.length - 1].at : d.now);
         if (!d.events.length) return;
         const list = d.events.map(describe);
-        show(list); channel?.postMessage(list);
-        chime(list.every((x) => x.ok));
+        list.forEach((x, i) => show(x, i === 0)); channel?.postMessage(list);
         if (supported && Notification.permission === "granted") {
           for (const x of list) {
             const n = new Notification(x.title, { body: x.body, tag: `dev-resolve-${x.key}`, requireInteraction: true });
@@ -96,7 +73,6 @@ export function InvestigationNotifier() {
     return () => {
       live = false; clearTimeout(t0); clearInterval(t); channel?.close();
       window.removeEventListener("investigations-changed", now);
-      for (const e of ["pointerdown", "keydown"]) window.removeEventListener(e, unlockAudio, { capture: true });
     };
   }, [router]);
 
@@ -110,12 +86,10 @@ export function InvestigationNotifier() {
   const test = () => {
     unlockAudio();
     const x: Toast = { key: `test-${Date.now()}`, ok: true, title: "Test · notifications work", body: "This is what you'll see when your RCA or chat reply is ready.", href: "/tickets" };
-    setToasts((cur) => [...cur, x].slice(-4));
-    setTimeout(() => setToasts((cur) => cur.filter((c) => c.key !== x.key)), 8000);
-    setTimeout(() => chime(true), 50);
+    setTimeout(() => show(x), 50);
     if ("Notification" in window && Notification.permission === "granted") new Notification(x.title, { body: x.body, tag: x.key });
   };
-  const toggleSound = () => { const next = !sound; setSound(next); set(SOUND, next ? "on" : "off"); if (next) { unlockAudio(); setTimeout(() => chime(true), 50); } };
+  const toggleSound = () => { const next = !sound; setSound(next); setSoundOn(next); if (next) { unlockAudio(); setTimeout(() => chime("ok"), 50); } };
 
   const iconBtn = "relative grid h-8 w-8 place-items-center rounded-full transition-colors";
   const { running, waiting, mine } = feed;
@@ -152,21 +126,6 @@ export function InvestigationNotifier() {
           <button onClick={test} className="w-full rounded-lg border border-line px-3 py-1.5 text-xs font-medium hover:border-accent">Send a test notification</button>
         </div>
       )}
-      {/* In-page pop-ups: shown even when the laptop's notifications are off. Drawn on <body>: the header's blur would
-          otherwise pin "fixed" elements to the header instead of the screen corner. */}
-      {mounted && createPortal(<div className="pointer-events-none fixed bottom-4 right-4 z-[90] flex w-[22rem] max-w-[calc(100vw-2rem)] flex-col gap-2" aria-live="polite">
-        {toasts.map((x) => (
-          <div key={x.key} className={`pointer-events-auto flex gap-3 rounded-xl border bg-panel p-3 shadow-xl ${x.ok ? "border-emerald-200" : "border-red-200"}`}>
-            <span className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs text-white ${x.ok ? "bg-ok" : "bg-bad"}`}>{x.ok ? "✓" : "!"}</span>
-            <div className="min-w-0 flex-1">
-              <div className="font-semibold">{x.title}</div>
-              <div className="line-clamp-2 text-xs text-muted">{x.body}</div>
-              <button onClick={() => { router.push(x.href); setToasts((c) => c.filter((t) => t.key !== x.key)); }} className="mt-1.5 text-xs font-medium text-accent-strong hover:underline">Open →</button>
-            </div>
-            <button onClick={() => setToasts((c) => c.filter((t) => t.key !== x.key))} aria-label="Dismiss" className="h-6 w-6 shrink-0 rounded text-muted hover:bg-bg">×</button>
-          </div>
-        ))}
-      </div>, document.body)}
     </div>
   );
 }
