@@ -137,6 +137,36 @@ export async function countsByAccount(accounts: { key: string; accountIds: strin
   return out;
 }
 
+export interface LinkedIssue { id: string; display_id: string; title: string; owner: string | null; stage: string | null; state: string | null; priority: string | null; url: string }
+
+/**
+ * Issues linked to a ticket (DevRev links, either direction), with title, owner and status — read-only. Used by the
+ * ticket row's issue dropdown, only when it's opened. Cached 5 min per ticket.
+ */
+const issueCache = new Map<string, { at: number; value: LinkedIssue[] }>();
+export async function linkedIssues(ticketId: string): Promise<LinkedIssue[]> {
+  const hit = issueCache.get(ticketId);
+  if (hit && Date.now() - hit.at < 5 * 60_000) return hit.value;
+  type End = { id: string; type?: string; display_id?: string };
+  const links: { source?: End; target?: End }[] = [];
+  for (let cursor: string | undefined, i = 0; i < 5; i++) {
+    const r = await call<{ links: { source?: End; target?: End }[]; next_cursor?: string }>("/links.list", { object: ticketId, limit: 50, ...(cursor && { cursor }) });
+    links.push(...(r.links ?? []));
+    if (!(cursor = r.next_cursor)) break;
+  }
+  const ids = [...new Set(links.map((l) => (l.source?.id === ticketId ? l.target : l.source)).filter((e): e is End => !!e?.id && (e.type === "issue" || /^ISS-/.test(e.display_id ?? "") || e.id.includes(":issue/"))).map((e) => e.id))].slice(0, 20);
+  const value = (await Promise.all(ids.map((id) => call<{ work: TicketSummary & { priority?: string; owned_by?: { full_name?: string; display_name?: string }[]; stage?: { name?: string; display_name?: string; state?: { display_name?: string; is_final?: boolean } } } }>("/works.get", { id })
+    .then(({ work: w }) => ({
+      id: w.id, display_id: w.display_id, title: w.title,
+      owner: (w.owned_by ?? []).map((o) => o.full_name || o.display_name).filter(Boolean).join(", ") || null,
+      stage: w.stage?.display_name || w.stage?.name?.replace(/_/g, " ") || null,
+      state: w.stage?.state?.display_name ?? null, priority: w.priority ?? null, url: devrevUrl(w.display_id),
+    } as LinkedIssue))
+    .catch(() => null)))).filter((x): x is LinkedIssue => !!x);
+  issueCache.set(ticketId, { at: Date.now(), value });
+  return value;
+}
+
 export function devrevUrl(displayId: string) {
   return `${settings.devrevAppUrl()}/works/${displayId}`;
 }

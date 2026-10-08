@@ -1,7 +1,8 @@
 "use client";
 import Link from "next/link";
 import { toastIfQueued } from "@/lib/queueToast";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { IssuesPanel, IssuesToggle } from "@/components/TicketIssues";
+import { Fragment, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { BulkBar, InlineEdit, type SavedChange } from "@/components/TicketActions";
 import { EmptyState } from "@/components/EmptyState";
 import { TicketSheet } from "@/components/TicketSheet";
@@ -84,6 +85,7 @@ function Inbox() {
   const refreshing = useRef(false);
   const [starting, setStarting] = useState<Set<string>>(new Set());
   const [picked, setPicked] = useState<Set<string>>(new Set()); // tickets ticked for a bulk resolve
+  const [issuesOpen, setIssuesOpen] = useState<string | null>(null); // the one row whose linked issues are showing
   // Opening a ticket from the table: a sheet slides up over it (the table stays as it is). The address bar shows
   // /tickets/TKT-… (keeping this page's filters in the query) and the browser's Back closes the sheet.
   const [sheet, setSheet] = useState<string | null>(null);
@@ -369,6 +371,7 @@ function Inbox() {
                   <th className="px-5 py-3">Ticket</th><th className="px-4 py-3">Title</th><th className="px-4 py-3">{colMenu("pod", "Pod")}</th><th className="px-4 py-3">Part</th>
                   <th className="px-4 py-3">{colMenu("stage", "Stage")}</th><th className="px-4 py-3">{colMenu("owner", "Assigned to")}</th><th className="px-4 py-3"><CreatedSort value={sort === "created:asc" ? "asc" : sort && !sort.startsWith("created") ? null : "desc"}
                     onChange={(d) => setView({ sort: d === "asc" ? "created:asc" : "created:desc" })} /></th><th className="px-5 py-3">Dev Resolve</th>
+                  <th className="w-12 py-3 pl-1 pr-4" title="Issues linked in DevRev"><span className="sr-only">Linked issues</span></th>
                 </tr>
               </thead>
               <tbody className={`divide-y divide-line transition-opacity ${fetching && tickets ? "opacity-60" : ""}`}>
@@ -377,7 +380,8 @@ function Inbox() {
                   const inv = t.investigation;
                   const busy = starting.has(t.display_id) || inv?.status === "running";
                   return (
-                    <tr key={t.id} onMouseEnter={() => warm(t.display_id)} className={`transition-colors hover:bg-accent-soft/60 ${picked.has(t.display_id) ? "bg-accent-soft/70" : marked.has(t.display_id) ? "bg-accent-soft" : ""}`}>
+                    <Fragment key={t.id}>
+                    <tr onMouseEnter={() => warm(t.display_id)} className={`transition-colors hover:bg-accent-soft/60 ${picked.has(t.display_id) ? "bg-accent-soft/70" : marked.has(t.display_id) ? "bg-accent-soft" : ""}`}>
                       <td className="py-3 pl-5 pr-0">
                         <input type="checkbox" className={box} aria-label={`Select ${t.display_id}`} checked={picked.has(t.display_id)}
                           onChange={(e) => setPicked((p) => { const n = new Set(p); if (e.target.checked) n.add(t.display_id); else n.delete(t.display_id); return n; })} />
@@ -438,12 +442,18 @@ function Inbox() {
                           )}
                         </div>
                       </td>
+                      <td className="py-3 pl-1 pr-4 text-right">
+                        <IssuesToggle ticket={t.display_id} open={issuesOpen === t.display_id} onClick={() => setIssuesOpen((o) => (o === t.display_id ? null : t.display_id))} />
+                      </td>
                     </tr>
+                    {/* DevRev issues linked to this ticket — asked only when opened; one open at a time. */}
+                    <IssuesPanel ticket={t.display_id} open={issuesOpen === t.display_id} cols={10} />
+                    </Fragment>
                   );
                 })}
-                {tickets && !tickets.length && <tr><td colSpan={9}><EmptyState title="All clear" text="No open Support tickets for this account." /></td></tr>}
+                {tickets && !tickets.length && <tr><td colSpan={10}><EmptyState title="All clear" text="No open Support tickets for this account." /></td></tr>}
                 {tickets && tickets.length > 0 && !view.length && (
-                  <tr><td colSpan={9}>
+                  <tr><td colSpan={10}>
                     <EmptyState title="No tickets match these filters" text="We looked through every open ticket — none fit what's ticked right now."
                       action={<button className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-accent-strong" onClick={() => setView(clearAll)}>Clear filters</button>} />
                   </td></tr>
@@ -482,6 +492,7 @@ function SkeletonRow() {
       <td className="px-4 py-4"><div className="skeleton h-4 w-24" /></td>
       <td className="px-4 py-4"><div className="skeleton h-4 w-32" /></td>
       <td className="px-5 py-4"><div className="skeleton h-7 w-24 rounded-lg" /></td>
+      <td className="py-4 pl-1 pr-4"><div className="skeleton ml-auto h-6 w-6 rounded-md" /></td>
     </tr>
   );
 }
