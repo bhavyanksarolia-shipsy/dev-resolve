@@ -157,38 +157,62 @@ function DevrevCard() {
   if (d === undefined) return <div className="skeleton h-40 w-full rounded-2xl" />;
   if (!d) return <div className="card p-5 text-sm text-bad">Couldn&apos;t load the status.</div>;
   const s = d.devrev;
+  const [name, email] = (s.as ?? "").match(/^(.*?)\s*<(.+)>$/)?.slice(1) ?? [s.as ?? "", ""];
   return (
     <section className="card p-5">
-      <div className="mb-3 flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <h3 className="font-semibold">DevRev — tickets &amp; comments</h3>
         <Status s={s} />
-        <button className={`${btn} ml-auto`} disabled={busy} onClick={recheck}>{busy ? "Checking…" : "Check connection"}</button>
-        <button className={btnPrimary} onClick={() => setEdit((e) => !e)}>{edit ? "Close" : "Edit"}</button>
+        <div className="ml-auto flex gap-2">
+          <button className={btn} disabled={busy} onClick={recheck}>{busy && !edit ? "Checking…" : "Check connection"}</button>
+          <button className={btnPrimary} onClick={() => { setSecret(""); setEdit((e) => !e); }}>{edit ? "Close" : "Edit"}</button>
+        </div>
       </div>
-      {edit && (
-        <div className="mb-4 space-y-3 rounded-lg bg-bg p-4">
-          <Field label="New DevRev token" hint="DevRev → Settings → Account → Personal access token. Posts and updates appear as its owner.">
-            <input className={`${input} max-w-xl`} type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} />
-          </Field>
+      {s.status !== "ok" && (
+        <div className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm ring-1 ring-red-200">
+          <div className="font-semibold text-bad">DevRev isn&apos;t working — {s.message}</div>
+          {s.fix && <div className="mt-1 text-muted"><b className="font-medium text-fg">To fix:</b> {s.fix}</div>}
+        </div>
+      )}
+      {edit ? (
+        <div className="mt-4 space-y-4 rounded-xl bg-bg p-4">
+          <Block title="Token" hint="DevRev → Settings → Account → Personal access token. Posts and updates appear as its owner">
+            <div className="grid max-w-3xl gap-4">
+              {s.tokenPreview && <div className="text-sm"><div className="mb-1 font-medium">Current token</div><TokenField which="devrev" preview={s.tokenPreview} /></div>}
+              <Field label={s.tokenPreview ? "Replace the token" : "Token"}>
+                <input className={input} type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} />
+              </Field>
+            </div>
+          </Block>
           <div className="flex gap-2">
             <button className={btnPrimary} disabled={busy || !secret} onClick={save}>{busy ? "Saving…" : "Save"}</button>
             <button className={btn} onClick={() => setEdit(false)}>Cancel</button>
           </div>
         </div>
+      ) : (
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <Block title="Sign-in">
+            <dl className="divide-y divide-line">
+              <Row k="Signed in as" v={s.as ? <span><b className="font-medium">{name}</b>{email && <span className="ml-1.5 text-xs text-muted">{email}</span>}</span> : "—"} />
+              <Row k="Token" v={<span className="flex flex-wrap items-center gap-2"><TokenField which="devrev" preview={s.tokenPreview} />{s.tokenSource && <span className="text-xs text-muted">{s.tokenSource}</span>}</span>} />
+            </dl>
+            <p className="mt-3 text-xs text-muted">Posts and updates in DevRev appear as this user.</p>
+          </Block>
+          <Block title="Used for">
+            <ul className="space-y-1.5 text-sm">
+              {["Reading tickets, conversations and attachments", "Posting internal RCAs (after a reviewer approves)", "Updating Stage, Pod, Part, owner — and resolving tickets"].map((x) => (
+                <li key={x} className="flex gap-2"><span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />{x}</li>
+              ))}
+            </ul>
+          </Block>
+        </div>
       )}
-      <dl className="divide-y divide-line">
-        <Row k="Token" v={<span className="flex flex-wrap items-center gap-2"><TokenField which="devrev" preview={s.tokenPreview} />{s.tokenSource && <span className="text-xs text-muted">{s.tokenSource}</span>}</span>} />
-        <Row k="Token owner" v={s.as ? <>{s.as}<span className="ml-2 text-xs text-muted">from DevRev — posts and updates appear as this user</span></> : "—"} />
-        <Row k="Status" v={s.message} />
-        <Row k="Used for" v="Reading tickets, conversations and attachments; posting internal RCAs; Stage / Pod / Part / owner / resolve updates" />
-        {s.fix && <Row k="To fix" v={<span className="text-warn">{s.fix}</span>} />}
-      </dl>
     </section>
   );
 }
 
 /** A labelled group inside the Claude card / its edit form. */
-function Block({ title, hint, children, className = "" }: { title: string; hint?: React.ReactNode; children: React.ReactNode; className?: string }) {
+export function Block({ title, hint, children, className = "" }: { title: string; hint?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
     <div className={`rounded-xl border border-line bg-panel p-4 ${className}`}>
       <div className="text-xs font-semibold uppercase tracking-wide text-muted">{title}</div>
