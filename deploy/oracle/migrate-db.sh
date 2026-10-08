@@ -23,7 +23,12 @@ dr stop app >/dev/null 2>&1 || true
 say "Copying from Railway (read-only there)"
 sudo mkdir -p "$BK" && sudo chmod 700 "$BK"
 DUMP="$BK/railway-$(date -u +%Y%m%d-%H%M%S).dump"
-echo "Railway Postgres: $(pgtool psql "$SRC" -tAc 'SHOW server_version')"
+VER=$(pgtool psql "$SRC" -tAc 'SHOW server_version_num')
+echo "Railway Postgres: version $((VER / 10000))"
+if [ "$VER" -ge 180000 ]; then
+  echo "Railway runs Postgres $((VER / 10000)), newer than this VM's (17). Change postgres:17-alpine to postgres:$((VER / 10000))-alpine"
+  echo "in deploy/oracle/docker-compose.yml and this script, push, then run setup.sh and this again."; exit 1
+fi
 pgtool pg_dump --format=custom --no-owner --no-acl "$SRC" | sudo tee "$DUMP" >/dev/null
 sudo chmod 600 "$DUMP"
 echo "backup of the Railway data kept at $DUMP ($(sudo du -h "$DUMP" | cut -f1))"

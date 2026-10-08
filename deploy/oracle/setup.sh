@@ -11,7 +11,9 @@ say() { printf '\n\033[1;32m==> %s\033[0m\n' "$*"; }
 
 say "Installing Docker and tools"
 if ! command -v docker >/dev/null; then curl -fsSL https://get.docker.com | sudo sh; fi
-sudo apt-get install -y -qq git netfilter-persistent iptables-persistent >/dev/null
+echo iptables-persistent iptables-persistent/autosave_v4 boolean true | sudo debconf-set-selections
+echo iptables-persistent iptables-persistent/autosave_v6 boolean true | sudo debconf-set-selections
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git openssl netfilter-persistent iptables-persistent >/dev/null
 sudo usermod -aG docker "$USER" || true
 
 say "Opening ports 80 and 443 on this VM's firewall"
