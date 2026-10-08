@@ -190,7 +190,7 @@ export default function ConnectorPage() {
               ) : (
                 <ol className="space-y-3 text-sm">
                   {[
-                    <><a className="font-medium text-accent-strong underline" href="/api/connector/extension">Download the extension</a> and unzip it</>,
+                    <><a className="font-medium text-accent-strong underline" href="/api/connector/extension">Download the extension</a>, unzip it, and <b>move the folder somewhere permanent</b> (e.g. Documents) — Chrome reads it from there, so it stops working if the folder is moved or deleted</>,
                     <>Open <code className="rounded bg-bg px-1 font-mono text-xs">chrome://extensions</code> and switch on <b>Developer mode</b></>,
                     <>Click <b>Load unpacked</b> and pick the unzipped folder</>,
                     <>Come back here — it links itself to you</>,

@@ -137,7 +137,7 @@ export function connectorStep(): Step {
         text: "It lets investigations reach systems that are only on the client VPN, through your own laptop.",
         sub: [
           `Open the Connector page and click **Download the extension**.`,
-          "Unzip the downloaded file.",
+          "Unzip the downloaded file and move the folder somewhere permanent (e.g. Documents) — not Downloads.",
           `In Chrome, go to chrome://extensions and switch on **Developer mode** (top right).`,
           `Click **Load unpacked** and choose the unzipped folder.`,
           `Go back to the Connector page — it shows "Installed · linked to you".`,

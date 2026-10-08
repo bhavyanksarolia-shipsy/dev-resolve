@@ -21,7 +21,7 @@ export function setupGuide(o: { appUrl: string; name?: string }) {
     { title: "Install the Dev Resolve extension (Chrome)", why: "Investigations reach systems only your laptop can reach (the VPNs) and use your own sign-ins.",
       how: store
         ? [`Open ${a(store, "the extension in the Chrome Web Store")} and click <b>Add to Chrome</b>.`, `Open ${a(`${app}/connector`, "the Connector page")} — it links itself to you.`]
-        : [`Open ${a(`${app}/connector`, "the Connector page")} and click <b>Download the extension</b>, then unzip it.`,
+        : [`Open ${a(`${app}/connector`, "the Connector page")} and click <b>Download the extension</b>, unzip it, and move the folder somewhere permanent (e.g. Documents) — Chrome keeps reading it from there; if it's moved or deleted the extension stops with “ERR_FILE_NOT_FOUND”.`,
           "In Chrome go to <code>chrome://extensions</code> and switch on <b>Developer mode</b> (top right).",
           "Click <b>Load unpacked</b> and choose the unzipped folder.", "Go back to the Connector page — it links itself to you."],
       check: "Connector page: “Chrome extension — Running · linked to you”, and a green dot next to Connector in the menu." },
@@ -51,6 +51,7 @@ export function setupGuide(o: { appUrl: string; name?: string }) {
       check: "The investigation finishes with a draft RCA and a confidence level." },
   ];
   const trouble: [string, string][] = [
+    ["The extension's popup says “Your file couldn't be accessed” (ERR_FILE_NOT_FOUND)", "Its folder was moved or deleted. Put the unzipped folder somewhere permanent, then chrome://extensions → Remove → Load unpacked → choose it. You stay linked."],
     ["The dot next to Connector is grey", "Hover it to see what's missing — usually Chrome is closed, a VPN is off, or a Google sign-in expired (Connector page → Sign in again)."],
     ["“Login expired — sign in again” on a Google sign-in", "Click Sign in again next to it on the Connector page."],
     ["“Queued · 2nd · ~6 min”", "Several investigations are running; yours starts by itself and you get a notification when it's done."],
