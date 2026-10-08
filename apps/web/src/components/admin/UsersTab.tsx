@@ -1,8 +1,9 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { Note, btn, btnPrimary, Field, input, post, Select, Switch } from "./ui";
+import { Note, btn, Field, input, post, Select, Switch } from "./ui";
 import { confirmDialog, toast } from "@/components/Dialog";
 import { Paged, TableCard } from "@/components/TableTools";
+import { Modal } from "@/components/Modal";
 
 interface U {
   name: string; email: string | null; display_name: string | null; is_admin: boolean; disabled_at: string | null; last_login_at: string | null;
@@ -16,7 +17,6 @@ export function UsersTab() {
   const setMsg = toast;
   const blank = { display_name: "", name: "", email: "", password: "", admin: false, welcome: true };
   const [nu, setNu] = useState(blank);
-  const [pw, setPw] = useState<{ name: string; value: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const load = useCallback(() => fetch("/api/admin/users", { cache: "no-store" }).then(async (r) => {
@@ -38,6 +38,39 @@ export function UsersTab() {
     setPrefs((p) => p && (key === "TRAIL_FOR_MEMBERS" ? { ...p, trail: on } : { ...p, autoAccept: on }));
   }
   const [adding, setAdding] = useState(false);
+  // Edit window: the person being edited (orig) and the form.
+  type Edit = { orig: U; display_name: string; name: string; email: string; password: string; active: boolean; admin: boolean };
+  const [edit, setEdit] = useState<Edit | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const openEdit = (u: U) => { setEdit({ orig: u, display_name: u.display_name ?? "", name: u.name, email: u.email ?? "", password: "", active: !u.disabled_at, admin: u.is_admin }); setEditOpen(true); };
+  const closeEdit = () => setEditOpen(false);
+  async function saveEdit() {
+    if (!edit) return;
+    const o = edit.orig, steps: string[] = [];
+    const call = async (body: Record<string, unknown>) => { const r = await post("/api/admin/users", body); if (r.error) throw new Error(r.error); };
+    setBusy(true);
+    try {
+      let name = o.name;
+      if (edit.display_name !== (o.display_name ?? "") || edit.name !== o.name || edit.email.trim().toLowerCase() !== (o.email ?? "")) {
+        await call({ action: "update", name, new_name: edit.name, display_name: edit.display_name, email: edit.email });
+        name = edit.name; steps.push(edit.name !== o.name ? `username is now "${edit.name}"` : "details saved");
+      }
+      if (edit.password) { await call({ action: "set_password", name, password: edit.password }); steps.push("password reset (signed out elsewhere)"); }
+      if (edit.admin !== o.is_admin) { await call({ action: "role", name, admin: edit.admin }); steps.push(edit.admin ? "now an admin" : "now a member"); }
+      if (edit.active !== !o.disabled_at) { await call({ action: edit.active ? "enable" : "disable", name }); steps.push(edit.active ? "active again" : "deactivated and signed out"); }
+      setMsg({ ok: true, text: steps.length ? `${edit.display_name || name}: ${steps.join(" · ")}` : "Nothing changed" });
+      setEditOpen(false); await load();
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message }); await load();
+    } finally { setBusy(false); }
+  }
+  async function deleteFromEdit() {
+    if (!edit) return;
+    const u = edit.orig;
+    const ok = await act({ action: "delete", name: u.name, confirm: u.name }, { title: `Delete ${u.display_name || u.name}?`, danger: true, confirmLabel: "Delete permanently", requireText: u.name,
+      message: "This removes their login, sessions, Chrome extension link and stored Google sign-ins. It can't be undone. Their past investigations stay (to just block them, switch Active off)." });
+    if (ok) setEditOpen(false);
+  }
   const [query, setQuery] = useState("");
   const [show, setShow] = useState<"all" | "active" | "admins" | "disabled">("all");
 
@@ -47,7 +80,7 @@ export function UsersTab() {
     const r = await post("/api/admin/users", body);
     setBusy(false);
     setMsg({ ok: !r.error && !/NOT sent/.test(r.message ?? ""), text: r.error || r.message || "Done" }); // added but the email failed → shown as a warning
-    if (!r.error) { setPw(null); await load(); }
+    if (!r.error) await load();
     return !r.error;
   }
 
@@ -129,21 +162,7 @@ export function UsersTab() {
                     : <span className="text-muted">{u.connector_seen ? `last seen ${when(u.connector_seen)}` : "not set up on this server"}</span>}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{u.investigations}</td>
                   <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1.5">
-                      {u.disabled_at
-                        ? <button className={btn} disabled={busy} onClick={() => act({ action: "enable", name: u.name })}>Enable</button>
-                        : <button className={`${btn} text-bad`} disabled={busy || me} onClick={() => act({ action: "disable", name: u.name }, { title: `Disable ${u.display_name || u.name}?`, message: "They're signed out everywhere and can't sign in until enabled again. Their investigations and history stay.", confirmLabel: "Disable", danger: true })}>Disable</button>}
-                      <button className={btn} disabled={busy} onClick={() => setPw(pw?.name === u.name ? null : { name: u.name, value: "" })}>{u.has_password ? "Reset password" : "Set password"}</button>
-                      <button className={`${btn} text-bad`} disabled={busy || me} title={me ? "You can't delete yourself" : ""}
-                        onClick={() => act({ action: "delete", name: u.name, confirm: u.name }, { title: `Delete ${u.display_name || u.name}?`, danger: true, confirmLabel: "Delete permanently", requireText: u.name,
-                          message: "This removes their login, sessions, Chrome extension link and stored Google sign-ins. It can't be undone. Their past investigations stay (to just block them, use Disable)." })}>Delete</button>
-                    </div>
-                    {pw?.name === u.name && (
-                      <div className="mt-2 flex gap-2">
-                        <input type="password" autoComplete="new-password" className={input} placeholder="12+ characters" value={pw.value} onChange={(e) => setPw({ ...pw, value: e.target.value })} />
-                        <button className={btnPrimary} disabled={busy || pw.value.length < 12} onClick={() => act({ action: "set_password", name: u.name, password: pw.value })}>Save</button>
-                      </div>
-                    )}
+                    <button className={btn} disabled={busy} onClick={() => openEdit(u)}>Edit</button>
                   </td>
                 </tr>
               );
@@ -152,9 +171,8 @@ export function UsersTab() {
         </table>
       </TableCard>)}</Paged>
 
-      {adding && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4 backdrop-blur-[2px]" onMouseDown={(e) => e.target === e.currentTarget && setAdding(false)}>
-          <form role="dialog" aria-modal="true" aria-labelledby="add-user-title" className="w-full max-w-lg space-y-4 rounded-2xl bg-panel p-6 shadow-xl ring-1 ring-line"
+      <Modal open={adding} onClose={() => setAdding(false)} labelledBy="add-user-title" locked={busy}>
+          <form className="w-full space-y-4 rounded-2xl bg-panel p-6 shadow-xl ring-1 ring-line"
             onSubmit={async (e) => { e.preventDefault(); const ok = await act({ action: "add", ...nu, welcome: nu.welcome && !!data?.mail_configured && nu.email.includes("@"), appUrl: window.location.origin }); if (ok) { setNu(blank); setAdding(false); } }}>
             <div>
               <h2 id="add-user-title" className="font-semibold">Add user</h2>
@@ -190,8 +208,49 @@ export function UsersTab() {
                 disabled={busy || !nu.name || (!nu.password && !nu.email.includes("@"))}>{busy ? "Adding…" : "Add user"}</button>
             </div>
           </form>
-        </div>
-      )}
+      </Modal>
+
+      {/* Edit user: name, username, email, password reset, role, active — and delete. Esc or Cancel goes back. */}
+      <Modal open={editOpen} onClose={closeEdit} labelledBy="edit-user-title" locked={busy}>
+        {edit && (() => {
+          const me = edit.orig.name === data.me;
+          const changed = edit.display_name !== (edit.orig.display_name ?? "") || edit.name !== edit.orig.name || edit.email.trim().toLowerCase() !== (edit.orig.email ?? "")
+            || !!edit.password || edit.admin !== edit.orig.is_admin || edit.active !== !edit.orig.disabled_at;
+          return (
+            <form className="w-full space-y-4 rounded-2xl bg-panel p-6 shadow-xl ring-1 ring-line" onSubmit={(e) => { e.preventDefault(); void saveEdit(); }}>
+              <div className="flex items-start gap-3">
+                <div className="min-w-0 flex-1">
+                  <h2 id="edit-user-title" className="font-semibold">Edit {edit.orig.display_name || edit.orig.name}{me && <span className="ml-2 text-xs font-normal text-muted">(you)</span>}</h2>
+                  <p className="mt-1 text-xs text-muted">{edit.orig.investigations} investigation{edit.orig.investigations === 1 ? "" : "s"} · last login {when(edit.orig.last_login_at)}</p>
+                </div>
+                <button type="button" onClick={closeEdit} aria-label="Close" className="-mr-1 -mt-1 h-8 w-8 rounded-md text-lg text-muted hover:bg-bg hover:text-fg">×</button>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Name"><input autoFocus className={input} value={edit.display_name} placeholder="Asha Rao" onChange={(e) => setEdit({ ...edit, display_name: e.target.value })} /></Field>
+                <Field label="Username" hint={edit.name !== edit.orig.name ? "Their history moves to the new username" : "a-z 0-9 . _ -"}>
+                  <input className={input} value={edit.name} autoComplete="off" onChange={(e) => setEdit({ ...edit, name: e.target.value.toLowerCase().replace(/\s+/g, ".") })} /></Field>
+                <Field label="Google email" hint="Sign in with Google"><input className={input} type="email" value={edit.email} placeholder="asha@company.com" onChange={(e) => setEdit({ ...edit, email: e.target.value })} /></Field>
+                <Field label={edit.orig.has_password ? "Reset password" : "Set a password"} hint="12+ characters · leave empty to keep">
+                  <input className={input} type="password" autoComplete="new-password" value={edit.password} onChange={(e) => setEdit({ ...edit, password: e.target.value })} /></Field>
+              </div>
+              <div className="space-y-3 rounded-lg bg-bg px-3 py-3">
+                <Switch on={edit.active} disabled={me} title={me ? "You can't deactivate yourself" : ""} onChange={(v) => setEdit({ ...edit, active: v })}
+                  label={<span className="text-sm">{edit.active ? "Active" : "Inactive"} <span className="text-xs text-muted">{edit.active ? "— can sign in" : "— signed out everywhere and can't sign in"}</span></span>} />
+                <Switch on={edit.admin} disabled={me} title={me ? "You can't change your own role" : ""} onChange={(v) => setEdit({ ...edit, admin: v })}
+                  label={<span className="text-sm">{edit.admin ? "Admin" : "Member"} <span className="text-xs text-muted">{edit.admin ? "— also manages users, clients and connections" : "— investigates tickets"}</span></span>} />
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <button type="button" className="rounded-lg border border-line px-3 py-2 text-sm font-medium text-bad hover:border-bad disabled:opacity-40" disabled={busy || me}
+                  title={me ? "You can't delete yourself" : "Delete this user permanently"} onClick={deleteFromEdit}>Delete user</button>
+                <span className="ml-auto hidden text-xs text-muted sm:inline">Esc to go back</span>
+                <button type="button" className="rounded-lg border border-line px-4 py-2 text-sm font-medium hover:border-accent" onClick={closeEdit}>Cancel</button>
+                <button type="submit" className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-strong disabled:opacity-40"
+                  disabled={busy || !changed || !edit.name || (!!edit.password && edit.password.length < 12)}>{busy ? "Saving…" : "Save"}</button>
+              </div>
+            </form>
+          );
+        })()}
+      </Modal>
     </div>
   );
 }

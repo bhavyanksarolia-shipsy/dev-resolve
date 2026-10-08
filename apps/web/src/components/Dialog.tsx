@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { chime } from "@/lib/sound";
+import { Modal } from "@/components/Modal";
 
 /**
  * In-app replacements for the browser's confirm() / alert(), styled like the rest of Dev Resolve.
@@ -14,7 +15,8 @@ type Tone = "error" | "ok" | "info" | "warn";
 interface Toast { id: number; title?: string; message: string; tone: Tone; action?: { label: string; href: string }; ms: number; leaving?: boolean }
 
 let seq = 0;
-let state: { confirm: ConfirmReq | null; toasts: Toast[] } = { confirm: null, toasts: [] };
+// closing: the dialog that's animating out (shown until its exit animation ends).
+let state: { confirm: ConfirmReq | null; closing: ConfirmReq | null; toasts: Toast[] } = { confirm: null, closing: null, toasts: [] };
 const listeners = new Set<() => void>();
 const emit = (next: typeof state) => { state = next; listeners.forEach((l) => l()); };
 
@@ -60,24 +62,26 @@ export function DialogHost() {
   const okRef = useRef<HTMLButtonElement>(null);
   const typeRef = useRef<HTMLInputElement>(null);
   const [typed, setTyped] = useState({ id: 0, text: "" });
-  const c = s.confirm;
+  const c = s.confirm ?? s.closing; // while it animates out, keep showing the dialog that's closing
   const text = typed.id === c?.id ? typed.text : "";
   const locked = !!c?.requireText && text.trim().toLowerCase() !== c.requireText.toLowerCase();
-  const close = (ok: boolean) => { c?.resolve(ok); emit({ ...state, confirm: null }); };
+  const close = (ok: boolean) => {
+    if (!s.confirm) return;
+    const was = s.confirm;
+    was.resolve(ok);
+    emit({ ...state, confirm: null, closing: was });
+    setTimeout(() => { if (state.closing === was) emit({ ...state, closing: null }); }, 200);
+  };
 
   useEffect(() => {
-    if (!c) return;
-    (c.requireText ? typeRef.current : okRef.current)?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { c.resolve(false); emit({ ...state, confirm: null }); } };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [c]);
+    if (s.confirm) setTimeout(() => (s.confirm!.requireText ? typeRef.current : okRef.current)?.focus(), 30);
+  }, [s.confirm]);
 
   return (
     <>
       {c && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4 backdrop-blur-[2px]" onMouseDown={(e) => e.target === e.currentTarget && close(false)}>
-          <div role="dialog" aria-modal="true" aria-labelledby="dlg-title" className="w-full max-w-md rounded-2xl bg-panel p-6 shadow-xl ring-1 ring-line">
+        <Modal open={!!s.confirm} onClose={() => close(false)} labelledBy="dlg-title" className="max-w-md">
+          <div className="rounded-2xl bg-panel p-6 shadow-xl ring-1 ring-line">
             <div className="flex gap-3">
               <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-base font-semibold ${c.danger ? "bg-red-50 text-bad" : "bg-accent-soft text-accent-strong"}`}>{c.danger ? "!" : "?"}</span>
               <div className="min-w-0">
@@ -100,7 +104,7 @@ export function DialogHost() {
                 className={`rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-40 ${c.danger ? "bg-bad hover:opacity-90" : "bg-accent hover:bg-accent-strong"}`}>{c.confirmLabel}</button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
       {/* Top right, just under the menu bar; evenly spaced. */}
       <div className="pointer-events-none fixed right-4 top-[4.75rem] z-[90] flex w-[23rem] max-w-[calc(100vw-2rem)] flex-col gap-2.5" aria-live="polite">

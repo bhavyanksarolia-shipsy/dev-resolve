@@ -1,8 +1,8 @@
 import { requireAdmin } from "@/lib/adminGuard";
 import { LIVE_SESSION_SQL, sessionIdleMs } from "@/lib/auth";
-import { q } from "@/lib/db";
+import { getPool, q } from "@/lib/db";
 import { hashPassword, passwordProblem } from "@/lib/passwords";
-import { rmSync } from "node:fs";
+import { existsSync, renameSync, rmSync } from "node:fs";
 import { connectorStatus, userAuthDir } from "@/lib/connector";
 import { adminSetting } from "@/lib/config";
 import { mailSettings, sendMail, welcomeEmail } from "@/lib/mail";
@@ -30,7 +30,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const g = await requireAdmin(req);
   if (g.error) return g.error;
-  const b = (await req.json().catch(() => ({}))) as { action?: string; name?: string; email?: string; admin?: boolean; password?: string; display_name?: string; confirm?: string;
+  const b = (await req.json().catch(() => ({}))) as { action?: string; name?: string; new_name?: string; email?: string; admin?: boolean; password?: string; display_name?: string; confirm?: string;
     welcome?: boolean; appUrl?: string };
   const name = (b.name || "").trim().toLowerCase();
   const self = name === g.user.name;
@@ -65,6 +65,44 @@ export async function POST(req: Request) {
             .catch((e: Error) => ` · welcome email NOT sent (${e.message.slice(0, 120)})`);
         }
         return Response.json({ ok: true, message: `Added ${display || username} as ${b.admin ? "admin" : "member"} — they sign in with ${how}${mailNote}` });
+      }
+      case "update": {
+        // Edit: name, username, Google email. A new username is carried everywhere it's recorded (who started
+        // investigations, chat replies, posts, updates, uploads, saved sign-ins) in one transaction.
+        const display = (b.display_name ?? "").trim().slice(0, 120) || null;
+        const email = (b.email ?? "").trim().toLowerCase() || null;
+        const next = (b.new_name ?? name).trim().toLowerCase();
+        if (!/^[a-z0-9._-]{2,64}$/.test(next)) throw new Error("Username: 2–64 of a-z 0-9 . _ -");
+        if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error("That email doesn't look right");
+        const [cur] = await q<{ id: number; password_hash: string | null }>(`SELECT id, password_hash FROM app_users WHERE name = $1`, [name]);
+        if (!cur) throw new Error(`No user named "${name}"`);
+        if (!email && !cur.password_hash) throw new Error("Keep a Google email or set a password first — otherwise they can't sign in");
+        const [taken] = await q<{ name: string }>(`SELECT name FROM app_users WHERE id <> $1 AND (name = $2 OR ($3::text IS NOT NULL AND lower(email) = $3))`, [cur.id, next, email]);
+        if (taken) throw new Error(taken.name === next ? `The username "${next}" is taken` : `${email} already has a login (${taken.name})`);
+        const client = await getPool().connect();
+        try {
+          await client.query("BEGIN");
+          await client.query(`UPDATE app_users SET display_name = $2, email = $3, name = $4 WHERE id = $1`, [cur.id, display, email, next]);
+          if (next !== name) {
+            for (const [table, col] of [["investigations", "started_by"], ["investigations", "posted_by"], ["investigations", "chat_by"], ["agent_runs", "started_by"],
+              ["chat_files", "uploaded_by"], ["knowledge_proposals", "decided_by"], ["ticket_updates", "changed_by"], ["private_files", "updated_by"]] as const) {
+              await client.query(`UPDATE ${table} SET ${col} = $2 WHERE ${col} = $1`, [name, next]);
+            }
+            await client.query(`UPDATE investigation_steps SET input = jsonb_set(input, '{by}', to_jsonb($2::text)) WHERE input->>'by' = $1`, [name, next]);
+            // Exact prefix (not LIKE: "_" in a username would match other people's files).
+            await client.query(`UPDATE private_files SET path = '.auth/users/' || $2 || substr(path, length('.auth/users/' || $1) + 1)
+                                 WHERE starts_with(path, '.auth/users/' || $1 || '/')`, [name, next]);
+          }
+          await client.query("COMMIT");
+        } catch (e) {
+          await client.query("ROLLBACK").catch(() => {});
+          throw e;
+        } finally {
+          client.release();
+        }
+        // Their saved sign-ins on this server's disk move along (the database copy above is what counts after a restart).
+        if (next !== name) { try { if (existsSync(userAuthDir(name))) renameSync(userAuthDir(name), userAuthDir(next)); } catch { /* restored from the database */ } }
+        return Response.json({ ok: true, message: `Saved${next !== name ? ` — username is now "${next}"` : ""}` });
       }
       case "role":
         if (self && !b.admin) throw new Error("You can't remove your own admin role (ask another admin)");
