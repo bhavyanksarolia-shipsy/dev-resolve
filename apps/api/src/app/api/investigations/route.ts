@@ -45,7 +45,7 @@ export async function POST(req: Request) {
 export async function GET(req: Request) {
   const after = new URL(req.url).searchParams.get("finished_after");
   const { q } = await import("@/lib/db");
-  const [running] = await q<{ n: string }>(`SELECT count(*) AS n FROM investigations WHERE status = 'running'`);
+  const [running] = await q<{ n: string }>(`SELECT count(*) AS n FROM investigations WHERE status = 'running' OR chat_running`);
   const finished = after
     ? await q(
         `SELECT id, ticket_display, ticket_title, status, confidence, error, finished_at

@@ -29,7 +29,8 @@ export async function GET(req: Request) {
     const ids = works.map((w) => w.display_id);
     const invs = ids.length
       ? await q<{ ticket_display: string; id: number; status: string; confidence: string | null }>(
-          `SELECT DISTINCT ON (ticket_display) ticket_display, id, status, confidence
+          // A chat reply in progress counts as working too, so the row shows "investigating…".
+          `SELECT DISTINCT ON (ticket_display) ticket_display, id, CASE WHEN chat_running THEN 'running' ELSE status END AS status, confidence
              FROM investigations WHERE ticket_display = ANY($1) ORDER BY ticket_display, id DESC`,
           [ids],
         )

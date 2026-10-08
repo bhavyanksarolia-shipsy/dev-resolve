@@ -133,6 +133,12 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
     poll();
   }, [poll]);
   const agentBusy = inv?.status === "running" || !!inv?.chat_running;
+  // Header count + tickets table: tell them at once when the agent starts or stops working (incl. chat replies).
+  const wasBusy = useRef(agentBusy);
+  useEffect(() => {
+    if (wasBusy.current !== agentBusy) window.dispatchEvent(new Event("investigations-changed"));
+    wasBusy.current = agentBusy;
+  }, [agentBusy]);
   useEffect(() => {
     if (!agentBusy) return;
     const t = setInterval(poll, 2000);
