@@ -6,6 +6,7 @@ import { adminSetting, CONFIG_DIR } from "./config";
 import { savePrivate } from "./privateStore";
 import { googleClientId, googleClientSecret } from "./google";
 import { settings } from "./settings";
+import { setupGuide } from "./setupGuide";
 
 /**
  * Outgoing email (welcome mails). Two ways, set in Admin → Connections → Email:
@@ -91,10 +92,10 @@ export async function checkMail(): Promise<{ ok: boolean; message: string }> {
   }
 }
 
-export async function sendMail(m: { to: string; subject: string; text: string; html: string; replyTo?: string }) {
+export async function sendMail(m: { to: string; subject: string; text: string; html: string; replyTo?: string; attachments?: { filename: string; content: string; contentType: string }[] }) {
   const s = mailSettings();
   const from = s.method === "gmail" ? s.gmailSender : s.user;
-  const msg = { from: `"${s.fromName}" <${from}>`, to: m.to, subject: m.subject, text: m.text, html: m.html, ...(m.replyTo && { replyTo: m.replyTo }) };
+  const msg = { from: `"${s.fromName}" <${from}>`, to: m.to, subject: m.subject, text: m.text, html: m.html, ...(m.replyTo && { replyTo: m.replyTo }), ...(m.attachments?.length && { attachments: m.attachments }) };
   if (s.method === "gmail") {
     // Build the MIME message locally, then hand it to Gmail over HTTPS.
     const built = await nodemailer.createTransport({ streamTransport: true, buffer: true }).sendMail(msg);
@@ -172,6 +173,18 @@ export const WELCOME_PLACEHOLDERS: Record<string, string> = {
 
 const TEMPLATE_FILE = path.join(CONFIG_DIR, "welcome-email.json");
 
+/** Connect Pritunl: Claude reaches Bifrost (the company AI gateway) through the company VPN. */
+const PRITUNL_STEP: Step = {
+  title: "Connect Pritunl (company VPN)", time: "3 min", tag: "once per laptop",
+  text: "Dev Resolve's Claude agent reaches Bifrost, the company's AI gateway, through the company VPN. Keep Pritunl connected while you work — the **attached setup guide** has the details.",
+  sub: [
+    "Download the Pritunl client from **client.pritunl.com** and install it.",
+    "Import the Shipsy profile IT gave you (a pritunl:// link or a .tar file) — ask IT if you don't have one.",
+    `Click **Connect**. The Connector page then shows "Company VPN · Pritunl — Connected".`,
+  ],
+  button: ["Download Pritunl", "https://client.pritunl.com/"],
+};
+
 export function defaultWelcomeTemplate(): WelcomeTemplate {
   return {
     theme: "clean",
@@ -189,15 +202,16 @@ export function defaultWelcomeTemplate(): WelcomeTemplate {
       { title: "Sign in to the tools", time: "2 min",
         text: `On the Connector page, under Google sign-ins, click **Sign in to all missing** (app logs and the Google-login Metabase). Investigations use your own sign-ins.`,
         button: ["Open the Connector page", "{app}/connector"] },
-      { title: "Connect the VPN", time: "1 min", tag: "Reliance tickets only",
+      PRITUNL_STEP,
+      { title: "Connect the Reliance VPN (Cisco AnyConnect)", time: "1 min", tag: "Reliance tickets only",
         text: `Before investigating Reliance tickets (VF, QC, JioMart 3P), connect the Cisco AnyConnect "ril" profile.` },
       { title: "Investigate a ticket", time: "",
         text: `Open Tickets, pick a ticket and click **Start investigation**. Add what you already know (order, warehouse, screenshots) — the agent checks it against logs, database and code. Review the RCA, ask follow-ups in Chat, then post it to DevRev's internal discussion.`,
         button: ["Open Tickets", "{app}/tickets"] },
     ],
     readyTitle: "You're ready when",
-    ready: [`The bar at the top says "All connections OK"`, `The Connector page shows "Installed · linked to you"`, `"Start investigation" runs without a "connect the VPN" or "sign in" warning`],
-    needs: `**You'll need:** Chrome, your Shipsy Google account, and the Cisco AnyConnect "ril" VPN for Reliance tickets. No DevRev, GitHub, log or database passwords — admins set those up.`,
+    ready: [`The bar at the top says "All connections OK"`, `The Connector page shows "Installed · linked to you" and Pritunl connected`, `"Start investigation" runs without a "connect the VPN" or "sign in" warning`],
+    needs: `**You'll need:** Chrome, your Shipsy Google account, the Pritunl company VPN, and the Cisco AnyConnect "ril" VPN for Reliance tickets. No DevRev, GitHub, log or database passwords — admins set those up. **The attached setup guide** has every step in detail.`,
     questions: "Questions? Reply to this email or ask **{addedBy}**.",
   };
 }
@@ -205,7 +219,15 @@ export function defaultWelcomeTemplate(): WelcomeTemplate {
 /** The saved template (edited in Admin), or the default. */
 export function welcomeTemplate(): { template: WelcomeTemplate; custom: boolean } {
   try {
-    if (existsSync(TEMPLATE_FILE)) return { template: { ...defaultWelcomeTemplate(), ...JSON.parse(readFileSync(TEMPLATE_FILE, "utf8")) }, custom: true };
+    if (existsSync(TEMPLATE_FILE)) {
+      const t: WelcomeTemplate = { ...defaultWelcomeTemplate(), ...JSON.parse(readFileSync(TEMPLATE_FILE, "utf8")) };
+      // An email edited before the Pritunl step existed gets it too (before "Investigate…", else at the end).
+      if (!t.steps.some((s) => /pritunl/i.test(`${s.title} ${s.text}`))) {
+        const at = t.steps.findIndex((s) => /investigate/i.test(s.title));
+        t.steps = at < 0 ? [...t.steps, PRITUNL_STEP] : [...t.steps.slice(0, at), PRITUNL_STEP, ...t.steps.slice(at)];
+      }
+      return { template: t, custom: true };
+    }
   } catch { /* broken file → default */ }
   return { template: defaultWelcomeTemplate(), custom: false };
 }
@@ -362,5 +384,6 @@ export function welcomeEmail(o: Person, tpl: WelcomeTemplate = welcomeTemplate()
 </td></tr>
 </table>
 </body></html>`;
-  return { subject: plain(tpl.subject), text, html };
+  // The step-by-step setup guide goes along as an attachment (opens in any browser).
+  return { subject: plain(tpl.subject), text, html, attachments: [setupGuide({ appUrl: app, name: o.name })] };
 }

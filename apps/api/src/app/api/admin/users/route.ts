@@ -60,7 +60,7 @@ export async function POST(req: Request) {
           const [me] = await q<{ display_name: string | null }>(`SELECT display_name FROM app_users WHERE name=$1`, [g.user.name]);
           const m = welcomeEmail({ name: display || username, username, email, admin: !!b.admin, addedBy: me?.display_name || g.user.name,
             appUrl: adminSetting("APP_URL") || String(b.appUrl || ""), hasPassword: !!b.password });
-          mailNote = await sendMail({ to: email, subject: m.subject, text: m.text, html: m.html })
+          mailNote = await sendMail({ to: email, subject: m.subject, text: m.text, html: m.html, attachments: m.attachments })
             .then(() => ` · welcome email sent to ${email}`)
             .catch((e: Error) => ` · welcome email NOT sent (${e.message.slice(0, 120)})`);
         }

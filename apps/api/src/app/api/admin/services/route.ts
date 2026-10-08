@@ -118,7 +118,7 @@ export async function POST(req: Request) {
     const [me] = await dbq<{ email: string | null; display_name: string | null }>(`SELECT email, display_name FROM app_users WHERE name=$1`, [g.user.name]);
     if (!me?.email) return Response.json({ error: "Your login has no email to send the test to" }, { status: 400 });
     const m = welcomeEmail({ name: me.display_name || g.user.name, username: g.user.name, email: me.email, admin: true, addedBy: me.display_name || g.user.name, appUrl: adminSetting("APP_URL") || b.appUrl || "", hasPassword: false });
-    try { await sendMail({ to: me.email, subject: `[Test] ${m.subject}`, text: m.text, html: m.html }); return Response.json({ ok: true, message: `Test email sent to ${me.email}` }); }
+    try { await sendMail({ to: me.email, subject: `[Test] ${m.subject}`, text: m.text, html: m.html, attachments: m.attachments }); return Response.json({ ok: true, message: `Test email sent to ${me.email}` }); }
     catch (e) { return Response.json({ error: `Couldn't send: ${(e as Error).message.slice(0, 200)}` }, { status: 400 }); }
   }
   // The eye button: the full current token, for admins only; every reveal is logged.

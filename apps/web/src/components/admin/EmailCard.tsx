@@ -128,7 +128,7 @@ export function EmailCard() {
             </dl>
           </Block>
           <Block title="Welcome email">
-            <p className="text-sm">The sign-in link and the onboarding steps, sent when you add someone. Passwords are never emailed.</p>
+            <p className="text-sm">The sign-in link and the onboarding steps, sent when you add someone — with the full <b className="font-medium">setup guide attached</b> (extension, Pritunl, AnyConnect, sign-ins, Claude token). Passwords are never emailed.</p>
             <button className={`${btn} mt-3`} onClick={() => setEditing(true)}>Edit email</button>
           </Block>
           <Block title="SMTP — backup way" className="lg:col-span-2">
