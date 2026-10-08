@@ -116,8 +116,26 @@ export function fallbackSummary(): string | null {
 
 // ── which sign-ins are working (circuit breaker + recovery checks) ────────────────────────────────────────────
 interface Down { since: number; reason: string; until?: number; probe?: NodeJS.Timeout; upstream: Upstream; user?: string | null }
-const g = globalThis as unknown as { drClaude?: { breaker: Map<string, Down>; restored: Map<string, number>; runs: Map<number, { last?: string; events: string[] }> } };
-const S = (g.drClaude ??= { breaker: new Map(), restored: new Map(), runs: new Map() });
+export interface UsageLimit { who: "main" | "personal" | "server"; label: string; at: number; until: number | null }
+type State = { breaker: Map<string, Down>; restored: Map<string, number>; runs: Map<number, { last?: string; events: string[] }>; limits?: Map<string, UsageLimit> };
+const g = globalThis as unknown as { drClaude?: State };
+const S: State = (g.drClaude ??= { breaker: new Map(), restored: new Map(), runs: new Map() });
+const limits: Map<string, UsageLimit> = (S.limits ??= new Map());
+
+/** A usage limit was hit (Claude subscription window, API rate limit, gateway budget): remember it to tell people. */
+function noteLimit(u: Upstream, until: number | null) {
+  const who = u.id === "main" ? "main" : u.id.startsWith("personal:") ? "personal" : "server";
+  // Shown to people: no names — "your personal account" is only ever shown to its owner.
+  limits.set(u.id, { who, label: who === "main" ? u.label : who === "personal" ? "your personal Claude account" : "the team's backup Claude login", at: Date.now(), until });
+  console.warn(`[claude] usage limit reached on ${u.label}${until ? ` until ${new Date(until).toISOString()}` : ""}`);
+}
+/** The latest usage limit that affects this person's investigations (last 30 min). */
+export function recentLimit(user?: string | null): UsageLimit | null {
+  const keys = ["main", "server", ...(user ? [`personal:${user}`] : [])];
+  const list = keys.map((k) => limits.get(k)).filter((x): x is UsageLimit => !!x && Date.now() - x.at < 30 * 60_000);
+  return list.sort((a, b) => b.at - a.at)[0] ?? null;
+}
+const LIMIT_TEXT = /(usage|rate|budget|quota|credit|spend)[\w\s-]{0,24}(limit|exceeded|exhausted|reached)|limit (reached|exceeded)|insufficient (credit|balance)/i;
 const breaker = S.breaker;
 
 /** Can this sign-in be tried right now? (Not marked down, and for the extension route: a laptop that can carry it.) */
@@ -258,12 +276,24 @@ export async function forward(req: Request, chain: Upstream[], opts: { user?: st
   for (const u of order) {
     try {
       const r = await send(u, opts.user, { method: req.method, path: opts.path, headers: incoming, body, headerMs: streaming ? 45_000 : 600_000, signal: req.signal });
-      const retryable = r.status >= 500 || r.status === 429 || r.status === 401 || r.status === 403;
+      // Errors are small: read them, to tell a usage limit (429, or a gateway's "budget exceeded") from other failures.
+      let errText = "";
+      if (r.status >= 400) {
+        errText = r.body instanceof ReadableStream ? await new Response(r.body).text().catch(() => "") : r.body ? Buffer.from(r.body).toString("utf8") : "";
+        r.body = new TextEncoder().encode(errText);
+      }
+      const header = (k: string) => (r.headers instanceof Headers ? r.headers.get(k) : r.headers[k]) ?? null;
+      const isLimit = r.status === 429 || ([400, 402, 403].includes(r.status) && LIMIT_TEXT.test(errText));
+      if (isLimit) {
+        const reset = Number(header("anthropic-ratelimit-unified-reset")) * 1000 || (Number(header("retry-after")) ? Date.now() + Number(header("retry-after")) * 1000 : 0);
+        noteLimit(u, reset || null);
+      }
+      const retryable = isLimit || r.status >= 500 || r.status === 401 || r.status === 403;
       if (retryable && u !== order[order.length - 1]) {
-        const ra = Number((r.headers instanceof Headers ? r.headers.get("retry-after") : r.headers["retry-after"]) || 0);
-        markDown(u, reasonFor(r.status), { user: opts.user, ...(r.status === 429 && { forMs: Math.min(Math.max(ra, 30), 600) * 1000 }) });
-        failed.push({ u, reason: reasonFor(r.status) });
-        if (r.body instanceof ReadableStream) await r.body.cancel().catch(() => {});
+        const reason = isLimit ? "usage limit reached" : reasonFor(r.status);
+        const until = limits.get(u.id)?.until;
+        markDown(u, reason, { user: opts.user, ...(isLimit && { forMs: Math.min(Math.max((until ?? 0) - Date.now(), 60_000), 5 * 3600_000) || 10 * 60_000 }) });
+        failed.push({ u, reason });
         continue;
       }
       // A streamed answer counts once it finished (one cut off halfway isn't "working again").

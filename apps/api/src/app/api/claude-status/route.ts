@@ -1,5 +1,5 @@
 import { currentUser } from "@/lib/auth";
-import { chainFor, mainState, usable } from "@/lib/claudeRoute";
+import { chainFor, mainState, recentLimit, usable } from "@/lib/claudeRoute";
 
 /**
  * What YOUR investigations reach Claude with right now — for the short "connected to Bifrost" / "using your own Claude
@@ -17,5 +17,7 @@ export async function GET(req: Request) {
     using: !using ? "none" : using.id === "main" ? "main" : using.id.startsWith("personal:") ? "personal" : "server",
     usingLabel: !using ? null : using.id.startsWith("personal:") ? "your own Claude token" : using.label,
     restoredAt: !st.down && st.restoredAt ? new Date(st.restoredAt).toISOString() : null,
+    // A usage limit hit in the last 30 min on something your investigations use (no names).
+    limit: (() => { const l = recentLimit(me); return l && { who: l.who, label: l.label, at: new Date(l.at).toISOString(), until: l.until ? new Date(l.until).toISOString() : null }; })(),
   });
 }

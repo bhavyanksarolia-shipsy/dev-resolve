@@ -699,6 +699,11 @@ async function runSessionNow(opts: SessionOpts) {
     for (const t of takeRouteEvents(id)) await step(id, seq++, "system", null, { claude_route: true }, t).catch(() => {});
   }
   if (!claudeDown) { endRun(id); return; }
+  // Every Claude account it could use is at its usage limit: say so plainly (resuming now would hit the same limit).
+  if (/\b429\b|rate.?limit|usage limit|quota|budget|exceeded/i.test(claudeDown)) {
+    endRun(id);
+    throw new Error("Claude usage limit reached on every Claude account this investigation can use — try again later, or add your own Claude token on the Connector page");
+  }
   // Claude dropped mid-investigation: resume the same session (everything so far is kept) — the relay sends it to the
   // fallback. Twice at most, then give up with the reason.
   const attempt = (opts.attempt ?? 0) + 1;
