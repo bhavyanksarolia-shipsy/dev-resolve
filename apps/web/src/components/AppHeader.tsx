@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { ConnectorDot } from "./ConnectorDot";
 import { InvestigationNotifier } from "@/components/InvestigationNotifier";
 import { SignOut } from "@/components/SignOut";
 import { PodScopePicker } from "@/components/PodScopePicker";
@@ -51,7 +52,7 @@ export function AppHeader() {
             <Link href="/" className={`${link} ${pathname === "/" ? "bg-accent-soft text-accent-strong" : ""}`}>Dashboard</Link>
             <Link href="/tickets" className={`${link} ${pathname.startsWith("/tickets") ? "bg-accent-soft text-accent-strong" : ""}`}>Tickets</Link>
             {me.isAdmin && <Link href="/knowledge" className={`${link} ${pathname.startsWith("/knowledge") ? "bg-accent-soft text-accent-strong" : ""}`}>Knowledge</Link>}
-            <Link href="/connector" className={`${link} ${pathname === "/connector" ? "bg-accent-soft text-accent-strong" : ""}`}>Connector</Link>
+            <Link href="/connector" className={`${link} ${pathname === "/connector" ? "bg-accent-soft text-accent-strong" : ""}`}>Connector<ConnectorDot /></Link>
             {me.isAdmin && <Link href="/admin" className={`${link} ${pathname.startsWith("/admin") ? "bg-accent-soft text-accent-strong" : ""}`}>Admin</Link>}
           </nav>
         )}

@@ -18,14 +18,15 @@ const TONE: Record<Tone, { ring: string; dot: string; text: string }> = {
   wait: { ring: "ring-line bg-panel", dot: "bg-warn", text: "text-warn" },
 };
 
-function Tile({ tone, title, value, detail }: { tone: Tone; title: string; value: string; detail: string }) {
+function Tile({ tone, title, value, detail, onClick }: { tone: Tone; title: string; value: string; detail: string; onClick?: () => void }) {
   const t = TONE[tone];
+  const Box = onClick ? "button" : "div";
   return (
-    <div className={`rounded-xl p-4 ring-1 ${t.ring}`}>
+    <Box {...(onClick && { type: "button" as const, onClick })} className={`rounded-xl p-4 text-left ring-1 ${t.ring} ${onClick ? "transition hover:shadow-md" : ""}`}>
       <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted"><span className={`h-2.5 w-2.5 rounded-full ${t.dot}`} />{title}</div>
       <div className={`mt-2 text-lg font-semibold ${t.text}`}>{value}</div>
       <div className="mt-0.5 text-xs text-muted">{detail}</div>
-    </div>
+    </Box>
   );
 }
 
@@ -35,7 +36,7 @@ export default function ConnectorPage() {
   const [ext, setExt] = useState<{ version: string; linked?: boolean } | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [showHosts, setShowHosts] = useState(false);
-  const [showSignins, setShowSignins] = useState<boolean | null>(null); // null = open only while something is missing
+  const [showSignins, setShowSignins] = useState(false); // the tiles above are the summary; this list is the details
   const [showNode, setShowNode] = useState(false);
   const [token, setToken] = useState<{ token: string; server: string } | null>(null);
   const linking = useRef(false);
@@ -95,18 +96,13 @@ export default function ConnectorPage() {
     ...s.signins.metabase.map((m) => ({ key: m.project, name: m.label ?? m.project, tool: "Metabase", ok: m.signedIn }))] as { key: string; name: string; tool: string; ok: boolean; expired?: boolean }[];
   const label = (x: { name: string; tool: string }) => `${x.name} — ${x.tool}`;
   const signedIn = signins.filter((x) => x.ok).length;
-  const openSignins = showSignins ?? signedIn < signins.length;
+  const openSignins = showSignins;
   const vpns = (s.vpns ?? [{ id: "client", name: "Client VPN", app: "", purpose: "VPN-only systems", hosts: s.vpnHosts }]).map((g) => {
     const okCount = g.hosts.filter((h) => s.vpn[h]).length;
     return { ...g, okCount, up: okCount === g.hosts.length };
   });
   const vpnOkCount = vpns.reduce((n, g) => n + g.okCount, 0), vpnHostCount = vpns.reduce((n, g) => n + g.hosts.length, 0);
   const vpnLabel = (g: (typeof vpns)[number]) => (g.app ? `${g.app} (${g.name})` : g.name);
-  const todo = [
-    !running && "install / open the Chrome extension",
-    ...(running ? vpns.filter((g) => !g.up).map((g) => `connect ${vpnLabel(g)}`) : []),
-    signedIn < signins.length && `sign in to ${signins.length - signedIn} more`,
-  ].filter(Boolean) as string[];
   const cmd = token && `node dev-resolve-connector.mjs --server ${token.server} --token ${token.token}`;
 
   return (
@@ -118,14 +114,6 @@ export default function ConnectorPage() {
 
       {!s.mode && <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-warn ring-1 ring-amber-200">Connector mode is off on this server (local setup): the server reaches the client VPN and your sign-ins directly, so the extension isn&apos;t needed here.</div>}
 
-      <div className={`flex items-center gap-3 rounded-xl px-5 py-4 ring-1 ${todo.length ? "bg-amber-50 ring-amber-200" : "bg-emerald-50 ring-emerald-200"}`}>
-        <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-lg text-white ${todo.length ? "bg-warn" : "bg-ok"}`}>{todo.length ? "!" : "✓"}</span>
-        <div>
-          <div className={`font-semibold ${todo.length ? "text-warn" : "text-ok"}`}>{todo.length ? `${todo.length} thing${todo.length > 1 ? "s" : ""} to do` : "You're all set"}</div>
-          <div className="text-sm text-muted">{todo.length ? `To investigate every client: ${todo.join(", then ")}.` : `Investigations can reach every system with your access. Keep Chrome open${vpns.length ? ` and ${vpns.map((g) => g.app || g.name).join(" + ")} connected` : ""}.`}</div>
-        </div>
-      </div>
-
       <div className={`grid gap-4 sm:grid-cols-2 ${vpns.length > 1 ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
         <Tile tone={running ? "ok" : "bad"} title="Chrome extension" value={running ? "Running" : "Not running"}
           detail={running ? `${viaExt ? `v${s.version!.slice(4)}` : `terminal v${s.version ?? "?"}`} · linked to ${s.user}` : s.lastSeen ? `last seen ${new Date(s.lastSeen).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : "not set up yet"} />
@@ -133,21 +121,18 @@ export default function ConnectorPage() {
           <Tile key={g.id} tone={!running ? "wait" : g.up ? "ok" : "bad"} title={g.name} value={!running ? "Unknown" : g.up ? "Connected" : "Not connected"}
             detail={`${g.app ? `${g.app} · ` : ""}${!running ? "shows once the extension runs" : g.up ? `for ${g.purpose}` : `connect it for ${g.purpose}`}`} />
         ))}
-        <Tile tone={signedIn === signins.length ? "ok" : "bad"} title="Google sign-ins" value={`${signedIn} of ${signins.length}`}
-          detail={signedIn === signins.length ? signins.map(label).join(" · ") : `not connected: ${signins.filter((x) => !x.ok).map(label).join(", ")}`} />
+        <Tile tone={signedIn === signins.length ? "ok" : "bad"} title="Google sign-ins" value={signedIn === signins.length ? "All connected" : `${signins.length - signedIn} not connected`}
+          detail={signedIn === signins.length ? `${signins.map(label).join(" · ")} · click for details` : `${signins.filter((x) => !x.ok).map(label).join(", ")} — click to sign in`}
+          onClick={() => { setShowSignins(true); setTimeout(() => document.getElementById("google-signins")?.scrollIntoView({ behavior: "smooth", block: "center" }), 50); }} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[3fr_2fr]">
         <div className="space-y-6">
-          <section className="card divide-y divide-line">
+          <section id="google-signins" className="card divide-y divide-line">
             <div className="flex items-center gap-2 px-5 py-3">
-              <button type="button" onClick={() => setShowSignins((v) => !(v ?? signedIn < signins.length))} aria-expanded={openSignins} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+              <button type="button" onClick={() => setShowSignins((v) => !v)} aria-expanded={openSignins} className="flex min-w-0 flex-1 items-center gap-2 text-left">
                 <h2 className="font-semibold">Google sign-ins</h2>
-                <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs ${signedIn === signins.length ? "bg-emerald-50 text-ok" : "bg-red-50 text-bad"}`}>
-                  <span className={`h-1.5 w-1.5 rounded-full ${signedIn === signins.length ? "bg-ok" : "bg-bad"}`} />
-                  {signedIn === signins.length ? `${signins.length} of ${signins.length} connected` : `${signins.length - signedIn} not connected`}
-                </span>
-                {!openSignins && <span className="hidden truncate text-xs text-muted sm:inline">{signins.map(label).join(" · ")}</span>}
+                {!openSignins && <span className="flex min-w-0 items-center gap-2 truncate text-xs text-muted">{signins.map((x) => <span key={x.key} className="inline-flex items-center gap-1"><span className={`h-1.5 w-1.5 rounded-full ${x.ok ? "bg-ok" : "bg-bad"}`} />{label(x)}</span>)}</span>}
                 <span className={`ml-auto text-muted transition-transform ${openSignins ? "rotate-90" : ""}`}>›</span>
               </button>
               {signedIn < signins.length && running && (
