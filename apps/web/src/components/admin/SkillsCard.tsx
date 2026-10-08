@@ -4,6 +4,7 @@ import { confirmDialog, toast } from "@/components/Dialog";
 import { Markdown } from "@/components/Markdown";
 import { SlideSheet } from "@/components/SlideSheet";
 import { btn, btnPrimary, MultiSelect, post, Select } from "./ui";
+import { Collapse } from "@/components/Motion";
 
 interface Skill { name: string; description: string; bytes: number; updatedAt: string; updatedBy: string | null; builtIn: boolean; all: boolean; clients: string[] }
 interface Client { slug: string; name: string; active: boolean }
@@ -98,7 +99,7 @@ export function SkillsCard() {
         <button className={btn} onClick={() => { const c = d.clients.find((x) => x.active) ?? d.clients[0]; if (c) setViewing({ kind: "prompt", slug: c.slug }); }}>View built-in instructions</button>
         <button className={btnPrimary} disabled={busy} onClick={() => pick(null)} title="A SKILL.md: name and description at the top, then the instructions">{busy ? "Uploading…" : "Upload skill"}</button>
       </div>
-      {open && <div className="chat-pop overflow-x-auto border-t border-line">
+      <Collapse open={open}><div className="overflow-x-auto border-t border-line">
         <table className="w-full min-w-[60rem] text-sm">
           <thead className="bg-bg text-left text-xs text-muted">
             <tr>
@@ -141,7 +142,7 @@ export function SkillsCard() {
             ))}
           </tbody>
         </table>
-      </div>}
+      </div></Collapse>
       </div>
       {viewing && <Viewer v={viewing} clients={d.clients} onClient={(slug) => setViewing({ kind: "prompt", slug })} onClose={() => setViewing(null)} />}
     </section>

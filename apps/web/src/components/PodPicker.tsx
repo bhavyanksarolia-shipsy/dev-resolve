@@ -1,9 +1,11 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { usePresence } from "@/components/Motion";
 
 /** Multi-select Pod filter (none ticked = all Pods). Values are Pod names; "-" = not set. */
 export function PodPicker({ value, choices, onChange, allLabel = "All Pods" }: { value: string[] | null; choices: { value: string; count: number }[]; onChange: (v: string[] | null) => void; allLabel?: string }) {
   const [open, setOpen] = useState(false);
+  const pres = usePresence(open); // opens and closes smoothly
   const [draft, setDraft] = useState<string[] | null>(null); // null = all (every box ticked)
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -31,8 +33,8 @@ export function PodPicker({ value, choices, onChange, allLabel = "All Pods" }: {
         <span title={label} className={`max-w-48 truncate font-medium ${value?.length ? "text-accent-strong" : ""}`}>{label}</span>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-muted" aria-hidden><path d={open ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} /></svg>
       </button>
-      {open && (
-        <div className="absolute left-0 z-40 mt-1.5 w-64 overflow-hidden rounded-xl border border-line bg-panel text-sm shadow-xl">
+      {pres.show && (
+        <div className={`absolute left-0 z-40 mt-1.5 w-64 overflow-hidden rounded-xl border border-line bg-panel text-sm shadow-xl ${pres.cls}`}>
           <div className="flex items-center justify-between border-b border-line px-3 py-2 text-xs">
             <span className="text-muted">{draft === null ? allLabel : `${draft.length} selected`}</span>
             <span className="flex gap-3">

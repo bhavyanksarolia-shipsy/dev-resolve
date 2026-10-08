@@ -1,11 +1,13 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { setPodScope, usePodScope } from "./podScope";
+import { usePresence } from "@/components/Motion";
 
 /** Header: "My Pods" — what the dashboard and tickets show: exactly the ticked Pods ("-" = tickets with no Pod). */
 export function PodScopePicker() {
   const scope = usePodScope();
   const [open, setOpen] = useState(false);
+  const pres = usePresence(open); // opens and closes smoothly
   const [values, setValues] = useState<string[] | null>(null);
   const [draft, setDraft] = useState<string[] | null>(null); // null = all Pods (every box ticked)
   const box = useRef<HTMLDivElement>(null);
@@ -38,8 +40,8 @@ export function PodScopePicker() {
         <span title={label} className="max-w-40 truncate">{label}</span>
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden><path d={open ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} /></svg>
       </button>
-      {open && (
-        <div role="dialog" aria-label="My Pods" className="absolute right-0 z-50 mt-2 w-72 overflow-hidden rounded-xl border border-line bg-panel text-sm shadow-xl">
+      {pres.show && (
+        <div role="dialog" aria-label="My Pods" className={`absolute right-0 z-50 mt-2 w-72 overflow-hidden rounded-xl border border-line bg-panel text-sm shadow-xl ${pres.cls}`}>
           <div className="border-b border-line px-3 py-2.5">
             <div className="font-semibold">My Pods</div>
             <p className="text-xs text-muted">Dashboard and tickets show only the ticked Pods. Tick <b>No Pod</b> to also see new tickets nobody has triaged yet.</p>

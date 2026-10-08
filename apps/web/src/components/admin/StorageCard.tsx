@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "@/components/Dialog";
 import { btn, btnPrimary, Field, input, post } from "./ui";
 import { Block } from "./ServiceCard";
+import { Collapse } from "@/components/Motion";
 
 interface Storage {
   db: { bytes: number; limitBytes: number | null; limitMb: number | null; disk: { used: number; data: number; system: number; wal: number | null } };
@@ -35,9 +36,7 @@ function Details({ children, label = "Details" }: { children: React.ReactNode; l
         {open ? "Hide" : label}
         <svg className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden><path d="m6 9 6 6 6-6" /></svg>
       </button>
-      <div className={`grid transition-[grid-template-rows] duration-200 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
-        <div className="overflow-hidden">{open && <div className="pt-3">{children}</div>}</div>
-      </div>
+      <Collapse open={open}><div className="pt-3">{children}</div></Collapse>
     </div>
   );
 }

@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { CopyButton } from "@/components/CopyButton";
 import { Field, Select, btn, btnPrimary, input } from "@/components/admin/ui";
+import { Collapse } from "@/components/Motion";
 
 type Kind = "oauth" | "api";
 interface Mine {
@@ -71,7 +72,7 @@ export function MyClaudeCard() {
         <span className={`text-muted transition-transform ${open ? "rotate-90" : ""}`}>›</span>
       </button>
 
-      {open && <div className="space-y-3 border-t border-line px-5 py-4">
+      <Collapse open={open}><div className="space-y-3 border-t border-line px-5 py-4">
         <div className="flex flex-wrap gap-2">
           {t && <button className={btn} disabled={!!busy} onClick={check}>{busy === "check" ? "Checking…" : "Check connection"}</button>}
           <button className={btnPrimary} onClick={() => { setF({ kind: t?.kind ?? "oauth", token: "" }); setMsg(null); setEdit((e) => !e); }}>{edit ? "Close" : t ? "Edit" : "Add your token"}</button>
@@ -133,7 +134,7 @@ export function MyClaudeCard() {
           {d.chain.length > 0 && row("Order", <span className="text-xs">{d.chain.map((c, i) => <span key={c}>{i > 0 && <span className="text-muted"> → </span>}<b className="font-medium">{c}</b></span>)}</span>)}
         </dl>
         {msg && <p className={`text-xs ${msg.ok ? "text-ok" : "text-bad"}`}>{msg.text}</p>}
-      </div>}
+      </div></Collapse>
     </section>
   );
 }

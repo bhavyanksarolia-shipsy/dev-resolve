@@ -1,6 +1,7 @@
 "use client";
 import { ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { usePresence } from "@/components/Motion";
 
 /** Small shared pieces for the admin screens. */
 export const btn = "rounded-lg border border-line px-3 py-1.5 text-xs font-medium hover:border-accent disabled:opacity-40";
@@ -97,6 +98,7 @@ export function Select({ value, onChange, options, placeholder = "Choose…", di
   value: string; onChange: (v: string) => void; options: Option[]; placeholder?: string; disabled?: boolean; up?: boolean; // up: list opens above
 }) {
   const [open, setOpen] = useState(false);
+  const pres = usePresence(open); // opens and closes smoothly
   const [active, setActive] = useState(0);
   const [q, setQ] = useState("");
   const box = useRef<HTMLDivElement>(null);
@@ -138,8 +140,8 @@ export function Select({ value, onChange, options, placeholder = "Choose…", di
           <path d={open ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} />
         </svg>
       </button>
-      {open && (
-        <FloatingPanel anchor={box} panelRef={panel} up={up}>
+      {pres.show && (
+        <FloatingPanel className={pres.cls} anchor={box} panelRef={panel} up={up}>
         {searchable && (
           <div className="border-b border-line p-2">
             <input autoFocus className={input} value={q} placeholder="Search…" onChange={(e) => { setQ(e.target.value); setActive(0); }} />
@@ -175,6 +177,7 @@ export function MultiSelect({ value, onChange, options, search, placeholder = "C
   search?: (q: string) => Promise<MultiOption[]>; placeholder?: string; searchPlaceholder?: string; emptyText?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const pres = usePresence(open); // opens and closes smoothly
   const [q, setQ] = useState("");
   const [found, setFound] = useState<MultiOption[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -208,8 +211,8 @@ export function MultiSelect({ value, onChange, options, search, placeholder = "C
         )) : <span className="text-muted">{placeholder}</span>}
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="ml-auto shrink-0 text-muted" aria-hidden><path d={open ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} /></svg>
       </button>
-      {open && (
-        <FloatingPanel anchor={box} panelRef={panel} className="text-sm">
+      {pres.show && (
+        <FloatingPanel anchor={box} panelRef={panel} className={`${pres.cls} text-sm`}>
           <div className="border-b border-line p-2">
             <input autoFocus className={input} value={q} onChange={(e) => setQ(e.target.value)} placeholder={searchPlaceholder} />
           </div>

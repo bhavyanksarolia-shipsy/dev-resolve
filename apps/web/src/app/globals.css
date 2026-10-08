@@ -186,3 +186,9 @@ html { background: var(--bg); }
 @keyframes bar-rise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
 .bar-rise { transform-origin: bottom; animation: bar-rise .6s cubic-bezier(.2,.8,.2,1) both; animation-delay: var(--bar-delay, 0ms); }
 @media (prefers-reduced-motion: reduce) { .bar-rise { animation: none; } }
+/* Menus (components/Motion.tsx usePresence): open with a quick fade + drop, close with a quick fade + lift. */
+@keyframes pop-in { from { opacity: 0; transform: translateY(-6px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes pop-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-6px) scale(.98); } }
+.pop-in { animation: pop-in .16s cubic-bezier(.2,.8,.2,1) both; transform-origin: top; }
+.pop-out { animation: pop-out .14s ease-in both; transform-origin: top; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .pop-in, .pop-out { animation-duration: 1ms; } }

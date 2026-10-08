@@ -2,6 +2,7 @@
 import { CopyButton } from "@/components/CopyButton";
 import { MyClaudeCard } from "@/components/MyClaudeCard";
 import { useEffect, useRef, useState } from "react";
+import { Collapse } from "@/components/Motion";
 
 interface Status {
   mode: boolean; user: string; online: boolean; vpnUp: boolean; lastSeen: string | null; version?: string; storeUrl?: string | null;
@@ -143,7 +144,7 @@ export default function ConnectorPage() {
                 <button onClick={() => signin(signins.filter((x) => !x.ok).map((x) => x.key))} className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-strong">Sign in to all missing</button>
               )}
             </div>
-            {openSignins && signins.map((x) => (
+            <Collapse open={openSignins}><div className="divide-y divide-line">{signins.map((x) => (
               <div key={x.key} className="flex items-center gap-3 px-5 py-3 text-sm">
                 <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${x.ok ? "bg-ok" : "bg-bad"}`} title={x.ok ? "Connected" : "Not connected"} />
                 <span className="flex-1">{x.name} <span className="text-muted">— {x.tool}</span></span>
@@ -151,7 +152,7 @@ export default function ConnectorPage() {
                 <button onClick={() => signin([x.key])} disabled={!running} title={running ? "" : "Needs the extension running"}
                   className="rounded-md border border-line px-2.5 py-1 text-xs hover:border-accent disabled:opacity-40">{x.ok ? "Sign in again" : "Sign in"}</button>
               </div>
-            ))}
+            ))}</div></Collapse>
             {msg && <div className="px-5 py-3 text-xs text-muted">{msg}</div>}
           </section>
 
@@ -163,7 +164,7 @@ export default function ConnectorPage() {
               <span className="text-xs text-muted">{running ? `${vpnOkCount}/${vpnHostCount} reachable` : "checked by the extension"}</span>
               <span className={`ml-auto text-muted transition-transform ${showHosts ? "rotate-90" : ""}`}>›</span>
             </button>
-            {showHosts && (
+            <Collapse open={showHosts}>
               <div className="space-y-3 border-t border-line px-5 py-3">
                 {vpns.map((g) => (
                   <div key={g.id}>
@@ -174,7 +175,7 @@ export default function ConnectorPage() {
                   </div>
                 ))}
               </div>
-            )}
+            </Collapse>
           </section>
         </div>
 
@@ -213,7 +214,7 @@ export default function ConnectorPage() {
             <p>Only for <b>your</b> investigations: read requests to the VPN-only systems above, made from your laptop, and your own sessions for Google-login tools.</p>
             <p>It only talks to the hosts in its manifest. Your Google password never leaves Google&apos;s pages; only the session reaches Dev Resolve, stored for you alone.</p>
             <button type="button" onClick={() => setShowNode((v) => !v)} className="text-accent-strong underline">{showNode ? "Hide" : "No Chrome? Use"} the terminal connector</button>
-            {showNode && (
+            <Collapse open={showNode}>
               <div className="space-y-2 pt-1">
                 <p>Needs Node 22+. <a className="text-accent-strong underline" href="/dev-resolve-connector.mjs" download>Download it</a>, then:</p>
                 <button onClick={makeToken} className="rounded-md border border-line px-2.5 py-1 text-xs hover:border-accent">{token ? "Make a new token" : "Make my token"}</button>
@@ -224,7 +225,7 @@ export default function ConnectorPage() {
                   </div>
                 )}
               </div>
-            )}
+            </Collapse>
           </section>
         </aside>
       </div>

@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { confirmDialog, notify } from "./Dialog";
+import { usePresence } from "@/components/Motion";
 
 export interface StageOption { id: string; name: string; final: boolean }
 interface Options {
@@ -61,6 +62,7 @@ function PillMenu({ label, value, tone = "plain", items, disabled, onPick }: {
   items: { value: string; label: string; hint?: string }[]; onPick: (v: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const pres = usePresence(open); // opens and closes smoothly
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -77,8 +79,8 @@ function PillMenu({ label, value, tone = "plain", items, disabled, onPick }: {
         <span className="text-muted">{label}</span>{value}
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden><path d="m6 9 6 6 6-6" /></svg>
       </button>
-      {open && (
-        <ul role="menu" className="absolute left-0 z-40 mt-1.5 max-h-72 min-w-[13rem] overflow-auto rounded-xl border border-line bg-panel py-1 text-sm shadow-lg">
+      {pres.show && (
+        <ul role="menu" className={`absolute left-0 z-40 mt-1.5 max-h-72 min-w-[13rem] overflow-auto rounded-xl border border-line bg-panel py-1 text-sm shadow-lg ${pres.cls}`}>
           {items.length === 0 && <li className="px-3 py-2 text-muted">Nothing to change to</li>}
           {items.map((it) => (
             <li key={it.value} role="menuitem" onClick={() => { setOpen(false); onPick(it.value); }}
@@ -357,6 +359,7 @@ export function InlineEdit({ ticket, kind, current, children, onSaved }: {
   ticket: string; kind: "stage" | "pod" | "part" | "owner"; current?: string | null; children: React.ReactNode; onSaved: (s: SavedChange) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const pres = usePresence(open); // opens and closes smoothly
   // Where the fixed menu goes: below the cell, or above it when there isn't room — and never past the screen edge.
   const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number; listMax: number } | null>(null);
   const [q, setQ] = useState("");
@@ -425,8 +428,8 @@ export function InlineEdit({ ticket, kind, current, children, onSaved }: {
         <span>{children}</span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className={`shrink-0 text-muted transition-opacity ${open ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`} aria-hidden><path d="m6 9 6 6 6-6" /></svg>
       </button>
-      {open && pos && (
-        <div ref={panel} style={{ left: pos.left, top: pos.top, bottom: pos.bottom }} className="fixed z-50 w-64 overflow-hidden rounded-xl border border-line bg-panel text-sm shadow-xl">
+      {pres.show && pos && (
+        <div ref={panel} style={{ left: pos.left, top: pos.top, bottom: pos.bottom }} className={`fixed z-50 w-64 overflow-hidden rounded-xl border border-line bg-panel text-sm shadow-xl ${pres.cls}`}>
           <div className="whitespace-normal break-words border-b border-line px-3 py-2 text-xs text-muted">
             {kind === "stage" ? "Move" : kind === "pod" ? "Set Pod for" : kind === "owner" ? "Assign" : "Move part of"} <b className="font-mono text-fg">{ticket}</b>{current ? <> · now <b className="text-fg">{kind === "stage" ? stageLabel(current) : current}</b></> : kind === "owner" ? " · now unassigned" : null}
           </div>

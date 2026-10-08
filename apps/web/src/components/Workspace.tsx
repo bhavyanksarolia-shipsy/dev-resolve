@@ -11,6 +11,7 @@ import { InvestigationProgress } from "./InvestigationProgress";
 import { ChatPanel } from "./ChatPanel";
 import { TicketControls } from "./TicketActions";
 import { EmptyState } from "./EmptyState";
+import { Collapse } from "@/components/Motion";
 
 interface Step { seq: number; kind: string; tool: string | null; input: Record<string, unknown> | null; output: string | null; created_at: string }
 interface Proposal { id: number; account_slug: string; file: string; content: string; rationale: string; source: string; status: string }
@@ -637,16 +638,16 @@ function CommentCard({ c, attachments, defaultOpen }: {
           {c.via_email.cc && <><dt>Cc</dt><dd className="break-words">{c.via_email.cc}</dd></>}
         </dl>
       )}
-      {open && (
+      <Collapse open={open}>
         <div className={`border-t border-line px-4 py-3 ${long ? "max-h-[32rem] overflow-y-auto" : ""}`}>
           {body ? <Markdown compact>{hidePaths(body)}</Markdown> : <span className="text-sm text-muted">(no text)</span>}
         </div>
-      )}
-      {open && attachments.length > 0 && (
-        <div className="border-t border-line bg-bg/60 px-4 py-3">
-          <AttachmentList items={attachments} />
-        </div>
-      )}
+        {attachments.length > 0 && (
+          <div className="border-t border-line bg-bg/60 px-4 py-3">
+            <AttachmentList items={attachments} />
+          </div>
+        )}
+      </Collapse>
     </li>
   );
 }
@@ -662,7 +663,7 @@ function Collapsible({ title, hint, children, className = "" }: { title: string;
         <span className="font-semibold">{title}</span>
         {hint && <span className="text-sm text-muted">{hint}</span>}
       </button>
-      {open && <div className="border-t border-line p-4">{children}</div>}
+      <Collapse open={open}><div className="border-t border-line p-4">{children}</div></Collapse>
     </div>
   );
 }

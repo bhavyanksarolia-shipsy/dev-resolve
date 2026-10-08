@@ -6,6 +6,7 @@ import { AccountPicker, isAccountEntry, pickerAccounts, withAllClients, type Pic
 import { HealthBanner } from "@/components/HealthBanner";
 import { inPodScope, usePodScope } from "@/components/podScope";
 import { PodPicker } from "@/components/PodPicker";
+import { usePresence } from "@/components/Motion";
 
 interface Count { value: string; count: number }
 interface Brief { display_id: string; title: string; created: string; closed: string | null; stage: string; owner: string | null; pod: string | null }
@@ -330,6 +331,7 @@ function resolveRange(key: string | null, from: string | null, to: string | null
 
 function DateRangePicker({ range, onChange }: { range: Range; onChange: (r: Range) => void }) {
   const [open, setOpen] = useState(false);
+  const pres = usePresence(open); // opens and closes smoothly
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -347,9 +349,9 @@ function DateRangePicker({ range, onChange }: { range: Range; onChange: (r: Rang
         {range.key !== "custom" && range.from !== range.to && <span className="hidden text-xs text-muted sm:inline">{fmt(range.from)} – {fmt(range.to)}</span>}
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-muted" aria-hidden><path d={open ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} /></svg>
       </button>
-      {open && (
+      {pres.show && (
         <div role="dialog" aria-label="Choose a period"
-          className="absolute left-0 z-40 mt-1.5 flex max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-line bg-panel text-sm shadow-xl">
+          className={`absolute left-0 z-40 mt-1.5 flex max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-line bg-panel text-sm shadow-xl ${pres.cls}`}>
           <ul className="w-36 shrink-0 border-r border-line bg-bg/40 py-2">
             {PRESETS.map((p) => (
               <li key={p.key}>

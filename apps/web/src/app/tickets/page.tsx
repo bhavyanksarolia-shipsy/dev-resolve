@@ -12,6 +12,7 @@ import { HealthBanner } from "@/components/HealthBanner";
 import { AccountPicker, isAccountEntry, pickerAccounts, withAllClients, type PickerAccount } from "@/components/AccountPicker";
 import { notify } from "@/components/Dialog";
 import { ColumnMenu, Pager } from "@/components/TableTools";
+import { usePresence } from "@/components/Motion";
 
 type Account = PickerAccount;
 interface Ticket {
@@ -500,6 +501,7 @@ function SkeletonRow() {
 /** "Created" column header: choose newest first (descending) or oldest first (ascending). */
 function CreatedSort({ value, onChange }: { value: "asc" | "desc" | null; onChange: (d: "asc" | "desc") => void }) {
   const [open, setOpen] = useState(false);
+  const pres = usePresence(open); // opens and closes smoothly
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -513,8 +515,8 @@ function CreatedSort({ value, onChange }: { value: "asc" | "desc" | null; onChan
         className={`inline-flex items-center gap-1 uppercase hover:text-accent-strong ${value ? "text-accent-strong" : ""}`}>
         Created <span aria-hidden>{value === "asc" ? "↑" : value === "desc" ? "↓" : "↕"}</span>
       </button>
-      {open && (
-        <ul role="menu" className="absolute left-0 z-40 mt-2 w-48 rounded-xl border border-line bg-panel py-1 text-sm font-normal normal-case tracking-normal text-fg shadow-lg">
+      {pres.show && (
+        <ul role="menu" className={`absolute left-0 z-40 mt-2 w-48 rounded-xl border border-line bg-panel py-1 text-sm font-normal normal-case tracking-normal text-fg shadow-lg ${pres.cls}`}>
           {([["desc", "Newest first", "Descending ↓"], ["asc", "Oldest first", "Ascending ↑"]] as const).map(([d, l, h]) => (
             <li key={d} role="menuitemradio" aria-checked={value === d} onClick={() => { onChange(d); setOpen(false); }}
               className={`flex cursor-pointer items-center gap-2 px-3 py-1.5 hover:bg-accent-soft ${value === d ? "font-medium text-accent-strong" : ""}`}>

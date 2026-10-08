@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { BellIcon, BellOffIcon } from "@/components/icons";
 import { notify } from "@/components/Dialog";
 import { chime, setSoundOn, soundOn, unlockAudio } from "@/lib/sound";
+import { usePresence } from "@/components/Motion";
 
 interface Event { kind: "investigation" | "chat"; id: number; ticket_display: string; ticket_title: string; ok: boolean; confidence: string | null; error: string | null; at: string }
 interface Feed { now: string; running: number; waiting: number; mine: { running: number; waiting: number }; events: Event[] }
@@ -35,6 +36,7 @@ export function InvestigationNotifier() {
   const [perm, setPerm] = useState<NotificationPermission | "unsupported">("default");
   const [feed, setFeed] = useState<Pick<Feed, "running" | "waiting" | "mine">>({ running: 0, waiting: 0, mine: { running: 0, waiting: 0 } });
   const [menu, setMenu] = useState(false);
+  const pres = usePresence(menu); // opens and closes smoothly
   const [sound, setSound] = useState(true);
   const box = useRef<HTMLDivElement>(null);
 
@@ -106,8 +108,8 @@ export function InvestigationNotifier() {
         {perm === "denied" ? <BellOffIcon /> : <BellIcon filled={perm === "granted"} />}
         {perm === "default" && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-warn ring-2 ring-panel" />}
       </button>
-      {menu && (
-        <div className="absolute right-0 top-10 z-50 w-80 space-y-3 rounded-xl border border-line bg-panel p-4 text-sm text-fg shadow-xl">
+      {pres.show && (
+        <div className={`absolute right-0 top-10 z-50 w-80 space-y-3 rounded-xl border border-line bg-panel p-4 text-sm text-fg shadow-xl ${pres.cls}`}>
           <div className="font-semibold">Notifications</div>
           <div className="flex items-center justify-between gap-2">
             <span>Desktop notifications</span>

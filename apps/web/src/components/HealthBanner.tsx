@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePresence } from "@/components/Motion";
 
 interface Check {
   id: string; label: string; host?: string; status: string; message: string; fix?: string; used_by: string[]; restored_at?: string;
@@ -85,6 +86,7 @@ const GROUP: Record<string, { title: string; tone: string }> = {
 /** One quiet line ("● 7 OK · 4 need the VPN ▾"); click for a tidy panel grouped by what to do. */
 function CompactStatus({ checks, loading, onRecheck, auto }: { checks: Check[]; loading: boolean; onRecheck: () => void; auto?: boolean }) {
   const [open, setOpen] = useState(false);
+  const pres = usePresence(open); // opens and closes smoothly
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -108,8 +110,8 @@ function CompactStatus({ checks, loading, onRecheck, auto }: { checks: Check[]; 
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden><path d={open ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} /></svg>
       </button>
       <button onClick={onRecheck} disabled={loading} className="text-accent-strong hover:underline disabled:opacity-50">{loading ? "checking…" : auto ? "re-check (auto)" : "re-check"}</button>
-      {open && (
-        <div className="absolute left-0 top-8 z-40 w-[28rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-line bg-panel text-sm text-fg shadow-xl">
+      {pres.show && (
+        <div className={`absolute left-0 top-8 z-40 w-[28rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-line bg-panel text-sm text-fg shadow-xl ${pres.cls}`}>
           {groups.map((g) => {
             const fix = g.items.find((c) => c.fix)?.fix;
             return (

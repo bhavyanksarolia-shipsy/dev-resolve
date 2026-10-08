@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { usePresence } from "@/components/Motion";
 
 export interface PickerAccount { name: string; slug: string; status: string; devrev_names?: string[]; open_tickets?: number | null; wms_tickets?: number | null; client_active?: boolean; note?: string }
 
@@ -28,6 +29,7 @@ export function withAllClients(accounts: PickerAccount[], allOpen?: number | nul
 
 export function AccountPicker({ accounts, value, onChange, label = true }: { accounts: PickerAccount[]; value: string; onChange: (slug: string) => void; label?: boolean }) {
   const [open, setOpen] = useState(false);
+  const pres = usePresence(open); // opens and closes smoothly
   const [query, setQuery] = useState("");
   const [hi, setHi] = useState(0);
   const box = useRef<HTMLDivElement>(null);
@@ -88,8 +90,8 @@ export function AccountPicker({ accounts, value, onChange, label = true }: { acc
         {current?.open_tickets != null && <span className="text-xs text-muted">{current.open_tickets} open</span>}
         <span className="ml-auto text-muted">▾</span>
       </button>
-      {open && (
-        <div className="absolute z-40 mt-1 w-80 overflow-hidden rounded-xl border border-line bg-panel shadow-xl">
+      {pres.show && (
+        <div className={`absolute z-40 mt-1 w-80 overflow-hidden rounded-xl border border-line bg-panel shadow-xl ${pres.cls}`}>
           <input ref={input} value={query} onChange={(e) => { setQuery(e.target.value); setHi(0); }} onKeyDown={onKey}
             placeholder="Search accounts…" className="w-full rounded-t-md border-b border-line bg-bg px-3 py-2 outline-none" />
           <ul className="max-h-96 overflow-y-auto py-1">

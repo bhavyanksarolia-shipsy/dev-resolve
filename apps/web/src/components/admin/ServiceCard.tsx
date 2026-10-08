@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { toast } from "@/components/Dialog";
 import { btn, btnPrimary, Field, input, post, Select } from "./ui";
 import { SkillsCard } from "./SkillsCard";
+import { Collapse as MotionCollapse } from "@/components/Motion";
 
 interface Svc { status: string; message: string; fix?: string; host?: string }
 interface Data {
@@ -82,7 +83,7 @@ function Collapse({ title, summary, children }: { title: string; summary: string
         <span className="truncate text-xs text-muted">{summary}</span>
         <svg className={`ml-auto shrink-0 text-muted transition-transform duration-200 ${open ? "rotate-180" : ""}`} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden><path d="m6 9 6 6 6-6" /></svg>
       </button>
-      {open && <div className="chat-pop border-t border-line p-4">{children}</div>}
+      <MotionCollapse open={open}><div className="border-t border-line p-4">{children}</div></MotionCollapse>
     </div>
   );
 }

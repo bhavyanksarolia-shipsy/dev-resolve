@@ -1,6 +1,7 @@
 "use client";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Select } from "./admin/ui";
+import { usePresence } from "@/components/Motion";
 
 /**
  * Column header menu: sort A→Z / Z→A, filter by typing, and pick values (with counts). Rendered as a fixed-position
@@ -15,6 +16,7 @@ export function ColumnMenu({ label, values, selected, text, sort, onSort, onSele
   format?: (v: string) => string;
 }) {
   const [open, setOpen] = useState(false);
+  const pres = usePresence(open); // opens and closes smoothly
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const [draft, setDraft] = useState(text);
   const btn = useRef<HTMLButtonElement>(null);
@@ -61,9 +63,9 @@ export function ColumnMenu({ label, values, selected, text, sort, onSort, onSele
         {sort && <span aria-label={sort === "asc" ? "sorted ascending" : "sorted descending"}>{sort === "asc" ? "↑" : "↓"}</span>}
         <svg width="12" height="12" viewBox="0 0 24 24" fill={selected || text ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" aria-hidden><path d="M3 5h18l-7 8v6l-4 2v-8z" /></svg>
       </button>
-      {open && pos && (
+      {pres.show && pos && (
         <div ref={panel} role="dialog" aria-label={`${label} sort and filter`} style={{ top: pos.top, left: pos.left }}
-          className="fixed z-50 w-64 rounded-xl border border-line bg-panel p-2 text-sm font-normal normal-case tracking-normal text-fg shadow-xl">
+          className={`fixed z-50 w-64 rounded-xl border border-line bg-panel p-2 text-sm font-normal normal-case tracking-normal text-fg shadow-xl ${pres.cls}`}>
           {sortBtn("asc", "Sort ascending (A → Z)")}
           {sortBtn("desc", "Sort descending (Z → A)")}
           <div className="my-2 border-t border-line" />
