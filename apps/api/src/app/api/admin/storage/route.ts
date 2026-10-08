@@ -9,8 +9,9 @@ import { storageSummary } from "@/lib/agent/transparency";
 
 /**
  * Admin → Files & extension → Storage: how big the database is and what takes the space, how full the server's disk is,
- * and how fast it grows. Postgres can't see its own disk's size, so the admin enters the plan's database disk size
- * (DB_DISK_LIMIT_GB) to see how full it is.
+ * and how fast it grows. Postgres can't see its own disk's size, so the admin enters it (DB_DISK_LIMIT_MB — e.g. 500 on
+ * Railway's trial). "Used" = every database on that Postgres + its change log (WAL); the host's own page may show a little
+ * more (file-system overhead).
  */
 const LABEL: Record<string, string> = {
   investigation_steps: "Investigation trails", chat_files: "Attached files", investigations: "Investigations (RCAs, status)",
@@ -21,7 +22,11 @@ const LABEL: Record<string, string> = {
 export async function GET(req: Request) {
   const g = await requireAdmin(req);
   if (g.error) return g.error;
-  const [{ db }] = await q<{ db: number }>(`SELECT pg_database_size(current_database())::float AS db`);
+  const [{ db, others }] = await q<{ db: number; others: number }>(
+    `SELECT pg_database_size(current_database())::float AS db,
+            (SELECT COALESCE(sum(pg_database_size(datname)), 0) FROM pg_database WHERE datname <> current_database())::float AS others`);
+  // The change log needs a privileged role (Railway's default user has it); without it, it's left out.
+  const wal = await q<{ b: number }>(`SELECT COALESCE(sum(size), 0)::float AS b FROM pg_ls_waldir()`).then((r) => r[0].b).catch(() => null);
   const tables = await q<{ t: string; bytes: number; rows: number }>(
     `SELECT relname AS t, pg_total_relation_size(relid)::float AS bytes, n_live_tup::int AS rows FROM pg_stat_user_tables ORDER BY 2 DESC`);
   const [grow] = await q<{ last30: number; total: number; first: string | null }>(
@@ -39,12 +44,18 @@ export async function GET(req: Request) {
   } catch { /* not available */ }
   const own = await ownFiles();
   const sessions = (await storageSummary()).find((x) => x.label === "Agent sessions");
-  const limitGb = Number(adminSetting("DB_DISK_LIMIT_GB")) || null;
+  const limitMb = Number(adminSetting("DB_DISK_LIMIT_MB")) || (Number(adminSetting("DB_DISK_LIMIT_GB")) * 1024) || null;
   const top = tables.filter((x) => x.bytes > 0).slice(0, 7);
   const rest = tables.slice(7).reduce((n, x) => n + x.bytes, 0);
+  // What the list doesn't name: Postgres's own catalog tables inside this database — so the parts add up to the total.
+  const internal = Math.max(0, db - tables.reduce((n, x) => n + x.bytes, 0));
   return Response.json({
-    db: { bytes: db, limitBytes: limitGb ? limitGb * 1024 ** 3 : null, limitGb },
-    parts: [...top.map((x) => ({ key: x.t, label: LABEL[x.t] ?? x.t.replace(/_/g, " "), bytes: x.bytes, rows: x.rows })), ...(rest > 0 ? [{ key: "other", label: "Everything else", bytes: rest, rows: null }] : [])],
+    db: { bytes: db, limitBytes: limitMb ? limitMb * 1024 ** 2 : null, limitMb,
+      // Everything on Postgres's disk we can see: this database, the system databases, the change log.
+      disk: { used: db + others + (wal ?? 0), data: db, system: others, wal } },
+    parts: [...top.map((x) => ({ key: x.t, label: LABEL[x.t] ?? x.t.replace(/_/g, " "), bytes: x.bytes, rows: x.rows })),
+      ...(rest > 0 ? [{ key: "other", label: "Everything else", bytes: rest, rows: null }] : []),
+      ...(internal > 0 ? [{ key: "internal", label: "Postgres's own tables (catalog)", bytes: internal, rows: null }] : [])],
     growth: { last30: grow.last30, total: grow.total, since: grow.first, perInvestigation, perMonth: grow.last30 * perInvestigation },
     volume, own, sessions: sessions ? { files: sessions.count, bytes: sessions.bytes } : null,
   });
@@ -67,9 +78,9 @@ async function ownFiles() {
 export async function POST(req: Request) {
   const g = await requireAdmin(req);
   if (g.error) return g.error;
-  const b = (await req.json().catch(() => ({}))) as { dbLimitGb?: number | string };
-  const v = String(b.dbLimitGb ?? "").trim();
-  if (v && !(Number(v) > 0 && Number(v) <= 10_000)) return Response.json({ error: "Enter the database disk size in GB, e.g. 5" }, { status: 400 });
-  await writeEnv({ DB_DISK_LIMIT_GB: v || null }, g.user.name);
-  return Response.json({ ok: true, message: v ? `Database disk set to ${v} GB` : "Database disk size cleared" });
+  const b = (await req.json().catch(() => ({}))) as { dbLimitMb?: number | string };
+  const v = String(b.dbLimitMb ?? "").trim();
+  if (v && !(Number(v) > 0 && Number(v) <= 10_000_000)) return Response.json({ error: "Enter the database disk size in MB, e.g. 500" }, { status: 400 });
+  await writeEnv({ DB_DISK_LIMIT_MB: v || null, DB_DISK_LIMIT_GB: null }, g.user.name);
+  return Response.json({ ok: true, message: v ? `Database disk set to ${v} MB` : "Database disk size cleared" });
 }

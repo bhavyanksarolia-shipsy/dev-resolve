@@ -5,7 +5,7 @@ import { btn, btnPrimary, Field, input, post } from "./ui";
 import { Block } from "./ServiceCard";
 
 interface Storage {
-  db: { bytes: number; limitBytes: number | null; limitGb: number | null };
+  db: { bytes: number; limitBytes: number | null; limitMb: number | null; disk: { used: number; data: number; system: number; wal: number | null } };
   parts: { key: string; label: string; bytes: number; rows: number | null }[];
   growth: { last30: number; total: number; since: string | null; perInvestigation: number; perMonth: number };
   volume: { path: string; total: number; free: number } | null; // a disk of its own (mounted volume) — else none
@@ -40,7 +40,7 @@ export function StorageCard() {
   const recheck = async () => { setBusy(true); await load(); setBusy(false); };
   const save = async () => {
     setBusy(true);
-    const r = await post<{ message?: string }>("/api/admin/storage", { dbLimitGb: limit });
+    const r = await post<{ message?: string }>("/api/admin/storage", { dbLimitMb: limit });
     setBusy(false);
     toast({ ok: !r.error, text: r.error || r.message || "Saved" });
     if (!r.error) { setEdit(false); void load(); }
@@ -48,12 +48,12 @@ export function StorageCard() {
   if (d === undefined) return <div className="skeleton h-48 w-full rounded-2xl" />;
   if (!d) return <div className="card p-5 text-sm text-bad">Couldn&apos;t load the storage figures.</div>;
 
-  const dbPct = d.db.limitBytes ? pct(d.db.bytes, d.db.limitBytes) : null;
+  const dbPct = d.db.limitBytes ? pct(d.db.disk.used, d.db.limitBytes) : null;
   const diskUsed = d.volume ? d.volume.total - d.volume.free : 0;
   const diskPct = d.volume ? pct(diskUsed, d.volume.total) : null;
   const ownTotal = d.own.reduce((n, x) => n + x.bytes, 0);
   const worst = Math.max(dbPct ?? 0, diskPct ?? 0);
-  const monthsLeft = d.db.limitBytes && d.growth.perMonth > 0 ? (d.db.limitBytes - d.db.bytes) / d.growth.perMonth : null;
+  const monthsLeft = d.db.limitBytes && d.growth.perMonth > 0 ? (d.db.limitBytes - d.db.disk.used) / d.growth.perMonth : null;
   const biggest = d.parts[0]?.bytes || 1;
 
   return (
@@ -65,7 +65,7 @@ export function StorageCard() {
         </span>
         <div className="ml-auto flex gap-2">
           <button className={btn} disabled={busy} onClick={recheck}>{busy && !edit ? "Checking…" : "Refresh"}</button>
-          <button className={btnPrimary} onClick={() => { setLimit(d.db.limitGb ? String(d.db.limitGb) : ""); setEdit((e) => !e); }}>{edit ? "Close" : "Edit"}</button>
+          <button className={btnPrimary} onClick={() => { setLimit(d.db.limitMb ? String(d.db.limitMb) : ""); setEdit((e) => !e); }}>{edit ? "Close" : "Edit"}</button>
         </div>
       </div>
 
@@ -78,9 +78,9 @@ export function StorageCard() {
 
       {edit ? (
         <div className="mt-4 space-y-4 rounded-xl bg-bg p-4">
-          <Block title="Database disk" hint="The database can't see its own disk's size — enter your plan's database disk size to see how full it is (Railway: the Postgres service's volume)">
-            <Field label="Disk size (GB)">
-              <input className={`${input} w-32`} inputMode="decimal" value={limit} placeholder="e.g. 5" onChange={(e) => setLimit(e.target.value.replace(/[^\d.]/g, ""))} />
+          <Block title="Database disk" hint="The database can't see its own disk's size — enter it to see how full it is. Railway: Postgres service → Volume (the trial gives 500 MB)">
+            <Field label="Disk size (MB)">
+              <input className={`${input} w-32`} inputMode="numeric" value={limit} placeholder="e.g. 500" onChange={(e) => setLimit(e.target.value.replace(/\D/g, ""))} />
             </Field>
           </Block>
           <div className="flex gap-2">
@@ -92,9 +92,16 @@ export function StorageCard() {
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <Block title="Database">
             <div className="text-2xl font-semibold tabular-nums">{size(d.db.bytes)}</div>
-            <div className="mb-3 text-xs text-muted">investigations, RCAs, files, settings, knowledge and sign-ins</div>
-            {d.db.limitBytes ? <Bar used={d.db.bytes} total={d.db.limitBytes} />
-              : <p className="text-xs text-muted">Set the database disk size under <b>Edit</b> to see how full it is.</p>}
+            <div className="mb-3 text-xs text-muted">Dev Resolve&apos;s data: investigations, RCAs, files, settings, knowledge and sign-ins</div>
+            <div className="mb-1.5 text-xs font-medium">Postgres disk</div>
+            {d.db.limitBytes ? <Bar used={d.db.disk.used} total={d.db.limitBytes} />
+              : <p className="text-xs"><b className="font-medium">{size(d.db.disk.used)}</b> used · <span className="text-muted">set the disk size under <b>Edit</b> to see how full it is</span></p>}
+            <ul className="mt-2 space-y-0.5 text-xs text-muted">
+              <li className="flex justify-between"><span>Dev Resolve&apos;s data</span><span className="tabular-nums">{size(d.db.disk.data)}</span></li>
+              <li className="flex justify-between"><span>Postgres&apos;s system databases</span><span className="tabular-nums">{size(d.db.disk.system)}</span></li>
+              {d.db.disk.wal != null && <li className="flex justify-between"><span>Change log (kept for crash safety)</span><span className="tabular-nums">{size(d.db.disk.wal)}</span></li>}
+            </ul>
+            <p className="mt-2 text-[11px] text-muted">The host&apos;s own volume page may show a little more (file-system overhead).</p>
           </Block>
           <Block title="Server files">
             <div className="text-2xl font-semibold tabular-nums">{size(ownTotal)}</div>
@@ -115,6 +122,9 @@ export function StorageCard() {
                   <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-bg"><div className="h-full rounded-full bg-accent/70" style={{ width: `${Math.max(pct(p.bytes, biggest), 1)}%` }} /></div>
                 </li>
               ))}
+              <li className="flex items-baseline gap-2 border-t border-line pt-2.5 font-semibold">
+                <span className="flex-1">Total</span><span className="w-20 text-right tabular-nums">{size(d.parts.reduce((n, p) => n + p.bytes, 0))}</span>
+              </li>
             </ul>
           </Block>
           <Block title="Growth">
