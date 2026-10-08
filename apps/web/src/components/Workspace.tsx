@@ -166,6 +166,19 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
   const [startOpen, setStartOpen] = useState(false);
   const [startNotes, setStartNotes] = useState("");
   const [startFiles, setStartFiles] = useState<File[]>([]);
+  // "Try again": bring back the notes and files given to the failed run, so they needn't be typed / attached again.
+  async function openStart() {
+    setStartOpen(true);
+    const prev = inv?.status === "failed" ? steps.find((x) => x.kind === "user_message" && x.input?.start_notes) : undefined;
+    if (!prev) return;
+    setStartNotes(prev.output && prev.output !== "(files only)" ? prev.output : "");
+    const meta = (prev.input?.files ?? []) as { id: number; name: string; type: string }[];
+    const files = await Promise.all(meta.map(async (f) => {
+      const r = await fetch(`/api/chat-files/${f.id}`).catch(() => null);
+      return r?.ok ? new File([await r.blob()], f.name, { type: f.type }) : null;
+    }));
+    setStartFiles(files.filter((f): f is File => !!f));
+  }
   async function start(withNotes = true) {
     setBusy(true);
     const notes = withNotes ? startNotes.trim() : "";
@@ -311,7 +324,7 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
           )}
           {(!inv || inv.status === "failed") && data.can_investigate !== false && (
             !startOpen && (
-              <button onClick={() => setStartOpen(true)} disabled={busy || running || data.routing.kind === "unmapped" || data.routing.kind === "ignored"}
+              <button onClick={openStart} disabled={busy || running || data.routing.kind === "unmapped" || data.routing.kind === "ignored"}
                 className="rounded-md bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50">
                 {inv ? "Try again" : "Start investigation"}
               </button>
