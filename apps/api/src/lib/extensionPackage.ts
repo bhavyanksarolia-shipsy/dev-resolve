@@ -34,7 +34,7 @@ export async function extensionFiles(opts: { app: string; server: string }) {
     manifest_version: 3,
     name: "Dev Resolve connector",
     short_name: "Dev Resolve",
-    description: "Connects Dev Resolve to the systems your laptop can reach (company VPN) and to your own sign-ins, for your investigations.",
+    description: "Connects Dev Resolve to the systems your laptop can reach (client and company VPNs) and to your own sign-ins, for your investigations.",
     version: EXTENSION_VERSION,
     icons,
     background: { service_worker: "background.js" },

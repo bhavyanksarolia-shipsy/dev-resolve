@@ -2,7 +2,7 @@ import "server-only";
 import { cfgValue, getConnectionProjects } from "./config";
 import { appLogProjects } from "./applog";
 import { settings } from "./settings";
-import { needsRelay, ssoMetabaseProjects, metabaseSession, appLogUserConfigDir } from "./connector";
+import { gatewayHost, gatewayViaConnector, needsRelay, ssoMetabaseProjects, metabaseSession, appLogUserConfigDir } from "./connector";
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 
@@ -13,6 +13,20 @@ export function vpnHosts(): string[] {
     p.metabase ? cfgValue(p.metabase.base_url_env) : undefined,
   ]).filter((u): u is string => !!u && needsRelay(u));
   return [...new Set(urls.map((u) => new URL(u).host))];
+}
+
+/**
+ * The two different VPNs the extension checks, named the way people know them — so "connect the VPN" always says which:
+ * the client's VPN (Cisco AnyConnect) for the client's logs and databases, and the company VPN (Pritunl) for the Claude
+ * gateway when Claude goes through the extension.
+ */
+export interface VpnGroup { id: "client" | "company"; name: string; app: string; purpose: string; hosts: string[] }
+export function vpnGroups(): VpnGroup[] {
+  const gw = gatewayViaConnector() ? gatewayHost() : null;
+  return [
+    { id: "client" as const, name: "Reliance client VPN", app: "Cisco AnyConnect", purpose: "Reliance logs and databases", hosts: vpnHosts() },
+    { id: "company" as const, name: "Company VPN", app: "Pritunl", purpose: "Claude, the investigation agent (Bifrost gateway)", hosts: gw ? [gw] : [] },
+  ].filter((g) => g.hosts.length);
 }
 
 export function appLogInfo() {

@@ -24,8 +24,8 @@ export interface ConnectionHealth {
 }
 
 const vpnFix = () => connectorMode()
-  ? `Connect the VPN on your laptop${cfgValue("VPN_HINT") ? ` (${cfgValue("VPN_HINT")})` : ""} and keep your local connector running (Connector page), then re-check.`
-  : `Connect the client VPN${cfgValue("VPN_HINT") ? ` (${cfgValue("VPN_HINT")})` : ""}, then re-check.`;
+  ? `Connect the Reliance client VPN (Cisco AnyConnect) on your laptop${cfgValue("VPN_HINT") ? ` (${cfgValue("VPN_HINT")})` : ""} and keep your local connector running (Connector page), then re-check.`
+  : `Connect the Reliance client VPN (Cisco AnyConnect)${cfgValue("VPN_HINT") ? ` (${cfgValue("VPN_HINT")})` : ""}, then re-check.`;
 const TIMEOUT_MS = 12000;
 
 function hostOf(url?: string) {
@@ -209,7 +209,7 @@ export async function checkClaude(): Promise<ConnectionHealth> {
   // A VPN-only gateway is checked through someone's Dev Resolve extension, the same way the agent reaches it.
   const carrier = gateway && gatewayViaConnector() ? gatewayCarrier() : undefined;
   if (carrier === null) return { ...base, host: new URL(gateway!).host, status: "error", message: `Nobody's Dev Resolve extension is online to reach ${new URL(gateway!).host}`,
-    fix: "Open Chrome with the Dev Resolve extension (1.2 or newer) on a laptop connected to the VPN — investigations need one online" };
+    fix: "Open Chrome with the Dev Resolve extension (1.2 or newer) on a laptop connected to the company VPN (Pritunl) — investigations need one online" };
   const where = gateway ? ` via ${new URL(gateway).host}${carrier ? ` (through ${carrier}'s extension)` : ""}` : "";
   const call = async (url: string, init: { method?: string; headers: Record<string, string>; body?: string; ms: number }) => {
     if (!carrier) return fetch(url, { method: init.method, headers: init.headers, body: init.body, cache: "no-store", signal: AbortSignal.timeout(init.ms) });
@@ -228,7 +228,7 @@ export async function checkClaude(): Promise<ConnectionHealth> {
     return { ...base, ...(gateway && { host: new URL(gateway).host }), status: "ok", message: `API key valid${where}` };
   } catch (e) {
     if (carrier) return { ...base, host: new URL(gateway!).host, status: "error", message: `Can't reach ${new URL(gateway!).host} through ${carrier}'s extension`,
-      fix: `Check that ${carrier}'s laptop is on the VPN, and that their extension was downloaded after this was switched on (Connector page)` };
+      fix: `Check that ${carrier}'s laptop is on the company VPN (Pritunl), and that their extension was downloaded after this was switched on (Connector page)` };
     if (gateway) return { ...base, host: new URL(gateway).host, status: "error", message: `Can't reach ${new URL(gateway).host}`,
       fix: "This server can't reach the gateway — gateways on a private network (e.g. Bifrost behind Pritunl VPN) must allow this server first, or turn on \"Reach it through the Dev Resolve extension\" in Admin → Connections → Claude" };
     return { ...base, status: "error", message: (e as Error).message };

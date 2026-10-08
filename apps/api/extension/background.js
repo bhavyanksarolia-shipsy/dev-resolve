@@ -77,9 +77,15 @@ async function doRequest(req) {
     });
     return { status: r.status, headers: { "content-type": r.headers.get("content-type") || "" }, body_b64: b64(await r.arrayBuffer()) };
   } catch (e) {
-    throw new Error(`${e.name === "TimeoutError" ? "timed out" : e.message} — is the VPN connected on this laptop?`);
+    const g = vpnGroupsOf(hello).find((x) => x.hosts.includes(new URL(req.url).host));
+    throw new Error(`${e.name === "TimeoutError" ? "timed out" : e.message} — is ${g ? `${g.name}${g.app ? ` (${g.app})` : ""}` : "the VPN"} connected on this laptop?`);
   }
 }
+
+// Two different VPNs: the client's (Cisco AnyConnect) and the company's (Pritunl, for the Claude gateway) — Dev Resolve
+// names them in hello.vpns; older servers only send vpnHosts (the client VPN).
+const vpnGroupsOf = (h) => h?.vpns || (h?.vpnHosts?.length ? [{ id: "client", name: "Client VPN", app: "", purpose: "", hosts: h.vpnHosts }] : []);
+const vpnCheckHosts = (h) => [...new Set(vpnGroupsOf(h).flatMap((g) => g.hosts))];
 
 async function checkVpn(hosts) {
   const next = {};
@@ -170,7 +176,7 @@ async function loop() {
           chrome.storage.session.set({ hello });
           if (!(await store.get("allowSuffixes"))) await store.set("allowSuffixes", hello.allowSuffixes);
           await store.set("user", hello.user);
-          await checkVpn(hello.vpnHosts);
+          await checkVpn(vpnCheckHosts(hello));
           await doSignins(hello); // silently picks up existing Metabase sign-ins
         }
         polling = true;
@@ -197,7 +203,7 @@ chrome.alarms.create("keepalive", { periodInMinutes: 1 });
 chrome.alarms.create("vpn", { periodInMinutes: 0.5 });
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === "keepalive") loop();
-  if (a.name === "vpn" && hello) checkVpn(hello.vpnHosts);
+  if (a.name === "vpn" && hello) checkVpn(vpnCheckHosts(hello));
 });
 chrome.runtime.onStartup.addListener(loop);
 chrome.runtime.onInstalled.addListener(async () => {
@@ -218,7 +224,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       const c = await config();
       const s = hello?.signins;
       return {
-        version: VERSION, linked: !!(await store.get("token")), user: await store.get("user"), vpn, server: c.server, app: c.app,
+        version: VERSION, linked: !!(await store.get("token")), user: await store.get("user"), vpn, vpns: vpnGroupsOf(hello), server: c.server, app: c.app,
         // Connected = heard from Dev Resolve in the last minute, or a request to it is open right now without errors.
         connected: Date.now() - lastOk < 60000 || (polling && !lastError),
         connecting: !lastError && Date.now() - startedAt < 45000 && Date.now() - lastOk >= 60000,
@@ -228,7 +234,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     }
     if (msg.type === "recheck") {
       hello = await api("/api/connector/hello").catch(() => hello); helloAt = Date.now();
-      if (hello) await checkVpn(hello.vpnHosts);
+      if (hello) await checkVpn(vpnCheckHosts(hello));
       loop();
       return { ok: true };
     }

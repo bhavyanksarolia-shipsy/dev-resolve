@@ -10,7 +10,7 @@ export default function PrivacyPage() {
       <h2 className="font-semibold">What it does</h2>
       <ul className="list-disc space-y-1 pl-5">
         <li>When the signed-in person starts an investigation, Dev Resolve asks the extension to make read-only requests to
-          internal systems that are only reachable from that person&apos;s laptop (company VPN). The extension makes those
+          internal systems that are only reachable from that person&apos;s laptop (the client&apos;s VPN). The extension makes those
           requests and returns the answers to Dev Resolve. It only contacts the hosts listed in its manifest.</li>
         <li>If the company&apos;s Claude gateway is only reachable on the company VPN, the extension also passes the
           investigation agent&apos;s requests to that gateway and returns its answers, for anyone&apos;s investigation while it

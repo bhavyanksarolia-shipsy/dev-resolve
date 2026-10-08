@@ -483,7 +483,7 @@ async function runSessionNow(opts: SessionOpts) {
     if (!auth.ok) await step(id, seq++, "connection_error", `mcp__${APP_LOG}__login`, { connection: `opensearch_mcp:${appLogProject.name}`, tag: "AUTH_FAILED" }, auth.message);
   }
   if (gatewayViaConnector() && !gatewayCarrier(opts.by)) {
-    throw new Error("Claude is reached through the Dev Resolve extension, and nobody's extension (1.2 or newer) is online right now. Open Chrome with the extension on a laptop connected to the VPN, then try again.");
+    throw new Error("Claude is reached through the Dev Resolve extension, and nobody's extension (1.2 or newer) is online right now. Open Chrome with the extension on a laptop connected to the company VPN (Pritunl), then try again.");
   }
   const abort = new AbortController();
   running.set(id, abort);

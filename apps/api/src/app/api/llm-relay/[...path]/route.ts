@@ -18,7 +18,7 @@ async function handle(req: Request, ctx: { params: Promise<{ path: string[] }> }
   // 403 (not 5xx) when nobody can carry it, so the agent stops at once with this message instead of retrying for minutes.
   const user = gatewayCarrier(req.headers.get("x-relay-user"));
   if (!user) return fail(403, "permission_error",
-    "Nobody's Dev Resolve extension (1.2 or newer) is online to reach the Claude gateway. Open Chrome with the extension on a laptop connected to the VPN, then try again.");
+    "Nobody's Dev Resolve extension (1.2 or newer) is online to reach the Claude gateway. Open Chrome with the extension on a laptop connected to the company VPN (Pritunl), then try again.");
   const { path } = await ctx.params;
   const target = `${adminSetting("ANTHROPIC_BASE_URL")!.replace(/\/+$/, "")}/${path.map(encodeURIComponent).join("/")}${new URL(req.url).search}`;
   const headers: Record<string, string> = {};

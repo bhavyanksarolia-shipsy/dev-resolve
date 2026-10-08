@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from "react";
 interface Status {
   mode: boolean; user: string; online: boolean; vpnUp: boolean; lastSeen: string | null; version?: string; storeUrl?: string | null;
   vpn: Record<string, boolean>; vpnHosts: string[];
+  /** The two different VPNs: the client's (Cisco AnyConnect) and the company's (Pritunl, for the Claude gateway). */
+  vpns?: { id: string; name: string; app: string; purpose: string; hosts: string[] }[];
   signins: { metabase: { project: string; label?: string; baseUrl?: string; signedIn: boolean }[]; appLog: { project: string; signedIn: boolean } | null };
 }
 type Tone = "ok" | "bad" | "wait";
@@ -89,10 +91,15 @@ export default function ConnectorPage() {
   const signins = [...s.signins.metabase.map((m) => ({ key: m.project, label: `Metabase · ${m.label ?? m.project}`, ok: m.signedIn })),
     ...(s.signins.appLog ? [{ key: "app_log", label: "App logs", ok: s.signins.appLog.signedIn }] : [])];
   const signedIn = signins.filter((x) => x.ok).length;
-  const vpnOkCount = s.vpnHosts.filter((h) => s.vpn[h]).length;
+  const vpns = (s.vpns ?? [{ id: "client", name: "Client VPN", app: "", purpose: "VPN-only systems", hosts: s.vpnHosts }]).map((g) => {
+    const okCount = g.hosts.filter((h) => s.vpn[h]).length;
+    return { ...g, okCount, up: okCount === g.hosts.length };
+  });
+  const vpnOkCount = vpns.reduce((n, g) => n + g.okCount, 0), vpnHostCount = vpns.reduce((n, g) => n + g.hosts.length, 0);
+  const vpnLabel = (g: (typeof vpns)[number]) => (g.app ? `${g.app} (${g.name})` : g.name);
   const todo = [
     !running && "install / open the Chrome extension",
-    running && !s.vpnUp && "connect the company VPN",
+    ...(running ? vpns.filter((g) => !g.up).map((g) => `connect ${vpnLabel(g)}`) : []),
     signedIn < signins.length && `sign in to ${signins.length - signedIn} more`,
   ].filter(Boolean) as string[];
   const cmd = token && `node dev-resolve-connector.mjs --server ${token.server} --token ${token.token}`;
@@ -110,15 +117,17 @@ export default function ConnectorPage() {
         <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-lg text-white ${todo.length ? "bg-warn" : "bg-ok"}`}>{todo.length ? "!" : "✓"}</span>
         <div>
           <div className={`font-semibold ${todo.length ? "text-warn" : "text-ok"}`}>{todo.length ? `${todo.length} thing${todo.length > 1 ? "s" : ""} to do` : "You're all set"}</div>
-          <div className="text-sm text-muted">{todo.length ? `To investigate every client: ${todo.join(", then ")}.` : "Investigations can reach every system with your access. Keep Chrome open and the VPN connected."}</div>
+          <div className="text-sm text-muted">{todo.length ? `To investigate every client: ${todo.join(", then ")}.` : `Investigations can reach every system with your access. Keep Chrome open${vpns.length ? ` and ${vpns.map((g) => g.app || g.name).join(" + ")} connected` : ""}.`}</div>
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className={`grid gap-4 sm:grid-cols-2 ${vpns.length > 1 ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
         <Tile tone={running ? "ok" : "bad"} title="Chrome extension" value={running ? "Running" : "Not running"}
           detail={running ? `${viaExt ? `v${s.version!.slice(4)}` : `terminal v${s.version ?? "?"}`} · linked to ${s.user}` : s.lastSeen ? `last seen ${new Date(s.lastSeen).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : "not set up yet"} />
-        <Tile tone={!running ? "wait" : s.vpnUp ? "ok" : "bad"} title="Company VPN" value={!running ? "Unknown" : s.vpnUp ? "Connected" : "Not reachable"}
-          detail={!running ? "shows once the extension runs" : `${vpnOkCount} of ${s.vpnHosts.length} VPN-only systems reachable`} />
+        {vpns.map((g) => (
+          <Tile key={g.id} tone={!running ? "wait" : g.up ? "ok" : "bad"} title={g.name} value={!running ? "Unknown" : g.up ? "Connected" : "Not connected"}
+            detail={`${g.app ? `${g.app} · ` : ""}${!running ? "shows once the extension runs" : g.up ? `for ${g.purpose}` : `connect it for ${g.purpose}`}`} />
+        ))}
         <Tile tone={signedIn === signins.length ? "ok" : "bad"} title="Google sign-ins" value={`${signedIn} of ${signins.length}`}
           detail={signedIn === signins.length ? "all signed in" : `${signins.length - signedIn} need signing in`} />
       </div>
@@ -147,13 +156,20 @@ export default function ConnectorPage() {
           <section className="card">
             <button type="button" onClick={() => setShowHosts((v) => !v)} className="flex w-full items-center gap-2 px-5 py-3 text-left">
               <h2 className="font-semibold">VPN-only systems</h2>
-              <span className="text-xs text-muted">{running ? `${vpnOkCount}/${s.vpnHosts.length} reachable` : "checked by the extension"}</span>
+              <span className="text-xs text-muted">{running ? `${vpnOkCount}/${vpnHostCount} reachable` : "checked by the extension"}</span>
               <span className={`ml-auto text-muted transition-transform ${showHosts ? "rotate-90" : ""}`}>›</span>
             </button>
             {showHosts && (
-              <ul className="space-y-1 border-t border-line px-5 py-3 font-mono text-xs">
-                {s.vpnHosts.map((h) => <li key={h} className={running ? (s.vpn[h] ? "text-ok" : "text-bad") : "text-muted"}>{running ? (s.vpn[h] ? "✓" : "✗") : "·"} {h}</li>)}
-              </ul>
+              <div className="space-y-3 border-t border-line px-5 py-3">
+                {vpns.map((g) => (
+                  <div key={g.id}>
+                    <div className="text-xs font-semibold">{vpnLabel(g)} <span className="font-normal text-muted">— {g.purpose}</span></div>
+                    <ul className="mt-1 space-y-1 font-mono text-xs">
+                      {g.hosts.map((h) => <li key={h} className={running ? (s.vpn[h] ? "text-ok" : "text-bad") : "text-muted"}>{running ? (s.vpn[h] ? "✓" : "✗") : "·"} {h}</li>)}
+                    </ul>
+                  </div>
+                ))}
+              </div>
             )}
           </section>
         </div>

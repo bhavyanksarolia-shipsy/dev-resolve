@@ -90,8 +90,11 @@ export class ConnectorOffline extends Error {}
 export function connectorStatus(user: string) {
   const c = R.conns.get(user);
   const online = !!c && Date.now() - c.lastPoll < 40_000;
-  const vpnHosts = c ? Object.entries(c.vpn) : [];
-  return { online, lastSeen: c ? new Date(c.lastPoll).toISOString() : null, vpnUp: online && vpnHosts.length > 0 && vpnHosts.every(([, ok]) => ok), vpn: c?.vpn ?? {}, version: c?.version };
+  // vpnUp is the client VPN (AnyConnect) only; the company VPN (Pritunl, for the Claude gateway) is reported on its own.
+  const gw = gatewayViaConnector() ? gatewayHost() : null;
+  const vpnHosts = c ? Object.entries(c.vpn).filter(([h]) => h !== gw) : [];
+  return { online, lastSeen: c ? new Date(c.lastPoll).toISOString() : null, vpnUp: online && vpnHosts.length > 0 && vpnHosts.every(([, ok]) => ok),
+    companyVpnUp: gw ? online && c?.vpn[gw] === true : null, vpn: c?.vpn ?? {}, version: c?.version };
 }
 
 /** Extensions from 1.2.0 can carry the Claude gateway's requests (older ones only know the client-VPN hosts). */
@@ -105,7 +108,8 @@ const carriesGateway = (version?: string) => {
  * the connector that polled most recently (the gateway key is the team's, not personal, so anyone's laptop will do).
  */
 export function gatewayCarrier(prefer?: string | null): string | null {
-  const able = (u: string) => connectorStatus(u).online && carriesGateway(R.conns.get(u)?.version);
+  // Skip laptops whose extension says the company VPN is down (an extension that hasn't checked yet still counts).
+  const able = (u: string) => connectorStatus(u).online && carriesGateway(R.conns.get(u)?.version) && R.conns.get(u)?.vpn[gatewayHost() ?? ""] !== false;
   if (prefer && able(prefer)) return prefer;
   const others = [...R.conns.entries()].filter(([u]) => able(u)).sort(([, x], [, y]) => y.lastPoll - x.lastPoll);
   return others[0]?.[0] ?? null;

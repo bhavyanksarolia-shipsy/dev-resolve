@@ -481,7 +481,7 @@ export async function testConnection(input: ConnectionInput & { existing?: strin
     const session = (JSON.parse(r.text) as { id?: string }).id;
     return { ok: true, message: `Signed in as ${user}`, databases: session ? await metabaseDatabases(viewer, url, { "X-Metabase-Session": session }) : undefined };
   } catch (e) {
-    if (e instanceof ConnectorOffline) return { ok: false, message: "This host needs the company VPN — your Chrome extension isn't running" };
-    return { ok: false, message: `${(e as NodeJS.ErrnoException).code || ""} ${(e as Error).message}${isVpnHost(hostOf(url)) ? " — is the VPN connected?" : ""}`.trim() };
+    if (e instanceof ConnectorOffline) return { ok: false, message: "This host needs the Reliance client VPN (Cisco AnyConnect) — your Chrome extension isn't running" };
+    return { ok: false, message: `${(e as NodeJS.ErrnoException).code || ""} ${(e as Error).message}${isVpnHost(hostOf(url)) ? " — is the Reliance client VPN (Cisco AnyConnect) connected?" : ""}`.trim() };
   }
 }
