@@ -135,7 +135,6 @@ export function InvestigationNotifier() {
       {menu && (
         <div className="absolute right-0 top-10 z-50 w-80 space-y-3 rounded-xl border border-line bg-panel p-4 text-sm text-fg shadow-xl">
           <div className="font-semibold">Notifications</div>
-          <p className="text-xs text-muted">When your investigation or chat reply is done you get a pop-up on this page and a sound — and a desktop notification if it&apos;s allowed.</p>
           <div className="flex items-center justify-between gap-2">
             <span>Desktop notifications</span>
             {perm === "granted" ? <span className="text-xs text-ok">on</span>
@@ -151,7 +150,6 @@ export function InvestigationNotifier() {
             </button>
           </div>
           <button onClick={test} className="w-full rounded-lg border border-line px-3 py-1.5 text-xs font-medium hover:border-accent">Send a test notification</button>
-          <p className="text-[11px] leading-snug text-muted">No desktop pop-up in the test? Your Mac may be blocking Chrome: <b>System Settings → Notifications → Google Chrome → Allow notifications</b>. The pop-up on this page and the sound work either way.</p>
         </div>
       )}
       {/* In-page pop-ups: shown even when the laptop's notifications are off. Drawn on <body>: the header's blur would
