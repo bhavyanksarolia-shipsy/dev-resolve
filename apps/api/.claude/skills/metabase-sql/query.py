@@ -29,9 +29,11 @@ import argparse
 import subprocess
 import csv
 import getpass
+import hashlib
 import io
 import json
 import os
+import random
 import re
 import socket
 import sys
@@ -51,7 +53,10 @@ TOOL_DIR = os.environ.get("DEV_RESOLVE_CONFIG_DIR") or os.path.abspath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "config"))
 CONFIG_ENV_FILE = os.path.join(TOOL_DIR, "config.env")
 PROJECTS_FILE = os.path.join(TOOL_DIR, "projects.json")
-RATE_FILE = os.path.join(TOOL_DIR, "metabase_ratelimit.json")
+# Limits are counted per Metabase and — in Dev Resolve, where runs carry DEV_RESOLVE_RELAY_USER — per person, so one
+# busy person can't use up everyone's queries. Identical queries within CACHE_TTL reuse the earlier answer.
+CACHE_DIR = os.path.join(TOOL_DIR, ".metabase-cache")
+CACHE_TTL = 600
 DEFAULT_PROJECT = "wms"
 
 
@@ -236,20 +241,57 @@ def _mask(token):
     return f"...{token[-4:]}" if token and len(token) > 4 else "****"
 
 
-def _check_rate_limit():
+def _rate_file(project):
+    user = re.sub(r"[^a-z0-9._-]", "_", os.environ.get("DEV_RESOLVE_RELAY_USER", "").lower())
+    return os.path.join(TOOL_DIR, f"metabase_ratelimit-{project}{'-' + user if user else ''}.json")
+
+
+def _check_rate_limit(project):
     now = time.time()
-    events = [t for t in _load_json(RATE_FILE, []) if now - t < SUSTAINED_WINDOW]
+    rate_file = _rate_file(project)
+    events = [t for t in _load_json(rate_file, []) if now - t < SUSTAINED_WINDOW]
     burst = [t for t in events if now - t < BURST_WINDOW]
+    who = "for you" if os.environ.get("DEV_RESOLVE_RELAY_USER") else "here"
     if len(burst) >= BURST_LIMIT:
         wait = BURST_WINDOW - (now - burst[0])
-        print(f"Rate limited: {len(burst)}/{BURST_LIMIT} requests in {BURST_WINDOW}s. Wait ~{wait:.0f}s.", file=sys.stderr)
+        print(f"RATE_LIMITED: {len(burst)}/{BURST_LIMIT} Metabase queries in the last minute {who} ({project}). "
+              f"Carry on with the logs meanwhile and run this query again in ~{wait:.0f}s.", file=sys.stderr)
         sys.exit(3)
     if len(events) >= SUSTAINED_LIMIT:
         wait = SUSTAINED_WINDOW - (now - events[0])
-        print(f"Rate limited: {len(events)}/{SUSTAINED_LIMIT} requests this hour. Wait ~{wait / 60:.0f}m.", file=sys.stderr)
+        print(f"RATE_LIMITED: {len(events)}/{SUSTAINED_LIMIT} Metabase queries this hour {who} ({project}). "
+              f"Carry on with the logs; the database part can be checked again in ~{wait / 60:.0f} min.", file=sys.stderr)
         sys.exit(3)
     events.append(now)
-    _save_json(RATE_FILE, events, mode=0o600)
+    _save_json(rate_file, events, mode=0o600)
+
+
+def _cache_path(project, database, query, fmt):
+    key = hashlib.sha256(f"{project}|{database}|{fmt}|{query}".encode()).hexdigest()
+    return os.path.join(CACHE_DIR, f"{key}.json")
+
+
+def _cache_get(path):
+    try:
+        c = _load_json(path, None)
+        if c and time.time() - c["at"] < CACHE_TTL:
+            return c
+    except Exception:
+        pass
+    return None
+
+
+def _cache_put(path, text):
+    try:
+        os.makedirs(CACHE_DIR, mode=0o700, exist_ok=True)
+        _save_json(path, {"at": time.time(), "text": text}, mode=0o600)
+        if random.random() < 0.05:  # now and then, drop expired answers
+            for f in os.listdir(CACHE_DIR):
+                fp = os.path.join(CACHE_DIR, f)
+                if time.time() - os.path.getmtime(fp) > CACHE_TTL:
+                    os.remove(fp)
+    except Exception:
+        pass
 
 
 def _request(project, method, path, token=None, body=None, timeout=30):
@@ -458,7 +500,7 @@ def cmd_whoami(args):
 
 def cmd_databases(args):
     project = args.project
-    _check_rate_limit()
+    _check_rate_limit(project)
     status, body, _token = _authed_request(project, "GET", "/api/database")
     _handle_common_errors(project, status, body)
     dbs = body.get("data", body) if isinstance(body, dict) else body
@@ -469,7 +511,7 @@ def cmd_databases(args):
 def cmd_tables(args):
     project = args.project
     database = args.database if args.database is not None else _project_cfg(project)["default_database"]
-    _check_rate_limit()
+    _check_rate_limit(project)
     status, body, _token = _authed_request(project, "GET", f"/api/database/{database}/metadata")
     _handle_common_errors(project, status, body, database_id=database)
     for t in body.get("tables", []):
@@ -488,7 +530,15 @@ def cmd_sql(args):
 
     database = args.database if args.database is not None else _project_cfg(project)["default_database"]
 
-    _check_rate_limit()
+    # The same query (same Metabase, database and SQL) in the last 10 min — by anyone — reuses that answer.
+    cache = _cache_path(project, database, query, args.format) if args.format == "json" and not args.out else None
+    hit = _cache_get(cache) if cache else None
+    if hit:
+        print(hit["text"])
+        print(f"(same query ran {int((time.time() - hit['at']) // 60)} min ago — reused that answer, not sent to Metabase again)", file=sys.stderr)
+        return
+
+    _check_rate_limit(project)
     body = {"database": database, "type": "native", "native": {"query": query}}
     status, resp, _token = _authed_request(project, "POST", "/api/dataset", body=body, timeout=args.timeout)
 
@@ -511,7 +561,10 @@ def cmd_sql(args):
     rows = data.get("rows", [])
 
     if args.format == "json":
-        _emit(json.dumps([dict(zip(cols, row)) for row in rows], indent=2, default=str), args.out)
+        text = json.dumps([dict(zip(cols, row)) for row in rows], indent=2, default=str)
+        if cache:
+            _cache_put(cache, text)
+        _emit(text, args.out)
     elif args.format == "csv":
         buf = io.StringIO()
         w = csv.writer(buf)

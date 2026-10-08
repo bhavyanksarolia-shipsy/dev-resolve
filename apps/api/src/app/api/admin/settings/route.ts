@@ -8,6 +8,8 @@ const EDITABLE: Record<string, { label: string; check?: (v: string) => string | 
   EXTENSION_STORE_URL: { label: "Chrome Web Store link", check: (v) => (!v || /^https:\/\/chrome(webstore)?\.google\.com\//.test(v) ? null : "Paste the extension's Chrome Web Store link (https://chromewebstore.google.com/…)") },
   VPN_HINT: { label: "How people connect the Reliance client VPN — Cisco AnyConnect (shown in 'Connect VPN' messages)" },
   KNOWLEDGE_AUTO_ACCEPT: { label: "Auto-accept the agent's knowledge proposals", check: (v) => (["on", "off", ""].includes(v) ? null : "on or off") },
+  AGENT_MAX_PARALLEL: { label: "Investigations / chat replies running at once — the rest wait in line (2 for 1 GB of memory; 6–8 on the Oracle VM)", check: (v) => (!v || (/^\d+$/.test(v) && +v >= 1 && +v <= 20) ? null : "a number from 1 to 20") },
+  AGENT_MAX_PER_PERSON: { label: "Most one person can have running while others are waiting", check: (v) => (!v || (/^\d+$/.test(v) && +v >= 1 && +v <= 10) ? null : "a number from 1 to 10") },
   TRAIL_FOR_MEMBERS: { label: "Members can see the full investigation trail", check: (v) => (["on", "off", ""].includes(v) ? null : "on or off") },
 };
 

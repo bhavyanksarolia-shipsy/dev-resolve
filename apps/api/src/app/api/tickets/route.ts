@@ -2,6 +2,7 @@ import { getDevrevView, inTicketScope, investigable, ticketScope } from "@/lib/c
 import { listTickets, devrevUrl } from "@/lib/devrev";
 import { apiError } from "@/lib/apiError";
 import { q } from "@/lib/db";
+import { queueState } from "@/lib/agent/run";
 
 export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
@@ -35,7 +36,9 @@ export async function GET(req: Request) {
           [ids],
         )
       : [];
-    const byTicket = Object.fromEntries(invs.map((i) => [i.ticket_display, i]));
+    // Waiting in line (not started yet): position and expected wait, so the row says "Queued · 3rd · ~6 min".
+    const waiting = new Map((await queueState()).waiting.map((w) => [w.id, { position: w.position, waitMin: w.waitMin }]));
+    const byTicket = Object.fromEntries(invs.map((i) => [i.ticket_display, { ...i, ...(waiting.has(i.id) && { queued: waiting.get(i.id) }) }]));
     return Response.json({
       tickets: works.map((w) => { const inv = investigable(w.account?.id); return {
         id: w.id, display_id: w.display_id, title: w.title, stage: w.stage?.display_name || w.stage?.name, stage_name: w.stage?.name,

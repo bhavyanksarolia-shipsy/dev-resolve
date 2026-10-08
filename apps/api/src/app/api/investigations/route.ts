@@ -1,5 +1,5 @@
 import { isLocked } from "@/lib/db";
-import { startInvestigation } from "@/lib/agent/run";
+import { queueState, startInvestigation } from "@/lib/agent/run";
 import { currentUser } from "@/lib/auth";
 
 const MAX_FILES = 10, MAX_FILE = 20 * 1024 * 1024, MAX_TOTAL = 30 * 1024 * 1024;
@@ -41,17 +41,31 @@ export async function POST(req: Request) {
   }
 }
 
-/** Investigations that finished after `finished_after` (ISO) — polled by the browser-notification watcher. */
+/**
+ * Polled by the notifier in the header: your investigations and chat replies that finished after `since` (exact
+ * database timestamps, so nothing is missed or repeated), plus how many runs are going / waiting in line.
+ */
 export async function GET(req: Request) {
-  const after = new URL(req.url).searchParams.get("finished_after");
+  const since = new URL(req.url).searchParams.get("since") || new URL(req.url).searchParams.get("finished_after");
+  const me = await currentUser(req);
   const { q } = await import("@/lib/db");
-  const [running] = await q<{ n: string }>(`SELECT count(*) AS n FROM investigations WHERE status = 'running' OR chat_running`);
-  const finished = after
+  const [{ now }] = await q<{ now: string }>(`SELECT now()::text AS now`);
+  const st = await queueState();
+  const events = since
     ? await q(
-        `SELECT id, ticket_display, ticket_title, status, confidence, error, finished_at
-           FROM investigations WHERE finished_at > $1 AND status IN ('draft_ready','failed') ORDER BY finished_at`,
-        [after],
+        `SELECT * FROM (
+           SELECT 'investigation' AS kind, id, ticket_display, ticket_title, status = 'draft_ready' AS ok, confidence, error, finished_at::text AS at, finished_at AS t
+             FROM investigations WHERE started_by = $2 AND finished_at > $1::timestamptz AND status IN ('draft_ready','failed')
+           UNION ALL
+           SELECT 'chat', id, ticket_display, ticket_title, chat_error IS NULL, NULL, chat_error, chat_finished_at::text, chat_finished_at
+             FROM investigations WHERE chat_by = $2 AND chat_finished_at > $1::timestamptz
+         ) e ORDER BY t LIMIT 20`,
+        [since, me],
       )
     : [];
-  return Response.json({ now: new Date().toISOString(), running: Number(running.n), finished });
+  return Response.json({
+    now, events,
+    running: st.running.length, waiting: st.waiting.length,
+    mine: { running: st.running.filter((r) => r.by === me).length, waiting: st.waiting.filter((w) => w.by === me).length },
+  });
 }

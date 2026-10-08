@@ -5,6 +5,7 @@ import { HealthBanner } from "./HealthBanner";
 import { Markdown } from "./Markdown";
 import { describeCall, fileLabel, hidePaths, resultSummary, scopeLabel, STEP_ICON, toolName } from "./labels";
 import { confirmDialog, notify } from "@/components/Dialog";
+import { QueueNotice } from "@/components/QueueNotice";
 import { InvestigationProgress } from "./InvestigationProgress";
 import { ChatPanel } from "./ChatPanel";
 import { TicketControls } from "./TicketActions";
@@ -423,6 +424,7 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
           </div>
         )}
 
+        {agentBusy && inv && <QueueNotice invId={inv.id} />}
         {running && <div className="mb-5"><InvestigationProgress steps={steps} startedAt={steps[0]?.created_at} /></div>}
 
         {proposals.length > 0 && (

@@ -15,7 +15,7 @@ type Account = PickerAccount;
 interface Ticket {
   id: string; display_id: string; title: string; stage?: string; severity?: string; created_date: string;
   part?: string; default_part?: boolean; pod?: string | null; owner?: string | null; account?: string; account_id?: string; can_investigate?: boolean; cant_investigate?: string; devrev_url: string;
-  investigation: { id: number; status: string; confidence: string | null } | null;
+  investigation: { id: number; status: string; confidence: string | null; queued?: { position: number; waitMin: number } } | null;
 }
 interface Counts { account: { total: number; wms: number; default_part: number }; org: { total: number; wms: number } }
 interface Result { key: string; tick: number; tickets?: Ticket[]; next_cursor?: string; counts?: Counts; error?: string; inactive?: boolean }
@@ -27,6 +27,7 @@ const STATUS_STYLE: Record<string, string> = {
 const STATUS_LABEL: Record<string, string> = {
   running: "investigating…", draft_ready: "draft ready", posted: "posted", failed: "failed",
 };
+const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
 /** DevRev stage names → readable ("awaiting_development" → "awaiting development"). */
 const stageLabel = (s: string) => s.replace(/_/g, " ");
 type Col = "stage" | "pod" | "owner";
@@ -414,8 +415,10 @@ function Inbox() {
                       <td className="whitespace-nowrap px-5 py-3">
                         <div className="flex items-center gap-2">
                           {inv && (
-                            <Link href={`/tickets/${t.display_id}`} onClick={(e) => openSheet(e, t.display_id)} className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 hover:underline ${STATUS_STYLE[inv.status] ?? "text-muted ring-line"}`}>
-                              {STATUS_LABEL[inv.status] ?? inv.status}{inv.confidence ? ` · ${inv.confidence}` : ""}
+                            <Link href={`/tickets/${t.display_id}`} onClick={(e) => openSheet(e, t.display_id)}
+                              title={inv.queued ? `Waiting in line — starts by itself in about ${inv.queued.waitMin} min; you'll get a notification when the RCA is ready` : undefined}
+                              className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 hover:underline ${inv.queued ? "bg-sky-50 text-sky-700 ring-sky-200" : STATUS_STYLE[inv.status] ?? "text-muted ring-line"}`}>
+                              {inv.queued ? `queued · ${ordinal(inv.queued.position)} · ~${inv.queued.waitMin} min` : STATUS_LABEL[inv.status] ?? inv.status}{inv.confidence ? ` · ${inv.confidence}` : ""}
                             </Link>
                           )}
                           {/* Investigated tickets: the status chip (and the ticket number) open the page — no extra button. */}

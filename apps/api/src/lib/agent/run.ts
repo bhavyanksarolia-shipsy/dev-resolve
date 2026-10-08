@@ -367,7 +367,7 @@ export async function sendChatMessage(id: number, text: string, by = "unknown", 
 
   const [{ next }] = await q<{ next: number }>(`SELECT COALESCE(max(seq), -1) + 1 AS next FROM investigation_steps WHERE investigation_id=$1`, [id]);
   // Claim the chat in one step (two messages at once can't both start the agent).
-  const claimed = await q(`UPDATE investigations SET chat_running=true WHERE id=$1 AND status <> 'running' AND NOT chat_running RETURNING id`, [id]);
+  const claimed = await q(`UPDATE investigations SET chat_running=true, chat_by=$2, chat_error=NULL WHERE id=$1 AND status <> 'running' AND NOT chat_running RETURNING id`, [id, by ?? null]);
   if (!claimed.length) throw new LockedError("The agent is still working on this ticket — wait for it to finish.");
   await step(id, next, "user_message", null, { by, files: files.map(({ id, name, type, size }) => ({ id, name, type, size })) }, text);
   if (switched) await step(id, next + 1, "system", null, { account: account.slug }, `Ticket account changed (${switched}) — the agent now uses ${account.name}'s logs and database`).catch(() => {});
@@ -430,8 +430,10 @@ export async function sendChatMessage(id: number, text: string, by = "unknown", 
       }
     } catch (e) {
       await step(id, next + 1, "system", null, { error: true }, `Chat failed: ${(e as Error).message}`).catch(() => {});
+      await q(`UPDATE investigations SET chat_error=$2 WHERE id=$1`, [id, (e as Error).message.slice(0, 500)]).catch(() => {});
     } finally {
-      await q(`UPDATE investigations SET chat_running=false WHERE id=$1`, [id]);
+      // chat_finished_at: the asker gets a notification that the reply is ready.
+      await q(`UPDATE investigations SET chat_running=false, chat_finished_at=now() WHERE id=$1`, [id]);
     }
   })();
 }
@@ -439,44 +441,124 @@ export async function sendChatMessage(id: number, text: string, by = "unknown", 
 type SessionOpts = { id: number; account: Account; candidates: Account[]; seq: number; message: SDKUserMessage; resume?: string; kind: "investigation" | "chat"; by?: string; attempt?: number };
 
 /*
- * At most AGENT_MAX_PARALLEL agent runs (investigations + chat replies) at once — each is a Claude process plus its
- * tools, and many together can run the server out of memory. The rest wait their turn (said so in the trail) and
- * start by themselves; Cancel works while waiting too.
+ * The queue. At most AGENT_MAX_PARALLEL agent runs at once (each is a Claude process plus its tools — too many run the
+ * server out of memory); the rest wait their turn and start by themselves. Fair to everyone:
+ *   - chat replies go before new investigations (they're short and someone is waiting for the answer);
+ *   - one person has at most AGENT_MAX_PER_PERSON running while other people are waiting (with nobody else waiting,
+ *     their extra ones use free slots too);
+ *   - otherwise first come, first served.
+ * Position and expected wait are shown live (queueState → /api/queue). Cancel works while waiting.
  */
-const maxParallel = () => Math.max(1, Number(process.env.AGENT_MAX_PARALLEL) || 2);
-let activeRuns = 0;
-const waiting: (() => void)[] = [];
-async function takeSlot(id: number, seq: number): Promise<number> {
-  if (activeRuns < maxParallel()) { activeRuns++; return seq; }
-  await step(id, seq++, "system", null, { waiting: true },
-    `Waiting to start — ${activeRuns} other investigation(s) / chat replies are running. This starts by itself as soon as one finishes.`);
+const num = (k: string, d: number) => Math.max(1, Number(adminSetting(k)) || d);
+export const maxParallel = () => num("AGENT_MAX_PARALLEL", 2);
+export const maxPerPerson = () => num("AGENT_MAX_PER_PERSON", 2);
+interface Slot { id: number; kind: SessionOpts["kind"]; by: string; since: number }
+interface Waiter extends Slot { go: () => void }
+const queueHome = globalThis as unknown as { drQueue?: { active: Map<number, Slot>; waiting: Waiter[] } };
+const Q: { active: Map<number, Slot>; waiting: Waiter[] } = (queueHome.drQueue ??= { active: new Map<number, Slot>(), waiting: [] as Waiter[] });
+
+/** Waiting runs in the order they'll start (chat replies first, then oldest first). */
+const ordered = () => [...Q.waiting].sort((a, b) => (a.kind === "chat" ? 0 : 1) - (b.kind === "chat" ? 0 : 1) || a.since - b.since);
+const runningFor = (by: string) => [...Q.active.values()].filter((s) => s.by === by).length;
+
+function pump() {
+  for (const fair of [true, false]) {
+    for (const w of ordered()) {
+      if (Q.active.size >= maxParallel()) return;
+      const othersWaiting = Q.waiting.some((x) => x.by !== w.by);
+      if (fair && othersWaiting && runningFor(w.by) >= maxPerPerson()) continue;
+      Q.waiting.splice(Q.waiting.indexOf(w), 1);
+      Q.active.set(w.id, { id: w.id, kind: w.kind, by: w.by, since: Date.now() });
+      w.go();
+    }
+  }
+}
+
+/** How long runs usually take (recent finished ones), for the expected wait. Cached 5 min. */
+let typical: { at: number } & Record<SessionOpts["kind"], number> = { at: 0, investigation: 8 * 60_000, chat: 2 * 60_000 };
+async function typicalMs() {
+  if (Date.now() - typical.at < 5 * 60_000) return typical;
+  const rows = await q<{ kind: string; ms: number }>(
+    `SELECT kind, percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM finished_at - started_at) * 1000)::float AS ms
+       FROM (SELECT kind, started_at, finished_at FROM agent_runs WHERE finished_at IS NOT NULL ORDER BY id DESC LIMIT 60) r GROUP BY kind`).catch(() => []);
+  const get = (k: string, d: number) => rows.find((r) => r.kind === k)?.ms || d;
+  typical = { at: Date.now(), investigation: get("investigation", 8 * 60_000), chat: get("chat", 2 * 60_000) };
+  return typical;
+}
+
+export interface QueueEntry { id: number; kind: SessionOpts["kind"]; by: string; since: string; position?: number; waitMin?: number }
+/** What's running and what's waiting (with position and expected wait in minutes), for the UI. */
+export async function queueState(): Promise<{ max: number; perPerson: number; running: QueueEntry[]; waiting: QueueEntry[] }> {
+  const t = await typicalMs();
+  const now = Date.now();
+  // Play the queue forward with the same rules as pump(): a slot frees up when its run typically ends, and the next
+  // run is the first one whose person is under their share (while others wait) — chat replies and older ones first.
+  const slots = [...Q.active.values()].map((s) => ({ end: Math.max(30_000, s.since + t[s.kind] - now), by: s.by as string | null }));
+  while (slots.length < maxParallel()) slots.push({ end: 0, by: null });
+  const count = new Map<string, number>();
+  for (const s of Q.active.values()) count.set(s.by, (count.get(s.by) ?? 0) + 1);
+  const left = ordered();
+  const waiting: QueueEntry[] = [];
+  while (left.length) {
+    slots.sort((a, b) => a.end - b.end);
+    const slot = slots[0];
+    if (slot.by) count.set(slot.by, (count.get(slot.by) ?? 1) - 1);
+    const fair = left.find((w) => !(left.some((x) => x.by !== w.by) && (count.get(w.by) ?? 0) >= maxPerPerson()));
+    const w = fair ?? left[0];
+    left.splice(left.indexOf(w), 1);
+    waiting.push({ id: w.id, kind: w.kind, by: w.by, since: new Date(w.since).toISOString(), position: waiting.length + 1, waitMin: Math.max(1, Math.round(slot.end / 60_000)) });
+    count.set(w.by, (count.get(w.by) ?? 0) + 1);
+    Object.assign(slot, { end: slot.end + t[w.kind], by: w.by });
+  }
+  const running = [...Q.active.values()].map((s) => ({ id: s.id, kind: s.kind, by: s.by, since: new Date(s.since).toISOString() }));
+  return { max: maxParallel(), perPerson: maxPerPerson(), running, waiting };
+}
+export const isQueued = (id: number) => Q.waiting.some((w) => w.id === id);
+
+async function takeSlot(opts: SessionOpts): Promise<number> {
+  let seq = opts.seq;
+  const by = opts.by || "unknown";
+  const slot = { id: opts.id, kind: opts.kind, by, since: Date.now() };
+  if (!Q.waiting.length && Q.active.size < maxParallel()) { Q.active.set(opts.id, slot); return seq; }
   const ac = new AbortController();
-  running.set(id, ac);
+  running.set(opts.id, ac);
   try {
     await new Promise<void>((resolve, reject) => {
-      waiting.push(resolve);
+      const w: Waiter = { ...slot, go: resolve };
+      Q.waiting.push(w);
+      pump(); // may start it at once (e.g. a free slot and this person is under their share)
+      if (Q.active.has(opts.id)) return;
+      void queueState().then((st) => {
+        const me = st.waiting.find((x) => x.id === opts.id);
+        if (!me) return;
+        return step(opts.id, seq++, "system", null, { waiting: true },
+          `Queued — ${me.position === 1 ? "next in line" : `${me.position} in line`}, about ${me.waitMin} min. ` +
+          `${st.running.length} investigation(s) / chat replies are running (at most ${st.max} at once). It starts by itself, and you'll get a notification when it's done.`);
+      }).catch(() => {});
       ac.signal.addEventListener("abort", () => {
-        const i = waiting.indexOf(resolve);
-        if (i >= 0) waiting.splice(i, 1);
+        const i = Q.waiting.indexOf(w);
+        if (i >= 0) Q.waiting.splice(i, 1);
         reject(new Error("Cancelled while waiting to start"));
       });
     });
   } finally {
-    running.delete(id);
+    running.delete(opts.id);
   }
-  return seq; // the finished run handed its slot straight over (activeRuns unchanged)
+  // The waiting note (if any) took a number: continue after it.
+  const [{ n }] = await q<{ n: number }>(`SELECT COALESCE(max(seq), -1) + 1 AS n FROM investigation_steps WHERE investigation_id=$1`, [opts.id]);
+  return Math.max(seq, n);
 }
-function releaseSlot() {
-  const next = waiting.shift();
-  if (next) next(); else activeRuns--;
+function releaseSlot(id: number) {
+  Q.active.delete(id);
+  pump();
 }
 
 async function runSession(opts: SessionOpts) {
-  const seq = await takeSlot(opts.id, opts.seq);
+  const seq = await takeSlot(opts);
   try {
     return await runSessionNow({ ...opts, seq });
   } finally {
-    releaseSlot();
+    releaseSlot(opts.id);
   }
 }
 
