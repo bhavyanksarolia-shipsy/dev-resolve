@@ -8,7 +8,8 @@ interface Storage {
   db: { bytes: number; limitBytes: number | null; limitGb: number | null };
   parts: { key: string; label: string; bytes: number; rows: number | null }[];
   growth: { last30: number; total: number; since: string | null; perInvestigation: number; perMonth: number };
-  disk: { path: string; total: number; free: number } | null;
+  volume: { path: string; total: number; free: number } | null; // a disk of its own (mounted volume) — else none
+  own: { label: string; bytes: number }[];
   sessions: { files: number; bytes: number } | null;
 }
 const size = (b: number) => (b >= 1024 ** 3 ? `${(b / 1024 ** 3).toFixed(2)} GB` : b >= 1024 ** 2 ? `${(b / 1024 ** 2).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
@@ -48,8 +49,9 @@ export function StorageCard() {
   if (!d) return <div className="card p-5 text-sm text-bad">Couldn&apos;t load the storage figures.</div>;
 
   const dbPct = d.db.limitBytes ? pct(d.db.bytes, d.db.limitBytes) : null;
-  const diskUsed = d.disk ? d.disk.total - d.disk.free : 0;
-  const diskPct = d.disk ? pct(diskUsed, d.disk.total) : null;
+  const diskUsed = d.volume ? d.volume.total - d.volume.free : 0;
+  const diskPct = d.volume ? pct(diskUsed, d.volume.total) : null;
+  const ownTotal = d.own.reduce((n, x) => n + x.bytes, 0);
   const worst = Math.max(dbPct ?? 0, diskPct ?? 0);
   const monthsLeft = d.db.limitBytes && d.growth.perMonth > 0 ? (d.db.limitBytes - d.db.bytes) / d.growth.perMonth : null;
   const biggest = d.parts[0]?.bytes || 1;
@@ -94,12 +96,14 @@ export function StorageCard() {
             {d.db.limitBytes ? <Bar used={d.db.bytes} total={d.db.limitBytes} />
               : <p className="text-xs text-muted">Set the database disk size under <b>Edit</b> to see how full it is.</p>}
           </Block>
-          <Block title="Server disk">
-            {d.disk ? <>
-              <div className="text-2xl font-semibold tabular-nums">{size(diskUsed)}</div>
-              <div className="mb-3 text-xs text-muted">code copies, the agent&apos;s saved conversations{d.sessions ? ` (${d.sessions.files} · ${size(d.sessions.bytes)})` : ""}, logs</div>
-              <Bar used={diskUsed} total={d.disk.total} />
-            </> : <p className="text-sm text-muted">Not available on this server.</p>}
+          <Block title="Server files">
+            <div className="text-2xl font-semibold tabular-nums">{size(ownTotal)}</div>
+            <div className="mb-3 text-xs text-muted">Dev Resolve&apos;s own files on the server</div>
+            <ul className="mb-3 space-y-1 text-sm">
+              {d.own.map((x) => <li key={x.label} className="flex justify-between gap-3"><span className="text-muted">{x.label}</span><span className="tabular-nums">{size(x.bytes)}</span></li>)}
+            </ul>
+            {d.volume ? <Bar used={diskUsed} total={d.volume.total} />
+              : <p className="rounded-lg bg-bg px-3 py-2 text-xs text-muted">No disk of its own: these files live on the server&apos;s temporary space and are cleared on every deploy (code is copied again; chats rebuild their context). Add a volume at <code>/data</code> in Railway to keep them and see its size here.</p>}
           </Block>
           <Block title="What takes the space">
             <ul className="space-y-2.5 text-sm">
