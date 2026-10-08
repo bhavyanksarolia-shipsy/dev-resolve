@@ -71,20 +71,21 @@ export function InvestigationsTab() {
   const pages = d ? Math.max(1, Math.ceil(d.total / d.pageSize)) : 1;
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
+      {/* One fixed line: filters · limits · search. The table below scrolls on its own. */}
+      <div className="flex flex-wrap items-center gap-2 md:flex-nowrap">
         {FILTERS.map(([k, l]) => (
           <button key={k} onClick={() => { setStatus(k); setPage(1); }}
-            className={`rounded-full px-3 py-1 text-sm ring-1 ${status === k ? "bg-accent-soft font-medium text-accent-strong ring-emerald-200" : "text-muted ring-line hover:text-fg"}`}>
+            className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-sm ring-1 ${status === k ? "bg-accent-soft font-medium text-accent-strong ring-emerald-200" : "text-muted ring-line hover:text-fg"}`}>
             {l}{k === "active" && d ? ` · ${d.counts.active}` : k === "failed" && d ? ` · ${d.counts.failed}` : ""}
           </button>
         ))}
-        <input className={`${input} ml-auto w-56`} value={term} placeholder="Search ticket or title" onChange={(e) => { setTerm(e.target.value); setPage(1); }} />
+        {d && <span className="hidden truncate text-xs text-muted xl:inline" title="Change it in Connections → Claude">At most {d.limits.parallel} at once · {d.limits.perPerson} per person</span>}
+        <input className={input} style={{ width: "16rem", marginLeft: "auto", flex: "none" }} value={term} placeholder="Search ticket or title" onChange={(e) => { setTerm(e.target.value); setPage(1); }} />
       </div>
-      {d && <p className="text-xs text-muted">At most {d.limits.parallel} run at once, {d.limits.perPerson} per person while others wait — change it in Connections → Claude.</p>}
 
-      <div className="card overflow-x-auto">
+      <div className="card max-h-[calc(100vh-15rem)] overflow-auto">
         <table className="w-full min-w-[56rem] text-sm">
-          <thead className="bg-accent-soft/60 text-left text-xs font-semibold uppercase tracking-wide text-muted">
+          <thead className="sticky top-0 z-10 bg-[#e8f3ec] text-left text-xs font-semibold uppercase tracking-wide text-muted shadow-[0_1px_0_var(--line)]">
             <tr>{["Ticket", "Account", "Started by", "Created on", "Run time", "Status", ""].map((h) => <th key={h} className="px-4 py-3">{h}</th>)}</tr>
           </thead>
           <tbody className="divide-y divide-line">
