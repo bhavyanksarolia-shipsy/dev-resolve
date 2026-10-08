@@ -7,6 +7,7 @@ import { createSdkMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { Account, CODE_ROOT, ROOT } from "../config";
 import { ensureRepos } from "../codeSync";
 import { userToolEnv } from "../connector";
+import { metabaseLimitError, metabaseName, noteMetabaseLimit, parseMetabaseLimit } from "../metabaseLimit";
 import { q } from "../db";
 import { proposeKnowledge, similarCases } from "../knowledge";
 import { pastTickets } from "../pastTickets";
@@ -18,7 +19,9 @@ const text = (s: string) => ({ content: [{ type: "text" as const, text: clip(s) 
 
 function run(cmd: string, args: string[], timeoutMs = 90000, user?: string): Promise<string> {
   return new Promise((resolve) => {
-    execFile(cmd, args, { env: userToolEnv(user) as NodeJS.ProcessEnv, timeout: timeoutMs, maxBuffer: 20 * 1024 * 1024 }, (err, stdout, stderr) => {
+    // DEV_RESOLVE_WAIT_SHORT_LIMIT: the Metabase tool waits out a per-minute limit itself rather than failing (a retry
+    // by the agent costs a whole Claude turn; a wait inside the tool costs nothing).
+    execFile(cmd, args, { env: { ...userToolEnv(user), DEV_RESOLVE_WAIT_SHORT_LIMIT: "1" } as unknown as NodeJS.ProcessEnv, timeout: timeoutMs, maxBuffer: 20 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err && !stdout) return resolve(`${stderr || err.message}`.trim());
       resolve(`${stdout}${stderr ? `\n[stderr] ${stderr}` : ""}`.trim());
     });
@@ -33,8 +36,22 @@ const METABASE = path.join(ROOT, ".claude/skills/metabase-sql/query.py");
  * `candidates` is set for ambiguous tickets (one DevRev account used by several tenants): the agent
  * may probe each candidate account to work out which tenant it is.
  */
-export function buildToolServer(opts: { investigationId: number; account: Account; candidates: Account[]; user?: string }) {
+export function buildToolServer(opts: { investigationId: number; account: Account; candidates: Account[]; user?: string; onMetabaseLimit?: (message: string) => void }) {
   const { investigationId, account } = opts;
+  // A Metabase query limit (longer than a minute's wait): note it, stop this run (the agent would only retry), and
+  // give the agent a clear answer in case it's still listening.
+  const metabase = async (acc: Account, args: string[], timeoutMs: number) => {
+    const name = metabaseName(acc.metabase_project!);
+    const already = metabaseLimitError(opts.user, acc.metabase_project, "Investigate", name);
+    if (already) { opts.onMetabaseLimit?.(already); return text(`METABASE_LIMIT: ${already} Do not call Metabase again in this investigation.`); }
+    const out = await run("python3", [METABASE, ...args], timeoutMs, opts.user);
+    const hit = parseMetabaseLimit(out);
+    if (!hit) return text(out);
+    noteMetabaseLimit(opts.user, hit.project, hit.until, hit.message);
+    const msg = metabaseLimitError(opts.user, hit.project, "Investigate", name) ?? hit.message;
+    opts.onMetabaseLimit?.(msg);
+    return text(`METABASE_LIMIT: ${msg} Do not call Metabase again in this investigation.`);
+  };
   const scope = [account, ...opts.candidates.filter((c) => c.slug !== account.slug)];
   const bySlug = (slug?: string) => (slug ? scope.find((a) => a.slug === slug) : account);
 
@@ -54,7 +71,8 @@ export function buildToolServer(opts: { investigationId: number; account: Accoun
       const allowed = [acc.metabase_database, ...Object.values(acc.metabase_databases)].filter((x): x is number => x != null);
       const db = database ?? acc.metabase_database!;
       if (!allowed.includes(db)) return text(`Database ${db} is not configured for ${acc.name}. Allowed: ${allowed.join(", ")}`);
-      return text(await run("python3", [METABASE, "sql", sql, "--project", acc.metabase_project, "--database", String(db), "--format", "json", "--timeout", "60"], 90000, opts.user));
+      // 150 s: up to a minute waiting out a per-minute limit, plus the query's own 60 s.
+      return metabase(acc, ["sql", sql, "--project", acc.metabase_project, "--database", String(db), "--format", "json", "--timeout", "60"], 150000);
     },
   );
 
@@ -65,8 +83,7 @@ export function buildToolServer(opts: { investigationId: number; account: Accoun
     async ({ database, account_slug }) => {
       const acc = bySlug(account_slug);
       if (!acc?.metabase_project) return text(`NOT_CONFIGURED: no Metabase connection for this account.`);
-      const out = await run("python3", [METABASE, "tables", "--project", acc.metabase_project, "--database", String(database ?? acc.metabase_database)], 90000, opts.user);
-      return text(out);
+      return metabase(acc, ["tables", "--project", acc.metabase_project, "--database", String(database ?? acc.metabase_database)], 150000);
     },
   );
 

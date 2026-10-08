@@ -246,21 +246,32 @@ def _rate_file(project):
     return os.path.join(TOOL_DIR, f"metabase_ratelimit-{project}{'-' + user if user else ''}.json")
 
 
+def _limit_reached(project, until, why):
+    """Out of Metabase queries for longer than a short wait: one clear, machine-readable line (Dev Resolve stops the
+    investigation and refuses new ones for this Metabase until `until`), then exit 3."""
+    mins = max(1, round((until - time.time()) / 60))
+    at = time.strftime("%H:%M", time.localtime(until))
+    print(f"METABASE_LIMIT_UNTIL={int(until)} project={project} — {why} It resets at {at} (in {mins} min).", file=sys.stderr)
+    sys.exit(3)
+
+
 def _check_rate_limit(project):
     now = time.time()
     rate_file = _rate_file(project)
     events = [t for t in _load_json(rate_file, []) if now - t < SUSTAINED_WINDOW]
     burst = [t for t in events if now - t < BURST_WINDOW]
     who = "for you" if os.environ.get("DEV_RESOLVE_RELAY_USER") else "here"
+    if len(events) >= SUSTAINED_LIMIT:
+        _limit_reached(project, events[0] + SUSTAINED_WINDOW,
+                       f"Metabase query limit reached {who}: {SUSTAINED_LIMIT} queries in the last hour ({project}).")
     if len(burst) >= BURST_LIMIT:
         wait = BURST_WINDOW - (now - burst[0])
+        if os.environ.get("DEV_RESOLVE_WAIT_SHORT_LIMIT") == "1":
+            # Inside Dev Resolve: wait here (costs no Claude tokens) instead of making the agent retry over and over.
+            time.sleep(wait + 0.5)
+            return _check_rate_limit(project)
         print(f"RATE_LIMITED: {len(burst)}/{BURST_LIMIT} Metabase queries in the last minute {who} ({project}). "
-              f"Carry on with the logs meanwhile and run this query again in ~{wait:.0f}s.", file=sys.stderr)
-        sys.exit(3)
-    if len(events) >= SUSTAINED_LIMIT:
-        wait = SUSTAINED_WINDOW - (now - events[0])
-        print(f"RATE_LIMITED: {len(events)}/{SUSTAINED_LIMIT} Metabase queries this hour {who} ({project}). "
-              f"Carry on with the logs; the database part can be checked again in ~{wait / 60:.0f} min.", file=sys.stderr)
+              f"Run this query again in ~{wait:.0f}s.", file=sys.stderr)
         sys.exit(3)
     events.append(now)
     _save_json(rate_file, events, mode=0o600)
@@ -552,6 +563,9 @@ def cmd_sql(args):
     if isinstance(resp, dict):
         data_field = resp.get("data") or {}
         err = resp.get("error") or data_field.get("error") or (data_field.get("native_form") or {}).get("error")
+    # Metabase itself refusing because of too many queries (its own limit, not ours): same clear stop.
+    if status == 429 or (err and re.search(r"too many|rate.?limit|query limit|limit (reached|exceeded)|quota", str(err), re.I)):
+        _limit_reached(project, time.time() + 10 * 60, f"Metabase ({project}) refused the query: {str(err or 'too many requests')[:160]}.")
     if err or status >= 400:
         print(f"Query error: {err or resp}", file=sys.stderr)
         sys.exit(1)

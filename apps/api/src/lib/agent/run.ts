@@ -5,6 +5,7 @@ import path from "node:path";
 import { query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { adminSetting, Account, ROOT, getAccount, getAccounts, projectForLogType, resolveDevrevAccount } from "../config";
 import { gatewayCarrier, relaySecret, userToolEnv } from "../connector";
+import { metabaseLimitError, metabaseName } from "../metabaseLimit";
 import { chainFor, endRun, noRouteMessage, takeRouteEvents } from "../claudeRoute";
 import { settings } from "../settings";
 import { LockedError, q } from "../db";
@@ -248,6 +249,9 @@ export interface StartNotes { text: string; files: { name: string; type: string;
 export async function startInvestigation(ticketRef: string, startedBy = "unknown", notes?: StartNotes): Promise<number> {
   const ticket = await getTicket(ticketRef);
   const { account, candidates } = resolveScope(ticket.account?.id, ticket.display_id, ticket.account?.display_name);
+  // Out of Metabase queries for this client's database: don't start (it would only retry and wait).
+  const mbLimit = metabaseLimitError(startedBy, account.metabase_project, "Start this investigation", account.metabase_project ? metabaseName(account.metabase_project) : undefined);
+  if (mbLimit) throw new Error(mbLimit);
   // The unique index investigations_one_running_per_ticket makes this the lock: a second start fails here.
   const row = await q<{ id: number }>(
     `INSERT INTO investigations (ticket_id, ticket_display, ticket_title, account_slug, status, candidate_slugs, started_by)
@@ -364,6 +368,8 @@ export async function sendChatMessage(id: number, text: string, by = "unknown", 
   }
   if (!account) throw new Error(`account ${inv.account_slug} is no longer in config`);
   if (account.client_active === false) throw new Error(`${account.name} is an inactive client — turn it on in Admin → Clients to investigate its tickets`);
+  const mbLimit = metabaseLimitError(by, account.metabase_project, "Send your message", account.metabase_project ? metabaseName(account.metabase_project) : undefined);
+  if (mbLimit) throw new Error(mbLimit);
 
   const [{ next }] = await q<{ next: number }>(`SELECT COALESCE(max(seq), -1) + 1 AS next FROM investigation_steps WHERE investigation_id=$1`, [id]);
   // Claim the chat in one step (two messages at once can't both start the agent).
@@ -582,6 +588,9 @@ async function runSessionNow(opts: SessionOpts) {
   if (chain.length && !chain.some((u) => !u.viaExtension || gatewayCarrier(opts.by, { vpnChecked: true }))) throw new Error(noRouteMessage(chain));
   const abort = new AbortController();
   running.set(id, abort);
+  // A Metabase query limit hit mid-run: stop right here with the reason (the agent would only retry and wait).
+  let stopReason: string | null = null;
+  const stopForMetabase = (message: string) => { if (stopReason) return; stopReason = message; abort.abort(); };
   const pending = new Map<string, { name: string; input: Record<string, unknown> }>();
   async function* prompt(): AsyncIterable<SDKUserMessage> {
     yield opts.message;
@@ -598,7 +607,7 @@ async function runSessionNow(opts: SessionOpts) {
       tools: [], // no built-in tools (no shell, no file edits) — only the MCP tools below
       mcpServers: {
         [OS_SERVER]: { type: "stdio", command: "uv", args: ["run", path.join(ROOT, "mcp/opensearch-logs/server.py")], env: userToolEnv(opts.by) },
-        devresolve: buildToolServer({ investigationId: id, account, candidates, user: opts.by }),
+        devresolve: buildToolServer({ investigationId: id, account, candidates, user: opts.by, onMetabaseLimit: stopForMetabase }),
         ...(appLogProject && appLogReady && {
           [APP_LOG]: { type: "stdio" as const, command: appLogProject.command, args: appLogProject.args,
             env: { ...userToolEnv(opts.by), MCP_REMOTE_CONFIG_DIR: appLogConfigDir(appLogProject, opts.by) } },
@@ -692,12 +701,14 @@ async function runSessionNow(opts: SessionOpts) {
       }
     }
   } catch (e) {
+    if (stopReason) { running.delete(id); endRun(id); throw new Error(stopReason); }
     if (abort.signal.aborted || !CLAUDE_DOWN.test((e as Error).message)) throw e;
     claudeDown = (e as Error).message.slice(0, 300);
   } finally {
     running.delete(id);
     for (const t of takeRouteEvents(id)) await step(id, seq++, "system", null, { claude_route: true }, t).catch(() => {});
   }
+  if (stopReason) { endRun(id); throw new Error(stopReason); }
   if (!claudeDown) { endRun(id); return; }
   // Every Claude account it could use is at its usage limit: say so plainly (resuming now would hit the same limit).
   if (/\b429\b|rate.?limit|usage limit|quota|budget|exceeded/i.test(claudeDown)) {
