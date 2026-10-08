@@ -2,7 +2,7 @@
 import { useEffect } from "react";
 import { toast } from "@/components/Dialog";
 
-interface St { main: string | null; mainDown: boolean; using: "main" | "personal" | "server" | "none"; usingLabel: string | null; through: string | null; restoredAt: string | null }
+interface St { main: string | null; mainDown: boolean; using: "main" | "personal" | "server" | "none"; usingLabel: string | null; restoredAt: string | null }
 const KEY = "dr.claude.using";
 const get = () => { try { return sessionStorage.getItem(KEY); } catch { return null; } };
 const set = (v: string) => { try { sessionStorage.setItem(KEY, v); } catch {} };
@@ -24,7 +24,7 @@ export function ClaudeStatusWatch() {
       set(s.using);
       const main = s.main ?? "Claude";
       if (s.using === "main") {
-        if (was && was !== "main") toast({ ok: true, text: `Claude connected · back on ${main}${s.through ? ` (through ${s.through}'s laptop)` : ""}` });
+        if (was && was !== "main") toast({ ok: true, text: `Claude connected · back on ${main}` });
       } else if (s.using === "personal") {
         toast({ ok: true, text: `${main} isn't reachable — Claude is using your own token for now` });
       } else if (s.using === "server") {

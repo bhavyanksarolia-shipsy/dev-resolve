@@ -93,7 +93,8 @@ export function chainFor(user?: string | null): Upstream[] {
   const add = (u: Upstream | null) => { if (u && !out.some((x) => x.secret === u.secret && x.base === u.base)) out.push(u); };
   add(mainUpstream());
   const mine = fallbackPersonalOn() ? personalToken(user) : null;
-  if (mine && user) add({ id: `personal:${user}`, label: `${user}'s own Claude token`, auth: isOauth(mine.token) ? "oauth" : "key", base: ANTHROPIC, secret: mine.token });
+  // Label without the name: it shows in the investigation timeline, which others read too.
+  if (mine && user) add({ id: `personal:${user}`, label: "the personal Claude token of the person who started it", auth: isOauth(mine.token) ? "oauth" : "key", base: ANTHROPIC, secret: mine.token });
   if (fallbackServerOn()) add(serverUpstream());
   return out;
 }
