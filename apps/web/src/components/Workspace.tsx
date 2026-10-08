@@ -6,6 +6,7 @@ import { Markdown } from "./Markdown";
 import { describeCall, fileLabel, hidePaths, resultSummary, scopeLabel, STEP_ICON, toolName } from "./labels";
 import { confirmDialog, notify } from "@/components/Dialog";
 import { QueueNotice } from "@/components/QueueNotice";
+import { toastIfQueued } from "@/lib/queueToast";
 import { InvestigationProgress } from "./InvestigationProgress";
 import { ChatPanel } from "./ChatPanel";
 import { TicketControls } from "./TicketActions";
@@ -159,6 +160,7 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
     const d = await r.json().catch(() => ({ error: r.status === 413 ? "Files are too large — send fewer at a time" : `HTTP ${r.status}` }));
     if (!r.ok) { notify({ title: "Message not sent", message: d.error, tone: "error" }); return false; }
     setInv((p) => (p ? { ...p, chat_running: true } : p));
+    toastIfQueued(inv.id, ticketId, "chat");
     setTimeout(poll, 500);
     return true;
   }
@@ -199,6 +201,7 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
     setStartOpen(false); setStartNotes(""); setStartFiles([]);
     setRca("");
     setInvId(d.id);
+    toastIfQueued(d.id, ticketId, "investigation");
   }
 
   async function post() {

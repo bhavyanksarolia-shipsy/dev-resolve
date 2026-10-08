@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { toastIfQueued } from "@/lib/queueToast";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { BulkBar, InlineEdit, type SavedChange } from "@/components/TicketActions";
 import { EmptyState } from "@/components/EmptyState";
@@ -256,6 +257,7 @@ function Inbox() {
     const d = await r.json();
     setStarting((s) => { const n = new Set(s); n.delete(t.display_id); return n; });
     if (!r.ok) return notify({ title: `Couldn't start ${t.display_id}`, message: d.error, tone: "error" });
+    toastIfQueued(d.id, t.display_id, "investigation");
     setTick((n) => n + 1);
   }
 
