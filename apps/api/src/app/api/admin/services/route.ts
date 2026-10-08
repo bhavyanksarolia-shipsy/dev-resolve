@@ -4,7 +4,7 @@ import { whoAmI } from "@/lib/devrev";
 import { q } from "@/lib/db";
 import { writeEnv } from "@/lib/adminConfig";
 import { adminSetting, readConfigEnv } from "@/lib/config";
-import { gatewayViaConnector } from "@/lib/connector";
+import { gatewayCarriers, gatewayViaConnector } from "@/lib/connector";
 import { fallbackPersonalOn, fallbackServerOn, fallbackSummary, mainState } from "@/lib/claudeRoute";
 import { agentModel, DEFAULT_MODEL, maxParallel, maxPerPerson, queueState } from "@/lib/agent/run";
 import { AGENT_LIMITS, AGENT_TOOLS, SENT_TO_ANTHROPIC, storageSummary } from "@/lib/agent/transparency";
@@ -54,6 +54,12 @@ export async function GET(req: Request) {
         : adminSetting("ANTHROPIC_API_KEY") ? `API key (${source("ANTHROPIC_API_KEY")})` : adminSetting("CLAUDE_CODE_OAUTH_TOKEN") ? `Claude login token (${source("CLAUDE_CODE_OAUTH_TOKEN")})` : "Local Claude Code login",
       model: agentModel(), defaultModel: DEFAULT_MODEL, gatewayUrl: adminSetting("ANTHROPIC_BASE_URL") ?? null, gatewayViaConnector: gatewayViaConnector(),
       // The queue: how many run at once, how many one person may have running while others wait, and right now.
+      // Bifrost through the extension: whose laptops can carry it right now (first = the one used), with their email.
+      carriers: gatewayViaConnector() ? await (async () => {
+        const list = gatewayCarriers();
+        const emails = list.length ? await dbq<{ name: string; email: string | null }>(`SELECT name, email FROM app_users WHERE name = ANY($1)`, [list.map((c) => c.user)]) : [];
+        return list.map((c) => ({ ...c, email: emails.find((e) => e.name === c.user)?.email ?? null }));
+      })() : null,
       queue: { parallel: maxParallel(), perPerson: maxPerPerson(), running: queue.running.length, waiting: queue.waiting.length },
       fallback: { personal: fallbackPersonalOn(), server: fallbackServerOn(), now: fallbackSummary(), mainDown: mainState().down },
       usage30: usage,

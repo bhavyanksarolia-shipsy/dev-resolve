@@ -47,12 +47,10 @@ export function HealthBanner({ account, compact }: { account?: string; compact?:
   if (!checks) return <div className="mb-4 text-sm text-muted">Checking connections…</div>;
   if (paused) return <div className="mb-4 text-xs text-muted">Connection checks paused — this client is marked inactive.</div>;
   const bad = checks.filter((c) => c.status !== "ok");
-  const restored = checks.filter((c) => c.status === "ok" && c.restored_at);
   // Compact: one quiet line while everything works; click it for a tidy list (no hosts or session details).
-  if (compact) return <><Restored items={restored} /><CompactStatus checks={checks} loading={loading} onRecheck={load} auto={failing} /></>;
+  if (compact) return <CompactStatus checks={checks} loading={loading} onRecheck={load} auto={failing} />;
   return (
     <div className="mb-5">
-      <Restored items={restored} />
       <div className="flex flex-wrap items-center gap-2 text-xs">
         {checks.map((c) => (
           <span key={c.id} title={`${c.host ?? ""} — ${c.message}`}
@@ -72,16 +70,6 @@ export function HealthBanner({ account, compact }: { account?: string; compact?:
           {c.fix && <div className="mt-1 font-mono text-xs">{c.fix}</div>}
         </div>
       ))}
-    </div>
-  );
-}
-
-/** "Claude connection is working fine again" — shown for a while after the main Claude sign-in comes back. */
-function Restored({ items }: { items: Check[] }) {
-  if (!items.length) return null;
-  return (
-    <div className="mb-3 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-ok ring-1 ring-emerald-200">
-      <span className="h-2 w-2 rounded-full bg-ok" aria-hidden />{items.map((c) => c.message).join(" · ")}
     </div>
   );
 }

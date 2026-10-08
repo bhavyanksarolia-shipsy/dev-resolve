@@ -16,6 +16,11 @@ export async function GET(req: Request) {
   const u = await sessionUser(req);
   if (!u) return Response.json({ error: "Sign in required" }, { status: 401 });
   const t = personalToken(u.name);
+  // No check since the server started: check now (one quick call), so the card says Working / Not working.
+  if (t && !lastCheck.has(u.name)) {
+    const v = await verifyClaudeToken(t.token);
+    lastCheck.set(u.name, { ok: v.ok, message: v.ok ? `Working${v.owner ? ` · ${v.owner}` : ""}` : v.message, at: new Date().toISOString() });
+  }
   return Response.json({
     enabled: fallbackPersonalOn(),
     main: mainUpstream()?.label ?? null,

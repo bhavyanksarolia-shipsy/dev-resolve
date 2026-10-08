@@ -43,7 +43,11 @@ export default function ConnectorPage() {
 
   useEffect(() => {
     let live = true;
-    const load = () => fetch("/api/connector/status", { cache: "no-store" }).then((r) => r.json()).then((d) => live && setS(d)).catch(() => {});
+    const load = () => fetch("/api/connector/status", { cache: "no-store" }).then((r) => r.json()).then((d) => {
+      if (!live) return;
+      setS(d);
+      window.dispatchEvent(new CustomEvent("connector-status", { detail: d })); // the header dot shows the same
+    }).catch(() => {});
     load();
     const t = setInterval(load, 5000);
     return () => { live = false; clearInterval(t); };

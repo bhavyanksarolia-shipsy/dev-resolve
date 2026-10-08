@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ConnectorDot } from "./ConnectorDot";
+import { ClaudeStatusWatch } from "./ClaudeStatusWatch";
 import { InvestigationNotifier } from "@/components/InvestigationNotifier";
 import { SignOut } from "@/components/SignOut";
 import { PodScopePicker } from "@/components/PodScopePicker";
@@ -59,6 +60,7 @@ export function AppHeader() {
         {me && (
           <div className="ml-auto flex items-center gap-x-3 sm:gap-x-4">
             <PodScopePicker />
+            <ClaudeStatusWatch />
             <InvestigationNotifier />
             <SignOut user={me.user} />
           </div>

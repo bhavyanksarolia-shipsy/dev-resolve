@@ -25,9 +25,12 @@ export function ConnectorDot() {
     let live = true;
     const load = () => fetch("/api/connector/status", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((d) => live && d && setS(d)).catch(() => {});
     load();
-    const t = setInterval(load, 30_000);
+    const t = setInterval(load, 15_000);
+    // The Connector page polls every 5 s: take its answer straight away, so the dot never disagrees with the page.
+    const fromPage = (e: Event) => live && setS((e as CustomEvent<St>).detail);
     window.addEventListener("focus", load);
-    return () => { live = false; clearInterval(t); window.removeEventListener("focus", load); };
+    window.addEventListener("connector-status", fromPage);
+    return () => { live = false; clearInterval(t); window.removeEventListener("focus", load); window.removeEventListener("connector-status", fromPage); };
   }, []);
   if (!s?.mode) return null; // local setups don't use the connector
   const list = issues(s);

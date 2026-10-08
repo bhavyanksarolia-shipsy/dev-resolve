@@ -9,7 +9,8 @@ interface Svc { status: string; message: string; fix?: string; host?: string }
 interface Data {
   claude: Svc & { method: string; model: string; defaultModel: string; gatewayUrl: string | null; gatewayViaConnector?: boolean;
     fallback?: { personal: boolean; server: boolean; now: string | null; mainDown: boolean };
-    queue?: { parallel: number; perPerson: number; running: number; waiting: number }; usage30: { runs: number; cost: number; tokens: number };
+    queue?: { parallel: number; perPerson: number; running: number; waiting: number };
+    carriers?: { user: string; email: string | null; vpnUp: boolean | null }[] | null; usage30: { runs: number; cost: number; tokens: number };
     tokenPreview: string | null; owner: string | null; ownerDetected: boolean; ownerNote: string;
     tools: { group: string; tools: { name: string; does: string }[] }[]; limits: string[]; sent: string;
     stored: { label: string; what: string; count: number; bytes: number; since: string | null }[] };
@@ -339,6 +340,17 @@ function ClaudeCard() {
             <dl className="divide-y divide-line">
               <Row k="Using" v={<span className="flex flex-wrap items-center gap-2"><b className="font-medium">{mainName}</b>{gwHost && <span className="text-xs text-muted">{gwHost}</span>}
                 {c.gatewayViaConnector && <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs text-accent-strong">through the extension</span>}</span>} />
+              {c.carriers && <Row k="Through" v={(() => {
+                const ready = c.carriers.filter((x) => x.vpnUp === true), others = c.carriers.filter((x) => x.vpnUp !== true);
+                const who = (x: { user: string; email: string | null }) => x.email ?? x.user;
+                if (!c.carriers.length) return <span className="text-bad">nobody&apos;s extension is online right now</span>;
+                return <span className="space-y-0.5">
+                  {ready[0] ? <span className="block"><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-ok align-middle" /><b className="font-medium">{who(ready[0])}</b><span className="ml-1 text-xs text-muted">· carrying it now</span></span>
+                    : <span className="block text-bad">nobody online is on Pritunl</span>}
+                  {ready.slice(1).map((x) => <span key={x.user} className="block text-xs text-muted"><span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-ok align-middle" />{who(x)} · ready</span>)}
+                  {others.map((x) => <span key={x.user} className="block text-xs text-muted"><span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-line align-middle" />{who(x)} · {x.vpnUp === false ? "Pritunl off" : "checking"}</span>)}
+                </span>;
+              })()} />}
               <Row k="Key" v={<TokenField which="claude" preview={c.tokenPreview} />} />
               <Row k="Owner" v={c.owner ?? <span className="text-muted">not set — add it under Edit</span>} />
               <Row k="Model" v={<code className="text-xs">{c.model}</code>} />

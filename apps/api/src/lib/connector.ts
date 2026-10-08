@@ -119,6 +119,15 @@ export function gatewayCarrier(prefer?: string | null, opts: { vpnChecked?: bool
   return others[0]?.[0] ?? null;
 }
 
+/** Everyone whose extension could carry the Claude gateway's requests right now (for Admin: "through whose laptop"). */
+export function gatewayCarriers(): { user: string; vpnUp: boolean | null; lastPoll: number }[] {
+  const gw = gatewayHost() ?? "";
+  return [...R.conns.entries()]
+    .filter(([u, c]) => connectorStatus(u).online && carriesGateway(c.version))
+    .map(([user, c]) => ({ user, vpnUp: gw in c.vpn ? c.vpn[gw] : null, lastPoll: c.lastPoll }))
+    .sort((a, b) => Number(b.vpnUp === true) - Number(a.vpnUp === true) || b.lastPoll - a.lastPoll);
+}
+
 export function relay(user: string, req: RelayRequest): Promise<RelayResponse> {
   if (!needsRelay(req.url) && !isGatewayUrl(req.url)) return Promise.reject(new Error("host is not a VPN host"));
   if (!connectorStatus(user).online) return Promise.reject(new ConnectorOffline(`CONNECTOR_OFFLINE: ${user}'s local connector isn't running`));
