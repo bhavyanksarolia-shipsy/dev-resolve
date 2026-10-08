@@ -4,10 +4,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ClientsTab } from "@/components/admin/ClientsTab";
 import { ConnectionsTab } from "@/components/admin/ConnectionsTab";
 import { FilesTab } from "@/components/admin/FilesTab";
+import { InvestigationsTab } from "@/components/admin/InvestigationsTab";
 import { UsersTab } from "@/components/admin/UsersTab";
 import type { AdminConfig } from "@/components/admin/types";
 
-const TABS = [["users", "User access control"], ["clients", "Clients"], ["connections", "Connections"], ["files", "Files & extension"]] as const;
+const TABS = [["users", "User access control"], ["investigations", "Investigations"], ["clients", "Clients"], ["connections", "Connections"], ["files", "Files & extension"]] as const;
 
 export default function AdminPage() {
   return <Suspense><Admin /></Suspense>;
@@ -36,6 +37,7 @@ function Admin() {
       </nav>
       {tab === "users" && <UsersTab />}
       {tab === "files" && <FilesTab />}
+      {tab === "investigations" && <InvestigationsTab />}
       {(tab === "clients" || tab === "connections") && !cfg && <div className="skeleton h-64 w-full rounded-xl" />}
       {tab === "clients" && cfg && <ClientsTab cfg={cfg} reload={reload} />}
       {tab === "connections" && cfg && <ConnectionsTab cfg={cfg} reload={reload} />}

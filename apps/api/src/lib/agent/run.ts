@@ -275,6 +275,11 @@ export async function startInvestigation(ticketRef: string, startedBy = "unknown
   return row.id;
 }
 
+/** Is this run actually alive in this server (running, waiting in line, or being set up)? "running" rows that aren't are stuck. */
+export function isLive(id: number) {
+  return running.has(id) || Q.active.has(id) || Q.waiting.some((w) => w.id === id);
+}
+
 export function cancelInvestigation(id: number) {
   running.get(id)?.abort();
 }
