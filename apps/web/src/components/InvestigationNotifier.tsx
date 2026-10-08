@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { BellIcon, BellOffIcon } from "@/components/icons";
 
@@ -52,11 +53,12 @@ export function InvestigationNotifier() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [menu, setMenu] = useState(false);
   const [sound, setSound] = useState(true);
+  const [mounted, setMounted] = useState(false); // the pop-up area is added to <body> only in the browser
   const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const supported = "Notification" in window;
-    const t0 = setTimeout(() => { setPerm(supported ? Notification.permission : "unsupported"); setSound(get(SOUND) !== "off"); }, 0);
+    const t0 = setTimeout(() => { setPerm(supported ? Notification.permission : "unsupported"); setSound(get(SOUND) !== "off"); setMounted(true); }, 0);
     for (const e of ["pointerdown", "keydown"]) window.addEventListener(e, unlockAudio, { capture: true });
     const channel = "BroadcastChannel" in window ? new BroadcastChannel("dev-resolve-notify") : null;
     const show = (list: Toast[]) => {
@@ -152,8 +154,9 @@ export function InvestigationNotifier() {
           <p className="text-[11px] leading-snug text-muted">No desktop pop-up in the test? Your Mac may be blocking Chrome: <b>System Settings → Notifications → Google Chrome → Allow notifications</b>. The pop-up on this page and the sound work either way.</p>
         </div>
       )}
-      {/* In-page pop-ups: shown even when the laptop's notifications are off. */}
-      <div className="pointer-events-none fixed bottom-4 right-4 z-[90] flex w-[22rem] max-w-[calc(100vw-2rem)] flex-col gap-2" aria-live="polite">
+      {/* In-page pop-ups: shown even when the laptop's notifications are off. Drawn on <body>: the header's blur would
+          otherwise pin "fixed" elements to the header instead of the screen corner. */}
+      {mounted && createPortal(<div className="pointer-events-none fixed bottom-4 right-4 z-[90] flex w-[22rem] max-w-[calc(100vw-2rem)] flex-col gap-2" aria-live="polite">
         {toasts.map((x) => (
           <div key={x.key} className={`pointer-events-auto flex gap-3 rounded-xl border bg-panel p-3 shadow-xl ${x.ok ? "border-emerald-200" : "border-red-200"}`}>
             <span className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs text-white ${x.ok ? "bg-ok" : "bg-bad"}`}>{x.ok ? "✓" : "!"}</span>
@@ -165,7 +168,7 @@ export function InvestigationNotifier() {
             <button onClick={() => setToasts((c) => c.filter((t) => t.key !== x.key))} aria-label="Dismiss" className="h-6 w-6 shrink-0 rounded text-muted hover:bg-bg">×</button>
           </div>
         ))}
-      </div>
+      </div>, document.body)}
     </div>
   );
 }
