@@ -307,15 +307,24 @@ function Inbox() {
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-panel px-4 py-3 text-sm">
           <span><b>{current?.name ?? account}</b> is marked as an <b>inactive client</b> — no ticket counts, ticket list or connection checks are fetched for it.</span>
           <button onClick={() => setLoadInactive(account)} className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium hover:border-accent hover:text-accent-strong">Load tickets anyway</button>
-          <a href="/knowledge" className="text-xs text-accent-strong hover:underline">Change on the Knowledge page</a>
+          <Link href="/admin?tab=clients" className="text-xs text-accent-strong hover:underline">Change in Admin → Clients</Link>
         </div>
       )}
 
-      {current && current.status !== "active" && (
+      {/* A DevRev account that isn't mapped to a client: its tickets can be seen, not investigated. */}
+      {current && isAccountEntry(current.slug) && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
-          <b className="text-warn">{current.name}: logs and DB are not configured yet.</b>{" "}
-          Investigations can only use code search and past cases until its OpenSearch / Metabase connection is added to{" "}
-          <code>config/projects.json</code> + <code>config/config.env</code>.
+          <b className="text-warn">{current.name} isn&apos;t mapped to a client.</b>{" "}
+          {current.note ? `${current.note}. ` : ""}Its tickets can&apos;t be investigated until they&apos;re moved to a client&apos;s account in DevRev, or this account is mapped in{" "}
+          <Link href="/admin?tab=clients" className="font-medium text-accent-strong underline">Admin → Clients</Link>.
+        </div>
+      )}
+      {/* A client without a logs / DB connection yet (set up in Admin, nothing to edit by hand). */}
+      {current && !isAccountEntry(current.slug) && current.status !== "active" && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
+          <b className="text-warn">{current.name}: logs and DB are not connected yet.</b>{" "}
+          Investigations can only use code search and past cases until its OpenSearch / Metabase connection is chosen in{" "}
+          <Link href="/admin?tab=clients" className="font-medium text-accent-strong underline">Admin → Clients</Link>.
         </div>
       )}
 
