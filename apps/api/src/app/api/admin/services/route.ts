@@ -6,7 +6,7 @@ import { writeEnv } from "@/lib/adminConfig";
 import { adminSetting, readConfigEnv } from "@/lib/config";
 import { gatewayViaConnector } from "@/lib/connector";
 import { fallbackPersonalOn, fallbackServerOn, fallbackSummary, mainState } from "@/lib/claudeRoute";
-import { agentModel, DEFAULT_MODEL } from "@/lib/agent/run";
+import { agentModel, DEFAULT_MODEL, maxParallel, maxPerPerson, queueState } from "@/lib/agent/run";
 import { AGENT_LIMITS, AGENT_TOOLS, SENT_TO_ANTHROPIC, storageSummary } from "@/lib/agent/transparency";
 import { checkMail, cleanTemplate, connectorStep, EMAIL_THEMES, defaultWelcomeTemplate, mailSettings, revokeGmail, saveWelcomeTemplate, sendMail, WELCOME_PLACEHOLDERS, welcomeEmail, welcomeTemplate, type WelcomeTemplate } from "@/lib/mail";
 import { q as dbq } from "@/lib/db";
@@ -39,12 +39,13 @@ async function claudeTokenOwner(): Promise<string | null> {
 export async function GET(req: Request) {
   const g = await requireAdmin(req);
   if (g.error) return g.error;
-  const [claude, devrev, me, [usage], detectedOwner, stored] = await Promise.all([
+  const [claude, devrev, me, [usage], detectedOwner, stored, queue] = await Promise.all([
     checkClaude(), checkDevrev(), whoAmI().catch(() => null),
     q<{ runs: number; cost: number; tokens: number }>(`SELECT count(*)::int runs, COALESCE(sum(cost_usd),0)::float cost,
        COALESCE(sum(input_tokens + output_tokens),0)::float tokens FROM agent_runs WHERE started_at > now() - interval '30 days'`),
     claudeTokenOwner(),
     storageSummary(),
+    queueState(),
   ]);
   return Response.json({
     claude: {
@@ -52,6 +53,8 @@ export async function GET(req: Request) {
       method: adminSetting("ANTHROPIC_API_KEY") && adminSetting("ANTHROPIC_BASE_URL") ? `API gateway ${new URL(adminSetting("ANTHROPIC_BASE_URL")!).host}${gatewayViaConnector() ? " through the Dev Resolve extension" : ""} (${source("ANTHROPIC_API_KEY")})`
         : adminSetting("ANTHROPIC_API_KEY") ? `API key (${source("ANTHROPIC_API_KEY")})` : adminSetting("CLAUDE_CODE_OAUTH_TOKEN") ? `Claude login token (${source("CLAUDE_CODE_OAUTH_TOKEN")})` : "Local Claude Code login",
       model: agentModel(), defaultModel: DEFAULT_MODEL, gatewayUrl: adminSetting("ANTHROPIC_BASE_URL") ?? null, gatewayViaConnector: gatewayViaConnector(),
+      // The queue: how many run at once, how many one person may have running while others wait, and right now.
+      queue: { parallel: maxParallel(), perPerson: maxPerPerson(), running: queue.running.length, waiting: queue.waiting.length },
       fallback: { personal: fallbackPersonalOn(), server: fallbackServerOn(), now: fallbackSummary(), mainDown: mainState().down },
       usage30: usage,
       tokenPreview: mask(claudeToken()),
@@ -72,7 +75,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const g = await requireAdmin(req);
   if (g.error) return g.error;
-  const b = (await req.json().catch(() => ({}))) as { service?: string; apiKey?: string; gatewayUrl?: string; gatewayViaConnector?: boolean; fallbackPersonal?: boolean; fallbackServer?: boolean; useServerDefault?: boolean; oauthToken?: string; model?: string; token?: string; owner?: string; clear?: string[]; reveal?: boolean;
+  const b = (await req.json().catch(() => ({}))) as { service?: string; apiKey?: string; gatewayUrl?: string; gatewayViaConnector?: boolean; maxParallel?: number | string; maxPerPerson?: number | string; fallbackPersonal?: boolean; fallbackServer?: boolean; useServerDefault?: boolean; oauthToken?: string; model?: string; token?: string; owner?: string; clear?: string[]; reveal?: boolean;
     user?: string; pass?: string; fromName?: string; host?: string; port?: number; check?: boolean; test?: boolean; appUrl?: string; disconnect?: "gmail" | "smtp";
     template?: Partial<WelcomeTemplate>; saveTemplate?: boolean; previewTemplate?: boolean; resetTemplate?: boolean; getTemplate?: boolean };
   // Admin → Email → Edit email: the welcome mail's text and steps.
@@ -147,6 +150,18 @@ export async function POST(req: Request) {
       updates.DEV_RESOLVE_MODEL = m && m !== DEFAULT_MODEL ? m : null;
     }
     for (const k of b.clear ?? []) if (["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"].includes(k)) updates[k] = null;
+    // Queue limits (lib/agent/run.ts): empty = the default (2).
+    const lim = (v: unknown, max: number, what: string) => {
+      const s = String(v ?? "").trim();
+      if (!s) return { val: null };
+      return /^\d+$/.test(s) && +s >= 1 && +s <= max ? { val: s } : { error: `${what} must be a number from 1 to ${max}` };
+    };
+    for (const [k, v, max, what] of [["AGENT_MAX_PARALLEL", b.maxParallel, 20, "Running at once"], ["AGENT_MAX_PER_PERSON", b.maxPerPerson, 10, "Per person"]] as const) {
+      if (v === undefined) continue;
+      const r = lim(v, max, what);
+      if ("error" in r) return Response.json({ error: r.error }, { status: 400 });
+      updates[k] = r.val;
+    }
     // When the main sign-in isn't working: the person's own Claude token, then the server's Claude login (both on by default).
     if (b.fallbackPersonal !== undefined) updates.CLAUDE_FALLBACK_PERSONAL = b.fallbackPersonal ? null : "off";
     if (b.fallbackServer !== undefined) updates.CLAUDE_FALLBACK_SERVER = b.fallbackServer ? null : "off";
