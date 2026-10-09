@@ -29,7 +29,7 @@ function claudeEnv(user?: string, runId?: number): Record<string, string | undef
   const main = chain[0];
   if (!main) return { ...process.env, ANTHROPIC_BASE_URL: undefined }; // this computer's own Claude Code login (local setups)
   const clean = { ...process.env, ANTHROPIC_BASE_URL: undefined, ANTHROPIC_API_KEY: undefined, CLAUDE_CODE_OAUTH_TOKEN: undefined };
-  if (chain.length === 1 && !main.viaExtension) {
+  if (chain.length === 1 && !main.viaExtension && main.base === "https://api.anthropic.com") {
     // One way only: straight there. Gateways read the key from x-api-key; Bifrost virtual keys (sk-bf-…) also as x-bf-vk.
     if (main.auth === "oauth") return { ...clean, CLAUDE_CODE_OAUTH_TOKEN: main.secret };
     return { ...clean, ANTHROPIC_API_KEY: main.secret, ...(main.base !== "https://api.anthropic.com" && { ANTHROPIC_BASE_URL: main.base }),
@@ -44,6 +44,8 @@ function claudeEnv(user?: string, runId?: number): Record<string, string | undef
 }
 /** A session that ended because Claude couldn't be reached (not because of the investigation itself). */
 const CLAUDE_DOWN = /API Error|Connection error|ECONNRESET|ECONNREFUSED|socket hang up|fetch failed|overloaded|timed? ?out|terminated|isn't working right now|isn't reachable|\b5\d\d\b/i;
+/** Errors no retry can fix (a bad request, a refused key or model): stop with the reason instead of resuming. */
+const CLAUDE_REFUSED = /API Error: (400|401|403|404|413)\b/;
 /**
  * Is Claude's saved conversation for this session still on this server's disk? The SDK keeps it under
  * projects/<working folder> — and a redeploy on a host without a volume (Railway) wipes it.
@@ -657,6 +659,7 @@ async function runSessionNow(opts: SessionOpts) {
 
   let sessionSaved = false, sessionId = opts.resume;
   let claudeDown: string | null = null; // the session ended because Claude couldn't be reached → resume on the fallback
+  let refused: string | null = null; // Claude (or the gateway) refused the request — no retry helps; that's the error
   const [run] = await q<{ id: number }>(`INSERT INTO agent_runs (investigation_id, kind, started_by) VALUES ($1,$2,$3) RETURNING id`, [id, opts.kind, opts.by ?? null]);
   try {
     for await (const msg of stream as AsyncIterable<SDKMessage>) {
@@ -700,20 +703,22 @@ async function runSessionNow(opts: SessionOpts) {
         // Chat turns add to the investigation's running cost / turn count.
         await q(`UPDATE investigations SET cost_usd=COALESCE(cost_usd,0)+$2, num_turns=COALESCE(num_turns,0)+$3 WHERE id=$1`, [id, cost, msg.num_turns]);
         const failText = msg.subtype === "success" ? (msg.is_error ? String(msg.result ?? "") : "") : ("errors" in msg ? (msg.errors as string[]).join("; ") : "");
-        if (failText && CLAUDE_DOWN.test(failText) && !abort.signal.aborted) claudeDown = failText.slice(0, 300);
+        if (failText && CLAUDE_DOWN.test(failText) && !CLAUDE_REFUSED.test(failText) && !abort.signal.aborted) claudeDown = failText.slice(0, 300);
+        else if (failText && CLAUDE_REFUSED.test(failText)) refused = `Claude refused the request — ${failText.replace(/^API Error:\s*/, "").slice(0, 300)}`;
         else if (msg.subtype !== "success") await step(id, seq++, "system", null, { subtype: msg.subtype }, "Agent stopped before finishing");
         break; // one-shot turn: don't keep the streaming-input session open
       }
     }
   } catch (e) {
     if (stopReason) { running.delete(id); endRun(id); throw new Error(stopReason); }
-    if (abort.signal.aborted || !CLAUDE_DOWN.test((e as Error).message)) throw e;
+    if (abort.signal.aborted || !CLAUDE_DOWN.test((e as Error).message) || CLAUDE_REFUSED.test((e as Error).message)) throw e;
     claudeDown = (e as Error).message.slice(0, 300);
   } finally {
     running.delete(id);
     for (const t of takeRouteEvents(id)) await step(id, seq++, "system", null, { claude_route: true }, t).catch(() => {});
   }
   if (stopReason) { endRun(id); throw new Error(stopReason); }
+  if (refused) { endRun(id); throw new Error(refused); }
   if (!claudeDown) { endRun(id); return; }
   // Every Claude account it could use is at its usage limit: say so plainly (resuming now would hit the same limit).
   if (/\b429\b|rate.?limit|usage limit|quota|budget|exceeded/i.test(claudeDown)) {

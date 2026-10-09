@@ -233,9 +233,28 @@ function authHeaders(u: Upstream, incoming: Record<string, string>) {
 
 interface Sent { status: number; headers: Headers | Record<string, string>; body: ReadableStream<Uint8Array> | Uint8Array | null }
 
+/**
+ * A gateway that serves several providers (Bifrost) wants "provider/model": "claude-opus-5-5" alone gets
+ * "could not auto resolve a provider". Anthropic itself wants the plain name. GATEWAY_MODEL_PREFIX (default
+ * "anthropic/", empty = none) is added for gateways only.
+ */
+export const gatewayModelPrefix = () => adminSetting("GATEWAY_MODEL_PREFIX") ?? "anthropic/";
+function forUpstream(u: Upstream, body?: Uint8Array): Uint8Array | undefined {
+  if (!body || u.base === ANTHROPIC) return body;
+  const prefix = gatewayModelPrefix();
+  if (!prefix) return body;
+  try {
+    const j = JSON.parse(Buffer.from(body).toString("utf8"));
+    if (typeof j.model !== "string" || j.model.includes("/")) return body;
+    j.model = `${prefix}${j.model}`;
+    return new TextEncoder().encode(JSON.stringify(j));
+  } catch { return body; }
+}
+
 async function send(u: Upstream, user: string | null | undefined, r: { method: string; path: string; headers: Record<string, string>; body?: Uint8Array; headerMs: number; signal?: AbortSignal }): Promise<Sent> {
   const url = `${u.base}${r.path}`;
   const headers = authHeaders(u, r.headers);
+  r = { ...r, body: forUpstream(u, r.body) };
   if (u.viaExtension) {
     const carrier = gatewayCarrier(user, { vpnChecked: true });
     if (!carrier) throw new Error("nobody's extension is on the company VPN (Pritunl)");
@@ -288,9 +307,11 @@ export async function forward(req: Request, chain: Upstream[], opts: { user?: st
         const reset = Number(header("anthropic-ratelimit-unified-reset")) * 1000 || (Number(header("retry-after")) ? Date.now() + Number(header("retry-after")) * 1000 : 0);
         noteLimit(u, reset || null);
       }
-      const retryable = isLimit || r.status >= 500 || r.status === 401 || r.status === 403;
+      // A gateway refusing the request itself (unknown provider/model, no access to it): another sign-in can serve it.
+      const gatewayRefused = u.base !== ANTHROPIC && [400, 404].includes(r.status) && /provider|model|not (found|supported|allowed)|no access/i.test(errText);
+      const retryable = isLimit || gatewayRefused || r.status >= 500 || r.status === 401 || r.status === 403;
       if (retryable && u !== order[order.length - 1]) {
-        const reason = isLimit ? "usage limit reached" : reasonFor(r.status);
+        const reason = isLimit ? "usage limit reached" : gatewayRefused ? `refused the request (${errText.replace(/\s+/g, " ").slice(0, 120)})` : reasonFor(r.status);
         const until = limits.get(u.id)?.until;
         markDown(u, reason, { user: opts.user, ...(isLimit && { forMs: Math.min(Math.max((until ?? 0) - Date.now(), 60_000), 5 * 3600_000) || 10 * 60_000 }) });
         failed.push({ u, reason });
