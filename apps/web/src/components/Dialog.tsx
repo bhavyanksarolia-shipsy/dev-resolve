@@ -33,6 +33,8 @@ export function confirmDialog(o: { title: string; message: string; confirmLabel?
  */
 export function notify(o: { message: string; title?: string; tone?: Tone; action?: { label: string; href: string }; ms?: number; sound?: boolean }) {
   const tone = o.tone ?? "info";
+  // The same notification already on screen: don't stack a copy (and don't play the sound again).
+  if (state.toasts.some((x) => !x.leaving && x.title === o.title && x.message === o.message)) return;
   const t: Toast = { id: ++seq, tone, title: o.title, message: o.message, action: o.action, ms: o.ms ?? (tone === "error" ? 10_000 : tone === "warn" ? 9_000 : 6_000) };
   const kept = state.toasts.filter((x) => !x.leaving);
   emit({ ...state, toasts: [...kept.slice(-3), t] });

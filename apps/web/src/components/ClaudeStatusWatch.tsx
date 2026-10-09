@@ -18,14 +18,21 @@ const CONNECTOR = { label: "Open the Connector page", href: "/connector" };
  */
 export function ClaudeStatusWatch() {
   useEffect(() => {
-    let live = true;
+    let live = true, busy = false, nobodyStreak = 0;
     const tick = async () => {
+      if (busy) return; // the timer, page load and tab focus can fire together — one check at a time
+      busy = true;
+      try { await check(); } finally { busy = false; }
+    };
+    const check = async () => {
       const r = await fetch("/api/claude-status", { cache: "no-store" }).catch(() => null);
       if (!r?.ok || !live) return;
       const s: St = await r.json();
       const main = s.main ?? "the main sign-in";
 
-      if (s.pritunlNobody) {
+      // Right after a server restart nobody has checked in yet — only remind when it's still true on the next check.
+      nobodyStreak = s.pritunlNobody ? nobodyStreak + 1 : 0;
+      if (s.pritunlNobody && nobodyStreak >= 2) {
         const last = Number(get(PRITUNL) || 0);
         if (Date.now() - last > 30 * 60_000) {
           set(PRITUNL, String(Date.now()));
