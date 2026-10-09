@@ -154,7 +154,10 @@ export function markDown(u: Upstream, reason: string, opts: { forMs?: number; us
   breaker.set(u.id, d);
   console.warn(`[claude] ${u.label} not working (${reason}) — using the fallback until it is`);
   if (!opts.forMs) {
-    d.probe = setInterval(() => { void probe(d); }, 20_000);
+    // Unreachable: look again every 20 s. Refused (400/401/403 — key or model not allowed): every 5 min, since a
+    // small real request is needed to tell, and it won't fix itself in seconds.
+    const refused = /refused|HTTP 4\d\d/.test(reason);
+    d.probe = setInterval(() => { void probe(d); }, refused ? 5 * 60_000 : 20_000);
     d.probe.unref();
   }
 }
@@ -168,11 +171,25 @@ export function markUp(id: string) {
   console.log(`[claude] ${d.upstream.label} is working again — back on it`);
 }
 
+/**
+ * Is this sign-in usable for what the agent actually does? A tiny real request (1 token) — listing models isn't
+ * enough: a gateway can allow that and still refuse the model (HTTP 403), which made it flip between "down" and "back".
+ */
+export async function pingMessages(u: Upstream, user?: string | null): Promise<{ ok: boolean; status: number; error: string }> {
+  const body = new TextEncoder().encode(JSON.stringify({ model: adminSetting("DEV_RESOLVE_MODEL") || "claude-opus-5-5", max_tokens: 1, messages: [{ role: "user", content: "ping" }] }));
+  const r = await send(u, user, { method: "POST", path: "/v1/messages", headers: { "anthropic-version": "2023-06-01", "content-type": "application/json" }, body, headerMs: 30_000 });
+  const text = r.body instanceof ReadableStream ? await new Response(r.body).text().catch(() => "") : r.body ? Buffer.from(r.body).toString("utf8") : "";
+  let error = "";
+  try { const j = JSON.parse(text); error = j?.error?.message || j?.message || ""; } catch { error = text.slice(0, 200); }
+  return { ok: r.status >= 200 && r.status < 300, status: r.status, error };
+}
+
 async function probe(d: Down) {
   const u = d.upstream;
   try {
-    const r = await send(u, d.user, { method: "GET", path: "/v1/models?limit=1", headers: { "anthropic-version": "2023-06-01" }, headerMs: 10_000 });
-    if (r.status < 500 && r.status !== 401 && r.status !== 403 && r.status !== 429) markUp(u.id);
+    const r = await pingMessages(u, d.user);
+    if (r.ok) markUp(u.id);
+    else { d.reason = `${reasonFor(r.status)}${r.error ? `: ${r.error.slice(0, 160)}` : ""}`; }
   } catch { /* still down */ }
 }
 
@@ -311,7 +328,8 @@ export async function forward(req: Request, chain: Upstream[], opts: { user?: st
       const gatewayRefused = u.base !== ANTHROPIC && [400, 404].includes(r.status) && /provider|model|not (found|supported|allowed)|no access/i.test(errText);
       const retryable = isLimit || gatewayRefused || r.status >= 500 || r.status === 401 || r.status === 403;
       if (retryable && u !== order[order.length - 1]) {
-        const reason = isLimit ? "usage limit reached" : gatewayRefused ? `refused the request (${errText.replace(/\s+/g, " ").slice(0, 120)})` : reasonFor(r.status);
+        const said = (() => { try { const j = JSON.parse(errText); return String(j?.error?.message || j?.message || ""); } catch { return errText; } })().replace(/\s+/g, " ").slice(0, 160);
+        const reason = isLimit ? "usage limit reached" : gatewayRefused ? `refused the request (${said})` : `${reasonFor(r.status)}${said && r.status < 500 ? `: ${said}` : ""}`;
         const until = limits.get(u.id)?.until;
         markDown(u, reason, { user: opts.user, ...(isLimit && { forMs: Math.min(Math.max((until ?? 0) - Date.now(), 60_000), 5 * 3600_000) || 10 * 60_000 }) });
         failed.push({ u, reason });

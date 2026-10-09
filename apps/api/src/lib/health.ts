@@ -8,7 +8,7 @@ import { getPool } from "./db";
 import { settings } from "./settings";
 import { ConnectorOffline, connectorMode, gatewayCarrier, gatewayViaConnector, isVpnOnlyHost, metabaseSession, needsRelay, relay, userToolEnv } from "./connector";
 import { whoAmI, DevrevError } from "./devrev";
-import { fallbackSummary, mainState, mainUpstream, markDown, markUp } from "./claudeRoute";
+import { fallbackSummary, mainState, mainUpstream, markDown, markUp, pingMessages } from "./claudeRoute";
 import { appLogProjects, ensureAppLogAuth } from "./applog";
 
 /** fallback: the main sign-in isn't working but a fallback is carrying the work (Claude), so nothing is blocked. */
@@ -199,9 +199,22 @@ async function checkPostgres(): Promise<ConnectionHealth> {
  * never waits on a sign-in this check already knows is down.
  */
 export async function checkClaude(): Promise<ConnectionHealth> {
-  const r = await checkMainClaude();
+  let r = await checkMainClaude();
   const main = mainUpstream();
   if (!main) return r;
+  // A gateway can answer the key check and still refuse what the agent asks for (e.g. the model isn't allowed for the
+  // key): try one tiny real request, and report its refusal.
+  if (r.status === "ok" && main.base !== "https://api.anthropic.com" && !(main.viaExtension && !gatewayCarrier(null, { vpnChecked: true }))) {
+    const p = await pingMessages(main).catch((e: Error) => ({ ok: false, status: 0, error: e.message }));
+    if (!p.ok && p.status) {
+      const model = adminSetting("DEV_RESOLVE_MODEL") || "claude-opus-5-5";
+      r = { ...r, status: p.status === 401 || p.status === 403 ? "auth_failed" : "error",
+        message: `${main.label} refused the request (HTTP ${p.status})${p.error ? `: ${p.error.slice(0, 160)}` : ""}`,
+        fix: p.status === 403 || /model|provider/i.test(p.error)
+          ? `The ${main.label} key isn't allowed to use ${model} — ask the ${main.label} owners to allow it for this key, or pick another model under Edit`
+          : `Check the ${main.label} key under Edit` };
+    }
+  }
   if (r.status === "ok") markUp("main");
   else if (r.status === "error" || r.status === "auth_failed") markDown(main, r.message);
   const fb = fallbackSummary();
