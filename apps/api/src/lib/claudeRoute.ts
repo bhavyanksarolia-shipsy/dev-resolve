@@ -175,13 +175,38 @@ export function markUp(id: string) {
  * Is this sign-in usable for what the agent actually does? A tiny real request (1 token) — listing models isn't
  * enough: a gateway can allow that and still refuse the model (HTTP 403), which made it flip between "down" and "back".
  */
-export async function pingMessages(u: Upstream, user?: string | null): Promise<{ ok: boolean; status: number; error: string }> {
-  const body = new TextEncoder().encode(JSON.stringify({ model: adminSetting("DEV_RESOLVE_MODEL") || "claude-opus-5-5", max_tokens: 1, messages: [{ role: "user", content: "ping" }] }));
+export async function pingMessages(u: Upstream, user?: string | null, model?: string): Promise<{ ok: boolean; status: number; error: string }> {
+  const body = new TextEncoder().encode(JSON.stringify({ model: model || adminSetting("DEV_RESOLVE_MODEL") || "claude-opus-5-5", max_tokens: 1, messages: [{ role: "user", content: "ping" }] }));
   const r = await send(u, user, { method: "POST", path: "/v1/messages", headers: { "anthropic-version": "2023-06-01", "content-type": "application/json" }, body, headerMs: 30_000 });
   const text = r.body instanceof ReadableStream ? await new Response(r.body).text().catch(() => "") : r.body ? Buffer.from(r.body).toString("utf8") : "";
   let error = "";
   try { const j = JSON.parse(text); error = j?.error?.message || j?.message || ""; } catch { error = text.slice(0, 200); }
   return { ok: r.status >= 200 && r.status < 300, status: r.status, error };
+}
+
+/**
+ * Which Claude models the main sign-in (e.g. the Bifrost key) will actually run: the models it lists, plus the usual
+ * Claude ids, each tried with one tiny request (1 token). For Admin → Claude → "Find models this key can use".
+ */
+export async function modelsForMain(): Promise<{ listed: string[]; tried: { model: string; ok: boolean; status: number; error: string }[] }> {
+  const u = mainUpstream();
+  if (!u) throw new Error("No Claude sign-in is set");
+  let listed: string[] = [];
+  try {
+    const r = await send(u, null, { method: "GET", path: "/v1/models?limit=100", headers: { "anthropic-version": "2023-06-01" }, headerMs: 15_000 });
+    const text = r.body instanceof ReadableStream ? await new Response(r.body).text() : r.body ? Buffer.from(r.body).toString("utf8") : "";
+    const j = JSON.parse(text);
+    listed = (Array.isArray(j?.data) ? j.data : []).map((m: { id?: string }) => String(m?.id ?? "")).filter(Boolean);
+  } catch { /* the list is a bonus — the tries below are what count */ }
+  const usual = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-sonnet-5", "claude-fable-5-1", "claude-haiku-4-5-20251001", "claude-opus-4-1", "claude-sonnet-4-5", "claude-sonnet-4"];
+  const claude = listed.filter((m) => /claude/i.test(m)).map((m) => m.replace(/^anthropic\//, ""));
+  const candidates = [...new Set([...claude, ...usual])].slice(0, 14);
+  const tried = [];
+  for (const model of candidates) {
+    const p = await pingMessages(u, null, model).catch((e: Error) => ({ ok: false, status: 0, error: e.message }));
+    tried.push({ model, ...p, error: p.error.slice(0, 140) });
+  }
+  return { listed, tried };
 }
 
 async function probe(d: Down) {

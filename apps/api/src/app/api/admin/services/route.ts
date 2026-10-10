@@ -5,7 +5,7 @@ import { q } from "@/lib/db";
 import { writeEnv } from "@/lib/adminConfig";
 import { adminSetting, readConfigEnv } from "@/lib/config";
 import { gatewayCarriers, gatewayViaConnector } from "@/lib/connector";
-import { fallbackPersonalOn, fallbackServerOn, fallbackSummary, mainState } from "@/lib/claudeRoute";
+import { fallbackPersonalOn, fallbackServerOn, fallbackSummary, mainState, modelsForMain } from "@/lib/claudeRoute";
 import { agentModel, DEFAULT_MODEL, maxParallel, maxPerPerson, queueState } from "@/lib/agent/run";
 import { AGENT_LIMITS, AGENT_TOOLS, SENT_TO_ANTHROPIC, storageSummary } from "@/lib/agent/transparency";
 import { checkMail, cleanTemplate, connectorStep, EMAIL_THEMES, defaultWelcomeTemplate, mailSettings, revokeGmail, saveWelcomeTemplate, sendMail, WELCOME_PLACEHOLDERS, welcomeEmail, welcomeTemplate, type WelcomeTemplate } from "@/lib/mail";
@@ -81,7 +81,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const g = await requireAdmin(req);
   if (g.error) return g.error;
-  const b = (await req.json().catch(() => ({}))) as { service?: string; apiKey?: string; gatewayUrl?: string; gatewayViaConnector?: boolean; maxParallel?: number | string; maxPerPerson?: number | string; fallbackPersonal?: boolean; fallbackServer?: boolean; useServerDefault?: boolean; oauthToken?: string; model?: string; token?: string; owner?: string; clear?: string[]; reveal?: boolean;
+  const b = (await req.json().catch(() => ({}))) as { service?: string; apiKey?: string; gatewayUrl?: string; gatewayViaConnector?: boolean; findModels?: boolean; maxParallel?: number | string; maxPerPerson?: number | string; fallbackPersonal?: boolean; fallbackServer?: boolean; useServerDefault?: boolean; oauthToken?: string; model?: string; token?: string; owner?: string; clear?: string[]; reveal?: boolean;
     user?: string; pass?: string; fromName?: string; host?: string; port?: number; check?: boolean; test?: boolean; appUrl?: string; disconnect?: "gmail" | "smtp";
     template?: Partial<WelcomeTemplate>; saveTemplate?: boolean; previewTemplate?: boolean; resetTemplate?: boolean; getTemplate?: boolean };
   // Admin → Email → Edit email: the welcome mail's text and steps.
@@ -120,6 +120,10 @@ export async function POST(req: Request) {
     const m = welcomeEmail({ name: me.display_name || g.user.name, username: g.user.name, email: me.email, admin: true, addedBy: me.display_name || g.user.name, appUrl: adminSetting("APP_URL") || b.appUrl || "", hasPassword: false });
     try { await sendMail({ to: me.email, subject: `[Test] ${m.subject}`, text: m.text, html: m.html, attachments: m.attachments }); return Response.json({ ok: true, message: `Test email sent to ${me.email}` }); }
     catch (e) { return Response.json({ error: `Couldn't send: ${(e as Error).message.slice(0, 200)}` }, { status: 400 }); }
+  }
+  // Claude → "Find models this key can use": try each model with a 1-token request.
+  if (b.service === "claude" && b.findModels) {
+    try { return Response.json(await modelsForMain()); } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
   }
   // The eye button: the full current token, for admins only; every reveal is logged.
   if (b.reveal) {

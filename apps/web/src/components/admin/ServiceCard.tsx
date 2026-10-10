@@ -224,7 +224,7 @@ export function Block({ title, hint, children, className = "" }: { title: string
 }
 const MODELS = [
   { value: "claude-opus-5-5", label: "Claude Opus 5.5", hint: "most capable — default" },
-  { value: "claude-sonnet-5", label: "Claude Sonnet 5", hint: "faster and cheaper" },
+  { value: "claude-sonnet-5-5", label: "Claude Sonnet 5.5", hint: "faster and cheaper" },
   { value: "claude-fable-5-1", label: "Claude Fable 5.1" },
   { value: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5", hint: "fastest, for light tickets" },
 ];
@@ -239,6 +239,13 @@ function ClaudeCard() {
   const [edit, setEdit] = useState(false);
   const blank = { mode: "keep", secret: "", model: "", owner: "", gateway: "", viaExt: false, fbPersonal: true, fbServer: true, parallel: "", perPerson: "" };
   const [f, setF] = useState(blank);
+  // "Find models this key can use": each model tried with a 1-token request.
+  const [models, setModels] = useState<{ busy: boolean; tried?: { model: string; ok: boolean; status: number; error: string }[]; error?: string } | null>(null);
+  const findModels = async () => {
+    setModels({ busy: true });
+    const r = await post<{ tried?: { model: string; ok: boolean; status: number; error: string }[] }>("/api/admin/services", { service: "claude", findModels: true });
+    setModels({ busy: false, tried: r.tried, error: r.error });
+  };
   useEffect(() => { let live = true; load().then((x) => live && setD(x)); return () => { live = false; }; }, []);
   const recheck = async () => { setBusy(true); setD(await load(true)); setBusy(false); };
   if (d === undefined) return <div className="skeleton h-40 w-full rounded-2xl" />;
@@ -327,8 +334,29 @@ function ClaudeCard() {
                 </Field>
               )}
               <Field label="Model" hint={`Default ${c.defaultModel}`}>
-                <Select value={f.model} onChange={(v) => setF({ ...f, model: v })} options={MODELS} />
+                <Select value={f.model} onChange={(v) => setF({ ...f, model: v })} options={[...MODELS,
+                  ...(models?.tried ?? []).filter((m) => m.ok && !MODELS.some((x) => x.value === m.model)).map((m) => ({ value: m.model, label: m.model, hint: "allowed for this key" }))]} />
               </Field>
+              {c.gatewayUrl && (
+                <div className="text-sm">
+                  <button type="button" className={btn} disabled={models?.busy} onClick={findModels}>{models?.busy ? "Trying each model…" : "Find models this key can use"}</button>
+                  <span className="ml-2 text-xs text-muted">sends one tiny request (1 token) per model</span>
+                  {models?.error && <p className="mt-2 text-xs text-bad">{models.error}</p>}
+                  {models?.tried && (
+                    <ul className="mt-2 divide-y divide-line overflow-hidden rounded-lg border border-line bg-panel">
+                      {models.tried.map((m) => (
+                        <li key={m.model} className="flex items-center gap-3 px-3 py-1.5 text-xs">
+                          <span className={`grid h-4 w-4 shrink-0 place-items-center rounded-full text-[10px] text-white ${m.ok ? "bg-ok" : "bg-bad"}`}>{m.ok ? "✓" : "✕"}</span>
+                          <code className="font-mono">{m.model}</code>
+                          <span className="min-w-0 flex-1 truncate text-muted" title={m.error}>{m.ok ? "allowed" : m.error || `HTTP ${m.status}`}</span>
+                          {m.ok && <button type="button" className="font-medium text-accent-strong hover:underline" onClick={() => setF({ ...f, model: m.model })}>{f.model === m.model ? "selected" : "Use this"}</button>}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {models?.tried && !models.tried.some((m) => m.ok) && <p className="mt-2 text-xs text-warn">None of these are allowed for the key — ask the Bifrost owners which Claude models it may use.</p>}
+                </div>
+              )}
               <Field label="Key owner" hint={c.ownerDetected ? `Anthropic says: ${c.owner}` : "Who the key belongs to — gateways and API keys don't say"}>
                 <input className={input} value={f.owner} placeholder="e.g. Bhavyank Sarolia (support team)" onChange={(e) => setF({ ...f, owner: e.target.value })} />
               </Field>
