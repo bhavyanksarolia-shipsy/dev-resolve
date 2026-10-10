@@ -269,7 +269,7 @@ function ClaudeCard() {
     setEdit(false); setF(blank); setD(await load(true));
     toast({ ok: true, text: "Saved — used from the next investigation" });
   };
-  const fallbackOn = c.fallback?.mainDown || c.status === "fallback";
+  const fallbackOn = !!c.fallback?.mainDown || c.status === "fallback" || /^Working — on /.test(c.message);
   const canSave = !busy && (f.mode === "gateway" ? !!f.gateway.trim() && (!!f.secret || !!c.gatewayUrl) : f.mode === "keep" || f.mode === "server" || !!f.secret);
   const stat = (v: React.ReactNode, label: string) => <div><div className="text-xl font-semibold tabular-nums">{v}</div><div className="text-xs text-muted">{label}</div></div>;
 
@@ -285,10 +285,10 @@ function ClaudeCard() {
       </div>
 
       {/* One place for "what's wrong and what to do". */}
-      {c.status !== "ok" && (
+      {(c.status !== "ok" || fallbackOn) && (
         <div className={`mt-4 rounded-xl px-4 py-3 text-sm ring-1 ${fallbackOn ? "bg-amber-50 ring-amber-200" : "bg-red-50 ring-red-200"}`}>
           <div className={`font-semibold ${fallbackOn ? "text-warn" : "text-bad"}`}>
-            {fallbackOn ? `${mainName} isn't reachable — investigations are running on the fallback, nothing is blocked` : `${mainName} isn't working`}
+            {fallbackOn ? `Investigations are working — on the fallback while ${mainName} isn't reachable (optional)` : `${mainName} isn't working`}
           </div>
           {fallbackOn && c.fallback?.now && <div className="mt-1 text-muted">Using now: {c.fallback.now}. It switches back to {mainName} by itself once it works again.</div>}
           {c.fix && <div className="mt-1.5 text-muted"><b className="font-medium text-fg">To fix:</b> {c.fix.replace(/\s*Nothing is blocked meanwhile;.*$/, "")}</div>}

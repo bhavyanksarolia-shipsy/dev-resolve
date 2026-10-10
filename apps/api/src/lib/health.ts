@@ -8,11 +8,12 @@ import { getPool } from "./db";
 import { settings } from "./settings";
 import { ConnectorOffline, connectorMode, gatewayCarrier, gatewayViaConnector, isVpnOnlyHost, metabaseSession, needsRelay, relay, userToolEnv } from "./connector";
 import { whoAmI, DevrevError } from "./devrev";
-import { fallbackSummary, mainState, mainUpstream, markDown, markUp, pingMessages } from "./claudeRoute";
+import { fallbackPersonalOn, fallbackSummary, mainState, mainUpstream, markDown, markUp, personalToken, pingMessages } from "./claudeRoute";
 import { appLogProjects, ensureAppLogAuth } from "./applog";
 
 /** fallback: the main sign-in isn't working but a fallback is carrying the work (Claude), so nothing is blocked. */
-export type HealthStatus = "ok" | "vpn_required" | "auth_failed" | "not_configured" | "error" | "fallback";
+/** optional: something nice-to-have isn't working but nothing depends on it right now (yellow, not an error). */
+export type HealthStatus = "ok" | "vpn_required" | "auth_failed" | "not_configured" | "error" | "fallback" | "optional";
 
 export interface ConnectionHealth {
   id: string;            // e.g. "opensearch:wms", "metabase:qc", "devrev"
@@ -24,6 +25,8 @@ export interface ConnectionHealth {
   fix?: string;
   used_by: string[];     // account names depending on this connection
   restored_at?: string;  // Claude: the main sign-in started working again at (shown for 15 min)
+  on_fallback?: boolean; // Claude: working, but on a fallback sign-in (the label then says which, per viewer)
+  also?: ConnectionHealth; // an extra row shown with this one (Claude: the optional gateway that isn't reachable)
 }
 
 const vpnFix = () => connectorMode()
@@ -218,10 +221,17 @@ export async function checkClaude(): Promise<ConnectionHealth> {
   if (r.status === "ok") markUp("main");
   else if (r.status === "error" || r.status === "auth_failed") markDown(main, r.message);
   const fb = fallbackSummary();
+  // Investigations work as long as some sign-in does: Claude is green ("Claude (Personal)" / "(backup login)"), and the
+  // main sign-in that isn't reachable shows as its own optional (yellow) row.
   if (r.status !== "ok" && fb) {
-    return { ...r, status: "fallback", message: `${main.label} isn't working (${r.message}) — investigations use ${fb} instead, without delay`,
-      fix: `${r.fix ? `${r.fix}. ` : ""}Nothing is blocked meanwhile; it switches back by itself once ${main.label} works again.` };
+    return { ...r, label: "Claude (fallback)", status: "ok", on_fallback: true,
+      message: `Working — on ${fb} while ${main.label} isn't reachable`,
+      fix: undefined,
+      also: { id: "claude-main", kind: "claude", label: `${main.label}${main.viaExtension ? " (company VPN)" : ""}`, host: r.host, status: "optional", used_by: ["all accounts"],
+        message: `Not reachable — investigations use the fallback meanwhile (${r.message})`,
+        fix: `${r.fix ? `${r.fix}. ` : ""}Optional: nothing is blocked, and it switches back by itself once ${main.label} works again.` } };
   }
+  if (r.status === "ok") r = { ...r, label: `Claude (${main.id === "main" && main.base !== "https://api.anthropic.com" ? main.label : main.auth === "oauth" ? "team login" : "API key"})` };
   const st = mainState();
   if (r.status === "ok" && !st.down && st.restoredAt) {
     const at = new Date(st.restoredAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" });
@@ -328,7 +338,12 @@ export async function checkAll(filter?: { accountSlug?: string; force?: boolean;
     checks.push(Promise.resolve({ id: "config", kind: "config", label: "Private config", status: "not_configured", used_by: ["all accounts"],
       message: "projects.json hasn't been uploaded to this server", fix: "An admin restores it in Admin → Files & extension → Private files" } as ConnectionHealth));
   }
-  let results = await Promise.all(checks);
+  let results = (await Promise.all(checks)).flatMap((r) => {
+    // Claude on a fallback: say which one this viewer's investigations use.
+    const c = r.kind === "claude" && r.on_fallback
+      ? { ...r, label: viewer && fallbackPersonalOn() && personalToken(viewer) ? "Claude (Personal)" : "Claude (backup login)" } : r;
+    return c.also ? [{ ...c, also: undefined }, c.also] : [c];
+  });
   if (filter?.accountSlug) {
     results = results.filter((r) => r.used_by.includes("all accounts") || (acc && r.used_by.includes(acc.name)));
     // Accounts without their own logs / DB still show those connections — as "not configured" (yellow).

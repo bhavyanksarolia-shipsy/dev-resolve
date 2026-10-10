@@ -49,7 +49,9 @@ export async function GET(req: Request) {
   ]);
   return Response.json({
     claude: {
-      ...claude,
+      ...claude, also: undefined,
+      // On a fallback: what to do about the main sign-in (from its optional row).
+      ...(claude.on_fallback && claude.also && { fix: claude.also.fix, reason: claude.also.message }),
       method: adminSetting("ANTHROPIC_API_KEY") && adminSetting("ANTHROPIC_BASE_URL") ? `API gateway ${new URL(adminSetting("ANTHROPIC_BASE_URL")!).host}${gatewayViaConnector() ? " through the Dev Resolve extension" : ""} (${source("ANTHROPIC_API_KEY")})`
         : adminSetting("ANTHROPIC_API_KEY") ? `API key (${source("ANTHROPIC_API_KEY")})` : adminSetting("CLAUDE_CODE_OAUTH_TOKEN") ? `Claude login token (${source("CLAUDE_CODE_OAUTH_TOKEN")})` : "Local Claude Code login",
       model: agentModel(), defaultModel: DEFAULT_MODEL, gatewayUrl: adminSetting("ANTHROPIC_BASE_URL") ?? null, gatewayViaConnector: gatewayViaConnector(),

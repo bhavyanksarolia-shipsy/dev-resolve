@@ -12,6 +12,7 @@ const TITLE: Record<string, string> = {
   not_configured: "Not configured",
   error: "Connection error",
   fallback: "Using the fallback",
+  optional: "Optional — not connected",
 };
 
 /** One row per failing connection, naming exactly which one failed and how to fix it. */
@@ -30,7 +31,7 @@ export function HealthBanner({ account, compact }: { account?: string; compact?:
     return () => { live = false; };
   }, [fetchChecks]);
   // While something is failing (e.g. VPN still connecting), re-check on our own instead of waiting for a click.
-  const failing = !!checks?.some((c) => c.status === "vpn_required" || c.status === "error" || c.status === "auth_failed" || c.status === "fallback");
+  const failing = !!checks?.some((c) => c.status === "vpn_required" || c.status === "error" || c.status === "auth_failed" || c.status === "fallback" || c.status === "optional");
   useEffect(() => {
     if (!failing) return;
     const t = setInterval(() => { fetchChecks().then(setChecks).catch(() => {}); }, 15000);
@@ -47,7 +48,8 @@ export function HealthBanner({ account, compact }: { account?: string; compact?:
 
   if (!checks) return <div className="mb-4 text-sm text-muted">Checking connections…</div>;
   if (paused) return <div className="mb-4 text-xs text-muted">Connection checks paused — this client is marked inactive.</div>;
-  const bad = checks.filter((c) => c.status !== "ok");
+  const bad = checks.filter((c) => c.status !== "ok" && c.status !== "optional");
+  const optional = checks.filter((c) => c.status === "optional");
   // Compact: one quiet line while everything works; click it for a tidy list (no hosts or session details).
   if (compact) return <CompactStatus checks={checks} loading={loading} onRecheck={load} auto={failing} />;
   return (
@@ -55,7 +57,7 @@ export function HealthBanner({ account, compact }: { account?: string; compact?:
       <div className="flex flex-wrap items-center gap-2 text-xs">
         {checks.map((c) => (
           <span key={c.id} title={`${c.host ?? ""} — ${c.message}`}
-            className={`rounded-full border px-2 py-0.5 ${c.status === "ok" ? "border-ok/40 text-ok" : c.status === "not_configured" || c.status === "fallback" ? "border-warn/50 bg-warn/5 text-warn" : "border-bad/50 text-bad"}`}>
+            className={`rounded-full border px-2 py-0.5 ${c.status === "ok" ? "border-ok/40 text-ok" : c.status === "not_configured" || c.status === "fallback" || c.status === "optional" ? "border-warn/50 bg-warn/5 text-warn" : "border-bad/50 text-bad"}`}>
             {c.status === "ok" ? "●" : c.status === "not_configured" ? "◐" : "○"} {c.label}{c.status === "not_configured" ? " · not configured" : ""}
           </span>
         ))}
@@ -63,9 +65,9 @@ export function HealthBanner({ account, compact }: { account?: string; compact?:
           {loading ? "checking…" : failing ? "re-check (auto every 15s)" : "re-check"}
         </button>
       </div>
-      {bad.filter((c) => c.status !== "not_configured").map((c) => (
-        <div key={c.id} className={`mt-2 rounded-md border px-3 py-2 text-sm ${c.status === "fallback" ? "border-warn/40 bg-warn/5" : "border-bad/40 bg-bad/5"}`}>
-          <b className={c.status === "fallback" ? "text-warn" : "text-bad"}>{TITLE[c.status] ?? c.status}: {c.label}</b>
+      {[...bad.filter((c) => c.status !== "not_configured"), ...optional].map((c) => (
+        <div key={c.id} className={`mt-2 rounded-md border px-3 py-2 text-sm ${c.status === "fallback" || c.status === "optional" ? "border-warn/40 bg-warn/5" : "border-bad/40 bg-bad/5"}`}>
+          <b className={c.status === "fallback" || c.status === "optional" ? "text-warn" : "text-bad"}>{TITLE[c.status] ?? c.status}: {c.label}</b>
           {c.host && <span className="text-muted"> · {c.host}</span>}
           <div className="text-muted">{c.message}{c.used_by.length ? ` · affects ${c.used_by.join(", ")}` : ""}</div>
           {c.fix && <div className="mt-1 font-mono text-xs">{c.fix}</div>}
@@ -77,6 +79,7 @@ export function HealthBanner({ account, compact }: { account?: string; compact?:
 
 const GROUP: Record<string, { title: string; tone: string }> = {
   fallback: { title: "Working on the fallback", tone: "text-warn" },
+  optional: { title: "Optional · not connected", tone: "text-warn" },
   vpn_required: { title: "Need the Reliance client VPN (AnyConnect)", tone: "text-warn" },
   auth_failed: { title: "Sign-in failed", tone: "text-bad" },
   error: { title: "Not reachable", tone: "text-bad" },
@@ -96,10 +99,12 @@ function CompactStatus({ checks, loading, onRecheck, auto }: { checks: Check[]; 
     return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
   }, [open]);
   const ok = checks.filter((c) => c.status === "ok");
-  const groups = (["fallback", "vpn_required", "auth_failed", "error", "not_configured"] as const)
+  const groups = (["vpn_required", "auth_failed", "error", "fallback", "optional", "not_configured"] as const)
     .map((st) => ({ st, items: checks.filter((c) => c.status === st) })).filter((g) => g.items.length);
-  const problems = groups.filter((g) => g.st !== "not_configured").reduce((n, g) => n + g.items.length, 0);
-  const summary = groups.filter((g) => g.st !== "not_configured").map((g) =>
+  // Optional ones (e.g. Bifrost while a fallback works) don't make the bar look broken — just a quiet yellow note.
+  const problems = groups.filter((g) => g.st !== "not_configured" && g.st !== "optional").reduce((n, g) => n + g.items.length, 0);
+  const optionalN = groups.find((g) => g.st === "optional")?.items.length ?? 0;
+  const summary = groups.filter((g) => g.st !== "not_configured" && g.st !== "optional").map((g) =>
     g.st === "fallback" ? `${g.items.map((c) => c.label.split(" (")[0]).join(", ")} on fallback` : g.st === "vpn_required" ? `${g.items.length} need the VPN` : g.st === "auth_failed" ? `${g.items.length} sign-in failed` : `${g.items.length} not reachable`).join(" · ");
   return (
     <div ref={box} className="relative mb-4 flex flex-wrap items-center gap-2 text-xs text-muted">
@@ -107,6 +112,7 @@ function CompactStatus({ checks, loading, onRecheck, auto }: { checks: Check[]; 
         className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 transition ${problems ? "bg-amber-50 text-warn ring-1 ring-amber-200 hover:ring-amber-300" : "hover:text-fg"}`}>
         <span className={`h-2 w-2 rounded-full ${problems ? "bg-warn" : "bg-ok"}`} aria-hidden />
         {problems ? <><span className="text-muted">{ok.length} OK ·</span><b className="font-semibold">{summary}</b></> : "All connections OK"}
+        {!problems && optionalN > 0 && <span className="text-warn">· {optionalN} optional off</span>}
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden><path d={open ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} /></svg>
       </button>
       <button onClick={onRecheck} disabled={loading} className="text-accent-strong hover:underline disabled:opacity-50">{loading ? "checking…" : auto ? "re-check (auto)" : "re-check"}</button>
@@ -120,7 +126,7 @@ function CompactStatus({ checks, loading, onRecheck, auto }: { checks: Check[]; 
                 <ul className="space-y-1">
                   {g.items.map((c) => (
                     <li key={c.id} className="flex items-center gap-2" title={c.message}>
-                      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${g.st === "not_configured" ? "bg-line" : g.st === "vpn_required" || g.st === "fallback" ? "bg-warn" : "bg-bad"}`} aria-hidden />
+                      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${g.st === "not_configured" ? "bg-line" : g.st === "vpn_required" || g.st === "fallback" || g.st === "optional" ? "bg-warn" : "bg-bad"}`} aria-hidden />
                       <span className="min-w-0 flex-1 truncate">{c.label}</span>
                       {c.used_by.length > 0 && <span className="shrink-0 truncate text-xs text-muted">{c.used_by.slice(0, 2).join(", ")}{c.used_by.length > 2 ? ` +${c.used_by.length - 2}` : ""}</span>}
                     </li>

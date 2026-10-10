@@ -19,6 +19,7 @@ const CONNECTOR = { label: "Open the Connector page", href: "/connector" };
 export function ClaudeStatusWatch() {
   useEffect(() => {
     let live = true, busy = false, nobodyStreak = 0;
+    let seen: string | null = null, seenTimes = 0; // a switch is announced only once it holds on 2 checks in a row
     const tick = async () => {
       if (busy) return; // the timer, page load and tab focus can fire together — one check at a time
       busy = true;
@@ -50,7 +51,13 @@ export function ClaudeStatusWatch() {
       }
 
       const was = get(USING);
-      if (was === s.using) return;
+      if (was === s.using) { seen = null; return; }
+      if (was !== null) {
+        seenTimes = seen === s.using ? seenTimes + 1 : 1;
+        seen = s.using;
+        if (seenTimes < 2) return; // could be a blip — look again on the next check
+      }
+      seen = null;
       set(USING, s.using);
       if (was === null) return; // the first reading only records where we are
       if (s.using === "main") notify({ tone: "ok", title: `Claude connected through ${main}` , message: "Investigations are back on the main sign-in." });

@@ -77,7 +77,7 @@ export async function connectorUser(req: Request): Promise<string | null> {
 export interface RelayRequest { method: string; url: string; headers: Record<string, string>; body_b64?: string; timeout_ms: number; insecure?: boolean }
 export interface RelayResponse { status: number; headers: Record<string, string>; body_b64: string }
 interface Job { id: string; user: string; req: RelayRequest; resolve: (r: RelayResponse) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }
-interface Conn { lastPoll: number; vpn: Record<string, boolean>; version?: string; waiter?: (jobs: Job[]) => void; signin?: string[] }
+interface Conn { lastPoll: number; vpn: Record<string, boolean>; version?: string; waiter?: (jobs: Job[]) => void; signin?: string[]; gwOkAt?: number }
 
 const g = globalThis as unknown as { drRelay?: { conns: Map<string, Conn>; queue: Map<string, Job[]>; jobs: Map<string, Job>; secret: string } };
 const R = (g.drRelay ??= { conns: new Map(), queue: new Map(), jobs: new Map(), secret: process.env.DEV_RESOLVE_RELAY_SECRET || randomBytes(24).toString("hex") });
@@ -89,7 +89,7 @@ export class ConnectorOffline extends Error {}
 
 export function connectorStatus(user: string) {
   const c = R.conns.get(user);
-  const online = !!c && Date.now() - c.lastPoll < 40_000;
+  const online = !!c && Date.now() - c.lastPoll < 60_000; // a check-in every ~25 s; one late one is fine
   // vpnUp is the client VPN (AnyConnect) only; the company VPN (Pritunl, for the Claude gateway) is reported on its own.
   const gw = gatewayViaConnector() ? gatewayHost() : null;
   const vpnHosts = c ? Object.entries(c.vpn).filter(([h]) => h !== gw) : [];
@@ -110,9 +110,11 @@ const carriesGateway = (version?: string) => {
 export function gatewayCarrier(prefer?: string | null, opts: { vpnChecked?: boolean } = {}): string | null {
   // Skip laptops whose extension says the company VPN (Pritunl) is down. vpnChecked: only laptops that have confirmed it
   // is up — used for live requests, so a laptop off the VPN never makes the agent wait for a request that can't succeed.
+  // "On Pritunl" = reached the gateway in the last 2 min: one slow or missed 30-s check doesn't count as losing it.
   const able = (u: string) => {
-    const vpn = R.conns.get(u)?.vpn[gatewayHost() ?? ""];
-    return connectorStatus(u).online && carriesGateway(R.conns.get(u)?.version) && (opts.vpnChecked ? vpn === true : vpn !== false);
+    const c = R.conns.get(u);
+    const vpnOk = !!c?.gwOkAt && Date.now() - c.gwOkAt < 120_000;
+    return connectorStatus(u).online && carriesGateway(c?.version) && (opts.vpnChecked ? vpnOk : c?.vpn[gatewayHost() ?? ""] !== false || vpnOk);
   };
   if (prefer && able(prefer)) return prefer;
   const others = [...R.conns.entries()].filter(([u]) => able(u)).sort(([, x], [, y]) => y.lastPoll - x.lastPoll);
@@ -159,8 +161,9 @@ export function takeSignin(user: string) {
 
 /** Connector long-poll: returns queued jobs at once, or waits up to ~25 s for one. */
 export function poll(user: string, vpn: Record<string, boolean>, version?: string): Promise<Job[]> {
-  const c = R.conns.get(user) ?? { lastPoll: 0, vpn: {} };
+  const c: Conn = R.conns.get(user) ?? { lastPoll: 0, vpn: {} };
   Object.assign(c, { lastPoll: Date.now(), vpn, version });
+  if (vpn[gatewayHost() ?? ""] === true) c.gwOkAt = Date.now(); // last time this laptop reached the Claude gateway
   R.conns.set(user, c);
   const queued = R.queue.get(user) ?? [];
   if (queued.length) { R.queue.delete(user); return Promise.resolve(queued); }

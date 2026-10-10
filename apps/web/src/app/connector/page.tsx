@@ -123,7 +123,7 @@ export default function ConnectorPage() {
         <Tile tone={running ? "ok" : "bad"} title="Chrome extension" value={running ? "Running" : "Not running"}
           detail={running ? `${viaExt ? `v${s.version!.slice(4)}` : `terminal v${s.version ?? "?"}`} · linked to ${s.user}` : s.lastSeen ? `last seen ${new Date(s.lastSeen).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}` : "not set up yet"} />
         {vpns.map((g) => (
-          <Tile key={g.id} tone={!running ? "wait" : g.up ? "ok" : "bad"} title={g.name} value={!running ? "Unknown" : g.up ? "Connected" : "Not connected"}
+          <Tile key={g.id} tone={!running ? "wait" : g.up ? "ok" : g.id === "company" ? "wait" : "bad"} title={g.id === "company" ? `${g.name} · optional` : g.name} value={!running ? "Unknown" : g.up ? "Connected" : "Not connected"}
             detail={`${g.app ? `${g.app} · ` : ""}${!running ? "shows once the extension runs" : g.up ? `for ${g.purpose}` : `connect it for ${g.purpose}`}`} />
         ))}
         <Tile tone={signedIn === signins.length ? "ok" : "bad"} title="Google sign-ins" value={signedIn === signins.length ? "All connected" : `${signins.length - signedIn} not connected`}
