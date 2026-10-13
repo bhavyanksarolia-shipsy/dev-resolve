@@ -6,7 +6,7 @@ const VERSION = chrome.runtime.getManifest().version;
 let cfg = null;               // { server, app }
 let loopRunning = false;
 let vpn = {};
-let hello = null, helloAt = 0;
+let hello = null, helloAt = 0, vpnCheckedAt = 0;
 // Contact state survives the worker being restarted by Chrome (chrome.storage.session lasts for the browser session).
 let lastOk = 0, lastError = null, polling = false;
 const startedAt = Date.now();
@@ -179,6 +179,10 @@ async function loop() {
           await checkVpn(vpnCheckHosts(hello));
           await doSignins(hello); // silently picks up existing Metabase sign-ins
         }
+        // Piggyback on the poll loop's own activity rather than relying solely on the "vpn" alarm: if Chrome suspended
+        // this service worker and only the 1-min keepalive alarm revived it, the alarm itself may not fire again for a
+        // while — but we're about to poll anyway, so recheck here too whenever the last check is getting stale.
+        if (hello && Date.now() - vpnCheckedAt > 20_000) { vpnCheckedAt = Date.now(); await checkVpn(vpnCheckHosts(hello)); }
         polling = true;
         const { jobs, signin } = await api("/api/connector/poll", { headers: { "x-connector-vpn": JSON.stringify(vpn) }, timeout: 35000 }).finally(() => { polling = false; });
         backoff = 2000; markOk();
@@ -203,7 +207,7 @@ chrome.alarms.create("keepalive", { periodInMinutes: 1 });
 chrome.alarms.create("vpn", { periodInMinutes: 0.5 });
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === "keepalive") loop();
-  if (a.name === "vpn" && hello) checkVpn(vpnCheckHosts(hello));
+  if (a.name === "vpn" && hello) { vpnCheckedAt = Date.now(); checkVpn(vpnCheckHosts(hello)); }
 });
 chrome.runtime.onStartup.addListener(loop);
 chrome.runtime.onInstalled.addListener(async () => {
