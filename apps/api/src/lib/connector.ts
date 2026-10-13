@@ -110,10 +110,12 @@ const carriesGateway = (version?: string) => {
 export function gatewayCarrier(prefer?: string | null, opts: { vpnChecked?: boolean } = {}): string | null {
   // Skip laptops whose extension says the company VPN (Pritunl) is down. vpnChecked: only laptops that have confirmed it
   // is up — used for live requests, so a laptop off the VPN never makes the agent wait for a request that can't succeed.
-  // "On Pritunl" = reached the gateway in the last 2 min: one slow or missed 30-s check doesn't count as losing it.
+  // "On Pritunl" = reached the gateway in the last 3 min: the extension's own check runs every ~30s, but its MV3 service
+  // worker can be suspended by Chrome and only revived by the 1-min keepalive alarm — 120s cut that recovery too close
+  // and flipped a laptop that was never actually off the VPN to "disconnected". 3 min comfortably covers one restart.
   const able = (u: string) => {
     const c = R.conns.get(u);
-    const vpnOk = !!c?.gwOkAt && Date.now() - c.gwOkAt < 120_000;
+    const vpnOk = !!c?.gwOkAt && Date.now() - c.gwOkAt < 180_000;
     return connectorStatus(u).online && carriesGateway(c?.version) && (opts.vpnChecked ? vpnOk : c?.vpn[gatewayHost() ?? ""] !== false || vpnOk);
   };
   if (prefer && able(prefer)) return prefer;
