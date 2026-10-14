@@ -56,15 +56,26 @@ export function listLocal(root: string): string[] {
 
 /** DB → disk. Returns how many files were written. */
 export async function restoreAll(q: Query, root: string) {
-  const { rows } = await q(`SELECT path, content FROM private_files`);
-  for (const r of rows) {
-    const rel = String(r.path);
-    if (!isPrivate(rel) || rel.split("/").includes("..")) continue;
-    const abs = path.join(root, rel);
-    mkdirSync(path.dirname(abs), { recursive: true, mode: 0o700 });
-    writeFileSync(abs, r.content as Buffer, { mode: MODE(rel) });
+  // One file's content at a time (not `SELECT * FROM private_files`): that query held every file's full bytes in
+  // memory at once on every boot, a spike sized by total stored bytes rather than file count — a real contributor to
+  // the container's memory ceiling, worst right after a restart (exactly when it can least afford it).
+  const CHUNK = 20;
+  let after = "", total = 0;
+  for (;;) {
+    const { rows } = await q(`SELECT path, content FROM private_files WHERE path > $1 ORDER BY path LIMIT $2`, [after, CHUNK]);
+    if (!rows.length) break;
+    for (const r of rows) {
+      const rel = String(r.path);
+      if (isPrivate(rel) && !rel.split("/").includes("..")) {
+        const abs = path.join(root, rel);
+        mkdirSync(path.dirname(abs), { recursive: true, mode: 0o700 });
+        writeFileSync(abs, r.content as Buffer, { mode: MODE(rel) });
+      }
+    }
+    total += rows.length;
+    after = String(rows[rows.length - 1].path);
   }
-  return rows.length;
+  return total;
 }
 
 /** Disk → DB for everything private on disk (first start with an old volume / secret files, or a push from a laptop). */
