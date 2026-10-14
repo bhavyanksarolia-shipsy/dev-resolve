@@ -43,4 +43,11 @@ npm run --silent private -- restore
 # Code from GitHub is synced by the app itself (src/lib/codeSync.ts) — settings can come from the variables or Admin.
 
 echo "[start] Dev Resolve on :${PORT:-3000}"
+# Cap V8's own heap well under the container's memory limit: left unbounded, Node sizes its heap off the host's
+# total RAM (not the cgroup limit), grows until the kernel SIGKILLs the whole container with no diagnostic at all —
+# just "Killed" and nothing else. With a cap, a real leak crashes with an actual heap-overflow error we can read,
+# and normal GC kicks in earlier instead of riding all the way up to the ceiling. Other processes in this container
+# (the Python MCP log server, the spawned Claude CLI) have their own memory and aren't bounded by this flag — it
+# only governs this one long-running Next.js process, the one that's actually been getting OOM-killed.
+export NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=640"
 exec npx next start -H "${HOSTNAME:-0.0.0.0}" -p "${PORT:-3000}"
