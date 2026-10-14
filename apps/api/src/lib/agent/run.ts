@@ -607,10 +607,12 @@ async function runSessionNow(opts: SessionOpts) {
     prompt: prompt(),
     options: {
       model: agentModel(),
-      // The installed SDK doesn't yet recognize claude-opus-5-5 as adaptive-thinking-capable and falls back to the
-      // legacy `{type:"enabled", budgetTokens}` shape, which Bifrost now rejects for this model on every call —
-      // forcing it here avoids that failure storm regardless of the SDK's own (stale) per-model defaults.
+      // Bifrost's own rejection message names BOTH of these as required together for claude-opus-5-5
+      // ("Use thinking.type.adaptive and output_config.effort to control thinking behavior") — every earlier attempt
+      // here only set thinking.type.adaptive and omitted effort, which is apparently why it kept getting rejected
+      // even on brand-new sessions with no prior history to blame.
       thinking: { type: "adaptive" },
+      effort: "high",
       cwd: ROOT,
       ...(opts.resume && { resume: opts.resume }),
       systemPrompt: systemPrompt(account, candidates),
