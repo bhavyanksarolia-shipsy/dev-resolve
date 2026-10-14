@@ -271,8 +271,10 @@ async function checkMainClaude(): Promise<ConnectionHealth> {
     let res = await call(`${api}/v1/models?limit=1`, { headers, ms: 15_000 });
     // Some gateways don't list models: try the smallest possible request instead.
     if (gateway && (res.status === 404 || res.status === 405)) {
+      // thinking: disabled — explicit, not omitted: Bifrost rejects claude-opus-5-5 requests that don't say one way or
+      // the other, and a 1-token ping leaves no room for the model to actually think anyway.
       res = await call(`${api}/v1/messages`, { method: "POST", ms: 30_000, headers: { ...headers, "content-type": "application/json" },
-        body: JSON.stringify({ model: adminSetting("DEV_RESOLVE_MODEL") || "claude-opus-5-5", max_tokens: 1, messages: [{ role: "user", content: "ping" }] }) });
+        body: JSON.stringify({ model: adminSetting("DEV_RESOLVE_MODEL") || "claude-opus-5-5", max_tokens: 1, thinking: { type: "disabled" }, messages: [{ role: "user", content: "ping" }] }) });
     }
     if (res.status === 401 || res.status === 403) return { ...base, ...(gateway && { host: new URL(gateway).host }), status: "auth_failed", message: `HTTP ${res.status}${where}`, fix: `The ${gateway ? "gateway" : "API"} refused the key — paste a valid one in Admin → Connections → Claude` };
     if (!res.ok) return { ...base, ...(gateway && { host: new URL(gateway).host }), status: "error", message: `HTTP ${res.status}${where}${gateway ? " — check the gateway address (it usually ends in /anthropic)" : ""}` };
