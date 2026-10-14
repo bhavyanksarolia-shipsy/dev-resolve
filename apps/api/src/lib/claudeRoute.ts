@@ -349,7 +349,7 @@ export async function forward(req: Request, chain: Upstream[], opts: { user?: st
       if (u.id === "main" && body) {
         try {
           const j = JSON.parse(Buffer.from(body).toString("utf8"));
-          console.log(`[claude-debug] outgoing to ${u.label}: model=${j.model} thinking=${JSON.stringify(j.thinking)} effort=${JSON.stringify(j.effort)} runId=${opts.runId}`);
+          console.log(`[claude-debug] outgoing to ${u.label}: model=${j.model} thinking=${JSON.stringify(j.thinking)} effort(top-level)=${JSON.stringify(j.effort)} output_config=${JSON.stringify(j.output_config)} runId=${opts.runId} fullKeys=${Object.keys(j).join(",")}`);
         } catch { /* not JSON, or not a messages body */ }
       }
       const r = await send(u, opts.user, { method: req.method, path: opts.path, headers: incoming, body, headerMs: streaming ? 45_000 : 600_000, signal: req.signal });
