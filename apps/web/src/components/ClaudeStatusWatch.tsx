@@ -4,10 +4,9 @@ import { notify } from "@/components/Dialog";
 
 interface Limit { who: "main" | "personal" | "server"; label: string; at: string; until: string | null }
 interface St { main: string | null; mainDown: boolean; using: "main" | "personal" | "server" | "none"; usingLabel: string | null; restoredAt: string | null; limit: Limit | null; pritunlNobody?: boolean }
-const USING = "dr.claude.using", LIMIT = "dr.claude.limit", PRITUNL = "dr.claude.pritunl";
+const USING = "dr.claude.using", PRITUNL = "dr.claude.pritunl";
 const get = (k: string) => { try { return sessionStorage.getItem(k); } catch { return null; } };
 const set = (k: string, v: string) => { try { sessionStorage.setItem(k, v); } catch {} };
-const time = (iso: string) => new Date(iso).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
 const CONNECTOR = { label: "Open the Connector page", href: "/connector" };
 
 /**
@@ -41,15 +40,9 @@ export function ClaudeStatusWatch() {
         }
       } else if (get(PRITUNL)) set(PRITUNL, "0");
 
-      if (s.limit && get(LIMIT) !== s.limit.at) {
-        const first = get(LIMIT) === null && get(USING) === null; // just opened the app: only if it's still in effect
-        set(LIMIT, s.limit.at);
-        if (!first || !s.limit.until || new Date(s.limit.until).getTime() > Date.now()) {
-          const then = s.using === "none" ? "Investigations can't run until then." : s.using !== s.limit.who ? `Switched to ${s.using === "main" ? main : s.using === "personal" ? "your personal account" : "the team's backup login"}.` : "";
-          notify({ tone: "error", title: "Claude usage limit reached", message: `On ${s.limit.label}${s.limit.until ? ` — resets at ${time(s.limit.until)}` : ""}. ${then}`.trim() });
-        }
-      }
-
+      // Usage-limit pop-ups were removed: a busy upstream can hit its limit repeatedly in quick succession (every
+      // retried request gets a fresh timestamp), which turned into a popup on nearly every check. The account switch
+      // below already says when Claude moves to a fallback — that's the signal worth interrupting someone for.
       const was = get(USING);
       if (was === s.using) { seen = null; return; }
       if (was !== null) {
