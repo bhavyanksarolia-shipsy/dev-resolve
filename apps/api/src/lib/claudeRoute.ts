@@ -176,7 +176,12 @@ export function markUp(id: string) {
  * enough: a gateway can allow that and still refuse the model (HTTP 403), which made it flip between "down" and "back".
  */
 export async function pingMessages(u: Upstream, user?: string | null, model?: string): Promise<{ ok: boolean; status: number; error: string }> {
-  const body = new TextEncoder().encode(JSON.stringify({ model: model || adminSetting("DEV_RESOLVE_MODEL") || "claude-opus-5-5", max_tokens: 1, messages: [{ role: "user", content: "ping" }] }));
+  // Explicit thinking config, not just the model's own default: Bifrost rejects claude-opus-5-5 requests that omit
+  // it outright, so a bare ping without this looked exactly like a real outage to the breaker that's supposed to be
+  // monitoring for one — self-inflicted flapping independent of whether real investigation traffic was healthy.
+  // Disabled, not adaptive: a 1-token ping doesn't leave room for the model to think, and active thinking needs that
+  // room — "disabled" satisfies the same "don't omit the field" requirement without fighting max_tokens.
+  const body = new TextEncoder().encode(JSON.stringify({ model: model || adminSetting("DEV_RESOLVE_MODEL") || "claude-opus-5-5", max_tokens: 1, thinking: { type: "disabled" }, messages: [{ role: "user", content: "ping" }] }));
   const r = await send(u, user, { method: "POST", path: "/v1/messages", headers: { "anthropic-version": "2023-06-01", "content-type": "application/json" }, body, headerMs: 30_000 });
   const text = r.body instanceof ReadableStream ? await new Response(r.body).text().catch(() => "") : r.body ? Buffer.from(r.body).toString("utf8") : "";
   let error = "";
