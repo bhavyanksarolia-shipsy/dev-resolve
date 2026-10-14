@@ -146,13 +146,16 @@ export function usable(u: Upstream, user?: string | null) {
   return true;
 }
 
-export function markDown(u: Upstream, reason: string, opts: { forMs?: number; user?: string | null } = {}) {
+export function markDown(u: Upstream, reason: string, opts: { forMs?: number; user?: string | null; runId?: number | null } = {}) {
   const prev = breaker.get(u.id);
   if (prev && !(prev.until && Date.now() > prev.until)) { prev.reason = reason; return; }
   if (prev?.probe) clearInterval(prev.probe);
   const d: Down = { since: Date.now(), reason, upstream: u, user: opts.user, ...(opts.forMs && { until: Date.now() + opts.forMs }) };
   breaker.set(u.id, d);
-  console.warn(`[claude] ${u.label} not working (${reason}) — using the fallback until it is`);
+  // Tagged with who/what triggered it — this line used to be the only evidence of a breaker flip, with no way to
+  // trace it back to a specific investigation without guessing from timing against what was visibly running.
+  const tag = [opts.runId && `#${opts.runId}`, opts.user].filter(Boolean).join(" ");
+  console.warn(`[claude] ${u.label} not working (${reason})${tag ? ` [${tag}]` : ""} — using the fallback until it is`);
   if (!opts.forMs) {
     // Unreachable: look again every 20 s. Refused (400/401/403 — key or model not allowed): every 5 min, since a
     // small real request is needed to tell, and it won't fix itself in seconds.
@@ -361,7 +364,7 @@ export async function forward(req: Request, chain: Upstream[], opts: { user?: st
         const said = (() => { try { const j = JSON.parse(errText); return String(j?.error?.message || j?.message || ""); } catch { return errText; } })().replace(/\s+/g, " ").slice(0, 160);
         const reason = isLimit ? "usage limit reached" : gatewayRefused ? `refused the request (${said})` : `${reasonFor(r.status)}${said && r.status < 500 ? `: ${said}` : ""}`;
         const until = limits.get(u.id)?.until;
-        markDown(u, reason, { user: opts.user, ...(isLimit && { forMs: Math.min(Math.max((until ?? 0) - Date.now(), 60_000), 5 * 3600_000) || 10 * 60_000 }) });
+        markDown(u, reason, { user: opts.user, runId: opts.runId, ...(isLimit && { forMs: Math.min(Math.max((until ?? 0) - Date.now(), 60_000), 5 * 3600_000) || 10 * 60_000 }) });
         failed.push({ u, reason });
         continue;
       }
@@ -379,7 +382,7 @@ export async function forward(req: Request, chain: Upstream[], opts: { user?: st
               const { done, value } = await reader.read();
               if (done) { if (r.status < 400) noteRoute(opts.runId ?? null, chain, u, failed); c.close(); } else c.enqueue(value);
             } catch (e) {
-              if (!req.signal.aborted) markDown(u, `connection dropped mid-answer (${(e as Error).message})`, { user: opts.user });
+              if (!req.signal.aborted) markDown(u, `connection dropped mid-answer (${(e as Error).message})`, { user: opts.user, runId: opts.runId });
               c.error(e);
             }
           },
@@ -390,7 +393,7 @@ export async function forward(req: Request, chain: Upstream[], opts: { user?: st
     } catch (e) {
       if (req.signal.aborted) return new Response(null, { status: 499 });
       const reason = /abort/i.test((e as Error).name + (e as Error).message) ? "no answer in time" : (e as Error).message.replace(/^CONNECTOR_OFFLINE: /, "");
-      markDown(u, reason, { user: opts.user });
+      markDown(u, reason, { user: opts.user, runId: opts.runId });
       failed.push({ u, reason });
       last = Response.json({ type: "error", error: { type: "api_error", message: `${u.label}: ${reason}` } }, { status: 503 });
     }
