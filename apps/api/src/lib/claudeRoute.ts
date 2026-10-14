@@ -344,6 +344,14 @@ export async function forward(req: Request, chain: Upstream[], opts: { user?: st
   const order = ready.length ? ready : chain.filter((u) => !u.viaExtension || gatewayCarrier(opts.user, { vpnChecked: true }));
   for (const u of order) {
     try {
+      // Temporary diagnostic: log the real outgoing thinking/effort/model fields for the main upstream, instead of
+      // inferring what was sent from the error response — three fixes aimed at this blind have each failed to stick.
+      if (u.id === "main" && body) {
+        try {
+          const j = JSON.parse(Buffer.from(body).toString("utf8"));
+          console.log(`[claude-debug] outgoing to ${u.label}: model=${j.model} thinking=${JSON.stringify(j.thinking)} effort=${JSON.stringify(j.effort)} runId=${opts.runId}`);
+        } catch { /* not JSON, or not a messages body */ }
+      }
       const r = await send(u, opts.user, { method: req.method, path: opts.path, headers: incoming, body, headerMs: streaming ? 45_000 : 600_000, signal: req.signal });
       // Errors are small: read them, to tell a usage limit (429, or a gateway's "budget exceeded") from other failures.
       let errText = "";
