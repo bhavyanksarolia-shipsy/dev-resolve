@@ -48,7 +48,8 @@ export function ChatPanel({ invId, steps, busy, rca, rcaVersion, confidence, rca
 
   const firstUser = steps.findIndex((s) => s.kind === "user_message");
   const thread = firstUser < 0 ? [] : steps.slice(firstUser).filter((s) =>
-    s.kind === "user_message" || s.kind === "text" || s.kind === "tool_call" || (s.kind === "system" && s.output?.startsWith("Chat failed")));
+    s.kind === "user_message" || s.kind === "text" || s.kind === "tool_call"
+    || (s.kind === "system" && (s.output?.startsWith("Chat failed") || s.input?.claude_route)));
   // Replies that arrive while this panel is open type themselves out; older ones show straight away.
   const [bornAfter] = useState(() => Math.max(-1, ...steps.map((s) => s.seq)));
   const scrollDown = useCallback(() => { end.current?.scrollIntoView({ block: "end" }); }, []);
@@ -62,9 +63,11 @@ export function ChatPanel({ invId, steps, busy, rca, rcaVersion, confidence, rca
     const working = busy && i === turns.length - 1;
     if (working) return t;
     const [user, ...rest] = t;
-    const reply = [...rest].reverse().find((x) => x.kind === "text" || x.kind === "system");
+    // A route-switch notice is never "the reply" itself — it's a side note about which account answered — so it's
+    // excluded from the reply search but always kept regardless of where it falls in the turn.
+    const reply = [...rest].reverse().find((x) => (x.kind === "text" || x.kind === "system") && !x.input?.claude_route);
     const rca = rest.find((x) => x.kind === "tool_call" && toolName(x.tool) === "submit_rca");
-    return [user, ...rest.filter((x) => x === reply || x === rca)];
+    return [user, ...rest.filter((x) => x === reply || x === rca || x.input?.claude_route)];
   });
 
   function add(list: FileList | File[] | null) {
@@ -206,6 +209,14 @@ function Message({ s, onOpenRca, animate, onTick }: { s: Step; onOpenRca?: () =>
           </div>
         )}
         {s.output && <div className="whitespace-pre-wrap rounded-2xl rounded-tr-sm bg-accent px-4 py-2.5 text-white">{s.output}</div>}
+      </div>
+    );
+  }
+  if (s.kind === "system" && s.input?.claude_route) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg bg-bg px-3 py-2 text-xs font-medium text-muted ring-1 ring-line">
+        🔌 {s.output}
+        <span className="ml-auto font-normal">· {time(s.created_at)}</span>
       </div>
     );
   }
