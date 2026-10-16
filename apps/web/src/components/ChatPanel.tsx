@@ -59,6 +59,9 @@ export function ChatPanel({ invId, steps, busy, rca, rcaVersion, confidence, rca
   // "let me look…" notes are only shown while it's still working on that message.
   const turns: Step[][] = [];
   for (const st of thread) (st.kind === "user_message" || !turns.length ? turns[turns.push([]) - 1] : turns[turns.length - 1]).push(st);
+  // "Chat failed" steps keep a pointer back to their turn's own user message, so a Retry button can resend exactly
+  // the same text and files instead of making the person retype everything.
+  const retryFor = new Map<number, Step>();
   const visible = turns.flatMap((t, i) => {
     const working = busy && i === turns.length - 1;
     if (working) return t;
@@ -67,8 +70,27 @@ export function ChatPanel({ invId, steps, busy, rca, rcaVersion, confidence, rca
     // excluded from the reply search but always kept regardless of where it falls in the turn.
     const reply = [...rest].reverse().find((x) => (x.kind === "text" || x.kind === "system") && !x.input?.claude_route);
     const rca = rest.find((x) => x.kind === "tool_call" && toolName(x.tool) === "submit_rca");
+    if (reply?.kind === "system" && reply.output?.startsWith("Chat failed")) retryFor.set(reply.seq, user);
     return [user, ...rest.filter((x) => x === reply || x === rca || x.input?.claude_route)];
   });
+  const [retryingSeq, setRetryingSeq] = useState<number | null>(null);
+  async function retry(user: Step) {
+    const seq = user.seq;
+    setRetryingSeq(seq);
+    try {
+      const metas = (user.input?.files as ChatFile[] | undefined) ?? [];
+      const retryFiles: File[] = [];
+      for (const f of metas) {
+        try {
+          const r = await fetch(`/api/chat-files/${f.id}`);
+          if (r.ok) retryFiles.push(new File([await r.blob()], f.name, { type: f.type }));
+        } catch { /* that one file is unreachable — still resend the text and whichever files did download */ }
+      }
+      await onSend(String(user.output ?? ""), retryFiles);
+    } finally {
+      setRetryingSeq((s) => (s === seq ? null : s));
+    }
+  }
 
   function add(list: FileList | File[] | null) {
     if (!list) return;
@@ -113,7 +135,11 @@ export function ChatPanel({ invId, steps, busy, rca, rcaVersion, confidence, rca
           <button onClick={onOpenRca} className="mt-2 text-xs font-medium text-accent-strong hover:underline">Open the full RCA →</button>
         </Bot>
 
-        {visible.map((s) => <Message key={s.seq} s={s} onOpenRca={onOpenRca} animate={s.seq > bornAfter} onTick={scrollDown} />)}
+        {visible.map((s) => {
+          const user = retryFor.get(s.seq);
+          return <Message key={s.seq} s={s} onOpenRca={onOpenRca} animate={s.seq > bornAfter} onTick={scrollDown}
+            onRetry={user ? () => retry(user) : undefined} retrying={retryingSeq === s.seq} />;
+        })}
         {busy && (
           <div className="flex items-center gap-2 pl-1 text-xs text-muted">
             <span className="flex gap-1" aria-hidden>{[0, 1, 2].map((i) => <span key={i} className="ip-dot h-1.5 w-1.5 rounded-full bg-accent" style={{ animationDelay: `${i * 0.2}s` }} />)}</span>
@@ -197,7 +223,9 @@ function Typewriter({ text, onTick }: { text: string; onTick?: () => void }) {
   );
 }
 
-function Message({ s, onOpenRca, animate, onTick }: { s: Step; onOpenRca?: () => void; animate?: boolean; onTick?: () => void }) {
+function Message({ s, onOpenRca, animate, onTick, onRetry, retrying }: {
+  s: Step; onOpenRca?: () => void; animate?: boolean; onTick?: () => void; onRetry?: () => void; retrying?: boolean;
+}) {
   if (s.kind === "user_message") {
     const files = (s.input?.files as ChatFile[] | undefined) ?? [];
     return (
@@ -236,6 +264,12 @@ function Message({ s, onOpenRca, animate, onTick }: { s: Step; onOpenRca?: () =>
     <div className={animate ? "chat-pop" : ""}>
       <Bot error={s.kind === "system"} at={s.created_at}>
         {animate && s.kind === "text" ? <Typewriter text={tidy(s.output)} onTick={onTick} /> : <Markdown compact>{tidy(s.output)}</Markdown>}
+        {onRetry && (
+          <button onClick={onRetry} disabled={retrying}
+            className="mt-2 inline-flex items-center gap-1 rounded-md bg-bg px-2.5 py-1 text-xs font-medium text-accent-strong ring-1 ring-line hover:bg-accent-soft disabled:opacity-50">
+            {retrying ? "Retrying…" : "↻ Retry — resend the same message and files"}
+          </button>
+        )}
       </Bot>
     </div>
   );
