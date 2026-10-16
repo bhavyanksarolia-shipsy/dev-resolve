@@ -46,6 +46,9 @@ export interface TicketSummary {
   body?: string;
   tags?: { tag: { name: string } }[];
   owned_by?: { display_name?: string; full_name?: string }[];
+  // Files attached directly to the ticket's own description in DevRev — distinct from a timeline comment's
+  // artifacts (TimelineEntry.artifacts below); same shape, but works.get returns them straight on the work object.
+  artifacts?: { id: string; display_id: string; file?: { name: string; size: number; type: string } }[];
 }
 
 /*

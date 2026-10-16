@@ -1,5 +1,5 @@
 import "server-only";
-import { listTimeline } from "./devrev";
+import { listTimeline, type TicketSummary } from "./devrev";
 import { listAttachments, withEmailSenders } from "./attachments";
 
 /**
@@ -10,17 +10,17 @@ type Conversation = { timeline: Awaited<ReturnType<typeof listTimeline>>; attach
 const conversations = new Map<string, { modified: string; at: number; value: Promise<Conversation> }>();
 const CONV_TTL_MS = 10 * 60 * 1000;
 
-async function loadConversation(ticketId: string): Promise<Conversation> {
+async function loadConversation(ticketId: string, ticket?: Pick<TicketSummary, "id" | "created_date" | "artifacts">): Promise<Conversation> {
   const timeline = await listTimeline(ticketId).catch(() => []);
   // Senders and attachments both read the attached emails — run together (one download each, see parseEmail).
-  const [, attachments] = await Promise.all([withEmailSenders(timeline).catch(() => timeline), listAttachments(timeline).catch(() => [])]);
+  const [, attachments] = await Promise.all([withEmailSenders(timeline).catch(() => timeline), listAttachments(timeline, ticket).catch(() => [])]);
   return { timeline, attachments };
 }
 
-export function conversation(ticketId: string, modified: string, force = false) {
+export function conversation(ticketId: string, modified: string, force = false, ticket?: Pick<TicketSummary, "id" | "created_date" | "artifacts">) {
   const hit = conversations.get(ticketId);
   if (!force && hit && hit.modified === modified && Date.now() - hit.at < CONV_TTL_MS) return hit.value;
-  const value = loadConversation(ticketId);
+  const value = loadConversation(ticketId, ticket);
   value.catch(() => conversations.delete(ticketId));
   conversations.set(ticketId, { modified, at: Date.now(), value });
   if (conversations.size > 300) conversations.delete(conversations.keys().next().value!);
