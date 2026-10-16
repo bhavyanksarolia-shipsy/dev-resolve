@@ -166,9 +166,10 @@ bullet lists with **bold labels**, one fact per line, identifiers in \`code\`. P
    recovered automatically / partially — with the query result that shows it, and whether it can recur)
 ## Fix / next step  (data fix / code fix / config / upstream team, and owner)
 ## Confidence  (high/medium/low + what could not be verified)
-## Suggested customer reply  (short, no internal system names. State facts and current status only. NEVER mention or
-   imply fixes, improvements, product changes, alerts or timelines ("we're improving…", "we'll add…", "this will be fixed") —
-   those need team sign-off first. Recommended fixes belong only in the internal "Fix / next step" section.)
+## Suggested customer reply  (brief — under 120 words, 3-5 sentences. State facts and current status only, in plain
+   prose, no bullet list. No internal system names. NEVER mention or imply fixes, improvements, product changes,
+   alerts or timelines ("we're improving…", "we'll add…", "this will be fixed") — those need team sign-off first.
+   Recommended fixes belong only in the internal "Fix / next step" section.)
 
 ${scope.some((a) => a.extra_sources?.length) ? `# Other sources for this client (added by admins — reference only; you can't open these, but name them in "Fix / next step" when a person should check one)
 ${scope.flatMap((a) => (a.extra_sources ?? []).map((x) => `- **${x.name}**${x.url ? ` — ${x.url}` : ""}${x.notes ? `: ${x.notes}` : ""}`)).join("\n")}
