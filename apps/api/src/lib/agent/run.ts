@@ -293,8 +293,9 @@ const userMessage = (content: SDKUserMessage["message"]["content"]): SDKUserMess
 async function runAgent(id: number, ticket: Awaited<ReturnType<typeof getTicket>>, account: Account, candidates: Account[], startedBy?: string,
   notes?: { text: string; files: { id: number; name: string; type: string; size: number; body: Buffer }[] }) {
   const comments = await listTimeline(ticket.id).then(withEmailSenders).catch(() => []);
-  // Screenshots / files the customer attached (incl. images inside email.eml) go to the agent as real images.
-  const attachments = await listAttachments(comments).catch(() => []);
+  // Screenshots / files the customer attached (incl. images inside email.eml, and files on the ticket's own
+  // description — not just its comments) go to the agent as real images.
+  const attachments = await listAttachments(comments, ticket).catch(() => []);
   const attachmentBlocks = await agentAttachmentBlocks(attachments);
   const attachmentList = attachments.length
     ? `\n\n## Attachments on the ticket (${attachments.filter((a) => !a.signature).length})\n` +

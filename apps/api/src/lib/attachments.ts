@@ -2,7 +2,7 @@ import "server-only";
 import { simpleParser, type ParsedMail } from "mailparser";
 import { spawn } from "node:child_process";
 import path from "node:path";
-import { locateArtifact, revUser, type TimelineEntry } from "./devrev";
+import { locateArtifact, revUser, type TicketSummary, type TimelineEntry } from "./devrev";
 
 export interface Attachment {
   artifact_id: string;          // DevRev artifact DON
@@ -55,14 +55,20 @@ const kindOf = (type: string, name: string): Attachment["kind"] =>
   type.startsWith("image/") ? "image" : type === "message/rfc822" || name.endsWith(".eml") ? "email" : "file";
 
 /**
- * Every attachment on the ticket's comments. Email tickets carry the raw email.eml; DevRev usually also
- * extracts its images as separate artifacts, so .eml parts are only listed when not already attached directly.
+ * Every attachment on the ticket's comments, plus any attached directly to the ticket's own description (passed
+ * as `ticket` — treated as one more "comment" so it gets the same email/signature handling below for free; its
+ * comment_id is the ticket's own id, which never collides with a real comment id, so the UI can single it out).
+ * Email tickets carry the raw email.eml; DevRev usually also extracts its images as separate artifacts, so .eml
+ * parts are only listed when not already attached directly.
  */
-export async function listAttachments(comments: TimelineEntry[]): Promise<Attachment[]> {
+export async function listAttachments(comments: TimelineEntry[], ticket?: Pick<TicketSummary, "id" | "created_date" | "artifacts">): Promise<Attachment[]> {
+  const all: TimelineEntry[] = ticket?.artifacts?.length
+    ? [{ id: ticket.id, type: "ticket_body", created_date: ticket.created_date, visibility: "external", artifacts: ticket.artifacts }, ...comments]
+    : comments;
   const out: Attachment[] = [];
   const seen = new Set<string>();
   const emails: { a: NonNullable<TimelineEntry["artifacts"]>[number]; c: TimelineEntry }[] = [];
-  for (const c of comments) {
+  for (const c of all) {
     for (const a of c.artifacts || []) {
       const name = a.file?.name || a.display_id;
       const type = a.file?.type || "application/octet-stream";

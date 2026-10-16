@@ -14,9 +14,9 @@ export async function GET(req: Request, ctx: RouteContext<"/api/tickets/[id]">) 
   try {
     const ticket = await getTicket(id);
     const modified = ticket.modified_date ?? "";
-    if (sp.get("part") === "conversation") return Response.json(await conversation(ticket.id, modified, sp.get("refresh") === "1"));
+    if (sp.get("part") === "conversation") return Response.json(await conversation(ticket.id, modified, sp.get("refresh") === "1", ticket));
     // Start loading the conversation now so it's ready (or nearly) when the page asks for it.
-    void conversation(ticket.id, modified).catch(() => {});
+    void conversation(ticket.id, modified, false, ticket).catch(() => {});
     const investigations = await q(`SELECT id, status, confidence, category, created_at, finished_at, posted_at FROM investigations WHERE ticket_display=$1 ORDER BY id DESC`, [ticket.display_id]);
     const routing = resolveDevrevAccount(ticket.account?.id);
     const can = investigable(ticket.account?.id);

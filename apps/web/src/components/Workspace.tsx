@@ -298,6 +298,10 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
           <div className="card mb-5 p-4">
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Summary</div>
             <Markdown>{t.body}</Markdown>
+            {(() => {
+              const onBody = attachments.filter((a) => a.comment_id === t.id && !a.signature);
+              return onBody.length > 0 && <div className="mt-3 border-t border-line pt-3"><AttachmentList items={onBody} /></div>;
+            })()}
           </div>
         )}
         <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Conversation{timeline ? ` · ${timeline.length}` : ""}</h2>
