@@ -10,6 +10,7 @@ import { toastIfQueued } from "@/lib/queueToast";
 import { InvestigationProgress } from "./InvestigationProgress";
 import { ChatPanel } from "./ChatPanel";
 import { TicketControls } from "./TicketActions";
+import { CopyButton } from "./CopyButton";
 import { EmptyState } from "./EmptyState";
 import { Collapse } from "@/components/Motion";
 
@@ -611,6 +612,7 @@ function CommentCard({ c, attachments, defaultOpen }: {
   const shown = attachments.filter((a) => !a.signature).length;
   const [open, setOpen] = useState(defaultOpen);
   const who = c.created_by?.display_name || c.created_by?.email || "unknown";
+  const email = c.created_by?.email ?? null;
   const internal = c.visibility === "internal";
   // DevRev appends "<sub>don:identity:…:revu/… sent via Email</sub>" to imported emails — noise once the sender is shown.
   const body = (c.body || "").replace(/<sub>[\s\S]*?sent via Email\s*<\/sub>/gi, "").trim();
@@ -619,13 +621,23 @@ function CommentCard({ c, attachments, defaultOpen }: {
   const preview = hidePaths(body).replace(/<[^>]+>/g, " ").replace(/[#*_`>|\[\]()-]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
   return (
     <li className="card overflow-hidden">
-      <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-bg/60">
+      {/* A div, not a button: it needs to contain a real <button> (the copy icon), which a <button> can't nest. */}
+      <div role="button" tabIndex={0} onClick={() => setOpen((o) => !o)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen((o) => !o); } }}
+        className="flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-left hover:bg-bg/60">
         <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-semibold ${internal ? "bg-amber-50 text-warn" : "bg-accent-soft text-accent-strong"}`}>
           {who.replace(/[^a-zA-Z]/g, "").slice(0, 2).toUpperCase() || "?"}
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline gap-2">
-            <span className="truncate text-sm font-medium">{who}</span>
+            <span className="group/email inline-flex min-w-0 items-center gap-1">
+              <span className="truncate text-sm font-medium">{who}</span>
+              {email && (
+                <span onClick={(e) => e.stopPropagation()} className="opacity-0 transition-opacity group-hover/email:opacity-100 group-has-[:focus-visible]/email:opacity-100">
+                  <CopyButton text={email} label="Copy email address" className="grid h-5 w-5 shrink-0 place-items-center rounded text-muted hover:bg-accent-soft hover:text-accent-strong" />
+                </span>
+              )}
+            </span>
             <span className="shrink-0 text-xs text-muted">{new Date(c.created_date).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</span>
           </span>
           {c.via_email && <span className="block truncate text-[11px] text-muted" title={c.via_email.from}>via email{c.created_by?.email && c.created_by.email !== who ? ` · ${c.created_by.email}` : ""}</span>}
@@ -634,7 +646,7 @@ function CommentCard({ c, attachments, defaultOpen }: {
         {shown > 0 && <span className="text-xs text-muted" title="Attachments on this message">📎 {shown}</span>}
         <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${internal ? "bg-amber-50 text-warn" : "bg-accent-soft text-accent-strong"}`}>{internal ? "internal" : "external"}</span>
         <span className={`text-muted transition-transform ${open ? "rotate-90" : ""}`}>›</span>
-      </button>
+      </div>
       {open && c.via_email && (c.via_email.to || c.via_email.cc) && (
         <dl className="grid grid-cols-[3rem_1fr] gap-x-2 gap-y-0.5 border-t border-line bg-bg/50 px-4 py-2 text-[11px] text-muted">
           <dt>From</dt><dd className="break-words text-fg">{c.via_email.from}</dd>
