@@ -5,7 +5,7 @@ import { q } from "@/lib/db";
 import { writeEnv } from "@/lib/adminConfig";
 import { adminSetting, readConfigEnv } from "@/lib/config";
 import { gatewayCarriers, gatewayViaConnector } from "@/lib/connector";
-import { fallbackPersonalOn, fallbackServerOn, fallbackSummary, mainState, modelsForMain } from "@/lib/claudeRoute";
+import { fallbackPersonalOn, fallbackServerOn, fallbackSummary, mainState, modelsForMain, modelState } from "@/lib/claudeRoute";
 import { agentModel, DEFAULT_MODEL, maxParallel, maxPerPerson, queueState } from "@/lib/agent/run";
 import { AGENT_LIMITS, AGENT_TOOLS, SENT_TO_ANTHROPIC, storageSummary } from "@/lib/agent/transparency";
 import { checkMail, cleanTemplate, connectorStep, EMAIL_THEMES, defaultWelcomeTemplate, mailSettings, revokeGmail, saveWelcomeTemplate, sendMail, WELCOME_PLACEHOLDERS, welcomeEmail, welcomeTemplate, type WelcomeTemplate } from "@/lib/mail";
@@ -54,7 +54,7 @@ export async function GET(req: Request) {
       ...(claude.on_fallback && claude.also && { fix: claude.also.fix, reason: claude.also.message }),
       method: adminSetting("ANTHROPIC_API_KEY") && adminSetting("ANTHROPIC_BASE_URL") ? `API gateway ${new URL(adminSetting("ANTHROPIC_BASE_URL")!).host}${gatewayViaConnector() ? " through the Dev Resolve extension" : ""} (${source("ANTHROPIC_API_KEY")})`
         : adminSetting("ANTHROPIC_API_KEY") ? `API key (${source("ANTHROPIC_API_KEY")})` : adminSetting("CLAUDE_CODE_OAUTH_TOKEN") ? `Claude login token (${source("CLAUDE_CODE_OAUTH_TOKEN")})` : "Local Claude Code login",
-      model: agentModel(), defaultModel: DEFAULT_MODEL, gatewayUrl: adminSetting("ANTHROPIC_BASE_URL") ?? null, gatewayViaConnector: gatewayViaConnector(),
+      model: agentModel(), modelHealth: modelState(agentModel()), gatewayUrl: adminSetting("ANTHROPIC_BASE_URL") ?? null, gatewayViaConnector: gatewayViaConnector(),
       // The queue: how many run at once, how many one person may have running while others wait, and right now.
       // Bifrost through the extension: whose laptops can carry it right now (first = the one used), with their email.
       carriers: gatewayViaConnector() ? await (async () => {

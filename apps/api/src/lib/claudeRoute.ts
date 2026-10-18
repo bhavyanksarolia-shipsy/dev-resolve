@@ -117,7 +117,7 @@ export function fallbackSummary(): string | null {
 // ── which sign-ins are working (circuit breaker + recovery checks) ────────────────────────────────────────────
 interface Down { since: number; reason: string; until?: number; probe?: NodeJS.Timeout; upstream: Upstream; user?: string | null }
 export interface UsageLimit { who: "main" | "personal" | "server"; label: string; at: number; until: number | null }
-type State = { breaker: Map<string, Down>; restored: Map<string, number>; runs: Map<number, { last?: string; events: string[] }>; limits?: Map<string, UsageLimit> };
+type State = { breaker: Map<string, Down>; restored: Map<string, number>; runs: Map<number, { last?: string; lastModel?: string; events: string[] }>; limits?: Map<string, UsageLimit>; modelBreaker?: Map<string, ModelDown> };
 const g = globalThis as unknown as { drClaude?: State };
 const S: State = (g.drClaude ??= { breaker: new Map(), restored: new Map(), runs: new Map() });
 const limits: Map<string, UsageLimit> = (S.limits ??= new Map());
@@ -174,23 +174,85 @@ export function markUp(id: string) {
   console.log(`[claude] ${d.upstream.label} is working again — back on it`);
 }
 
+// ── model-level health (same idea as the upstream breaker above, one dimension finer) ──────────────────────────
+// A model can be broken on one upstream and fine on another (e.g. a gateway's own request-translation bug for one
+// specific model) — keyed by upstream *and* model, so a bad model on Bifrost doesn't affect that same model tried
+// direct against Anthropic, and doesn't affect other models on the same gateway either.
+interface ModelDown { since: number; reason: string; probe?: NodeJS.Timeout; upstream: Upstream; model: string; user?: string | null }
+const modelBreaker: Map<string, ModelDown> = (S.modelBreaker ??= new Map());
+const modelKey = (u: Upstream, model: string) => `${u.id}::${model}`;
+
+export function modelUsable(u: Upstream, model: string) {
+  return !modelBreaker.has(modelKey(u, model));
+}
+
+function markModelDown(u: Upstream, model: string, reason: string, opts: { user?: string | null; runId?: number | null } = {}) {
+  const key = modelKey(u, model);
+  const prev = modelBreaker.get(key);
+  if (prev) { prev.reason = reason; return; }
+  const d: ModelDown = { since: Date.now(), reason, upstream: u, model, user: opts.user };
+  modelBreaker.set(key, d);
+  const tag = [opts.runId && `#${opts.runId}`, opts.user].filter(Boolean).join(" ");
+  console.warn(`[claude] ${model} not working on ${u.label} (${reason})${tag ? ` [${tag}]` : ""} — trying another model`);
+  // Always the slower cadence: every case that reaches here is a real rejection (a 400/403/404/500 the model itself
+  // produced), never a transient network blip, so there's no point re-checking every 20s like the upstream breaker does.
+  d.probe = setInterval(() => { void probeModel(d); }, 5 * 60_000);
+  d.probe.unref();
+}
+
+function markModelUp(u: Upstream, model: string) {
+  const key = modelKey(u, model);
+  const d = modelBreaker.get(key);
+  if (!d) return;
+  if (d.probe) clearInterval(d.probe);
+  modelBreaker.delete(key);
+  console.log(`[claude] ${model} is working again on ${u.label}`);
+}
+
+async function probeModel(d: ModelDown) {
+  try {
+    const r = await pingMessages(d.upstream, d.user, d.model);
+    if (r.ok) markModelUp(d.upstream, d.model);
+    else d.reason = `${reasonFor(r.status)}${r.error ? `: ${r.error.slice(0, 160)}` : ""}`;
+  } catch { /* still down */ }
+}
+
+/** For Admin → Claude: is the configured model currently known-broken on the main sign-in, and why. */
+export function modelState(model: string): { ok: true } | { ok: false; reason: string; since: number } {
+  const main = mainUpstream();
+  if (!main) return { ok: true };
+  const d = modelBreaker.get(modelKey(main, model));
+  return d ? { ok: false, reason: d.reason, since: d.since } : { ok: true };
+}
+
 /**
- * Is this sign-in usable for what the agent actually does? A tiny real request (1 token) — listing models isn't
- * enough: a gateway can allow that and still refuse the model (HTTP 403), which made it flip between "down" and "back".
+ * Is this sign-in usable for what the agent actually does? A tiny real request — listing models isn't enough: a
+ * gateway can allow that and still refuse the model (HTTP 403), which made it flip between "down" and "back".
  */
 export async function pingMessages(u: Upstream, user?: string | null, model?: string): Promise<{ ok: boolean; status: number; error: string }> {
-  // Explicit thinking config, not just the model's own default: Bifrost rejects claude-opus-5-5 requests that omit
-  // it outright, so a bare ping without this looked exactly like a real outage to the breaker that's supposed to be
-  // monitoring for one — self-inflicted flapping independent of whether real investigation traffic was healthy.
-  // Disabled, not adaptive: a 1-token ping doesn't leave room for the model to think, and active thinking needs that
-  // room — "disabled" satisfies the same "don't omit the field" requirement without fighting max_tokens.
-  const body = new TextEncoder().encode(JSON.stringify({ model: model || adminSetting("DEV_RESOLVE_MODEL") || "claude-opus-5-5", max_tokens: 1, thinking: { type: "disabled" }, messages: [{ role: "user", content: "ping" }] }));
-  const r = await send(u, user, { method: "POST", path: "/v1/messages", headers: { "anthropic-version": "2023-06-01", "content-type": "application/json" }, body, headerMs: 30_000 });
-  const text = r.body instanceof ReadableStream ? await new Response(r.body).text().catch(() => "") : r.body ? Buffer.from(r.body).toString("utf8") : "";
-  let error = "";
-  try { const j = JSON.parse(text); error = j?.error?.message || j?.message || ""; } catch { error = text.slice(0, 200); }
-  return { ok: r.status >= 200 && r.status < 300, status: r.status, error };
+  const m = model || adminSetting("DEV_RESOLVE_MODEL") || "claude-opus-5-5";
+  const attempt = async (thinking: Record<string, unknown>, maxTokens: number, effort?: string) => {
+    const body = new TextEncoder().encode(JSON.stringify({
+      model: m, max_tokens: maxTokens, thinking, ...(effort && { output_config: { effort } }), messages: [{ role: "user", content: "ping" }],
+    }));
+    const r = await send(u, user, { method: "POST", path: "/v1/messages", headers: { "anthropic-version": "2023-06-01", "content-type": "application/json" }, body, headerMs: 30_000 });
+    const text = r.body instanceof ReadableStream ? await new Response(r.body).text().catch(() => "") : r.body ? Buffer.from(r.body).toString("utf8") : "";
+    let error = "";
+    try { const j = JSON.parse(text); error = j?.error?.message || j?.message || ""; } catch { error = text.slice(0, 200); }
+    return { ok: r.status >= 200 && r.status < 300, status: r.status, error };
+  };
+  // Cheap first: {type:"disabled"}, 1 token — costs nothing and is all most models need. The newest ones (the "5.5"
+  // generation) reject that shape outright and name their own required one in the error, so on exactly that failure
+  // (and only that one — a real outage shouldn't get a second, costlier attempt) retry once with the shape real
+  // investigation traffic already uses (confirmed by hand against Bifrost for both claude-opus-5-5 and
+  // claude-sonnet-5-5) — a 1-token cap gives adaptive thinking no room to do anything, hence the larger budget here.
+  const first = await attempt({ type: "disabled" }, 1);
+  if (first.ok || first.status !== 400 || !/thinking/i.test(first.error) || !/not supported|instead of/i.test(first.error)) return first;
+  return attempt({ type: "adaptive" }, 32, "high");
 }
+
+/** Candidate models, best-first — the order both "Find models this key can use" and automatic model fallback try. */
+export const MODEL_FALLBACK_ORDER = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-sonnet-5", "claude-fable-5-1", "claude-haiku-4-5-20251001", "claude-opus-4-1", "claude-sonnet-4-5", "claude-sonnet-4"];
 
 /**
  * Which Claude models the main sign-in (e.g. the Bifrost key) will actually run: the models it lists, plus the usual
@@ -206,9 +268,8 @@ export async function modelsForMain(): Promise<{ listed: string[]; tried: { mode
     const j = JSON.parse(text);
     listed = (Array.isArray(j?.data) ? j.data : []).map((m: { id?: string }) => String(m?.id ?? "")).filter(Boolean);
   } catch { /* the list is a bonus — the tries below are what count */ }
-  const usual = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-sonnet-5", "claude-fable-5-1", "claude-haiku-4-5-20251001", "claude-opus-4-1", "claude-sonnet-4-5", "claude-sonnet-4"];
   const claude = listed.filter((m) => /claude/i.test(m)).map((m) => m.replace(/^anthropic\//, ""));
-  const candidates = [...new Set([...claude, ...usual])].slice(0, 14);
+  const candidates = [...new Set([...claude, ...MODEL_FALLBACK_ORDER])].slice(0, 14);
   const tried = [];
   for (const model of candidates) {
     const p = await pingMessages(u, null, model).catch((e: Error) => ({ ok: false, status: 0, error: e.message }));
@@ -248,6 +309,20 @@ function noteRoute(runId: number | null, chain: Upstream[], used: Upstream, fail
     r.events.push(`${failed[0]?.u.label ?? main.label} isn't working right now${why ? ` (${why})` : ""} — switched to ${used.label}. The investigation continues where it was, without delay.`);
   }
   r.last = used.id;
+}
+/** Same idea as noteRoute, one level finer: the upstream didn't change, but the model it's being asked for did. */
+function noteModelRoute(runId: number | null, originalModel: string | null, usedModel: string, modelFailed: { model: string; reason: string }[]) {
+  if (!runId || !originalModel) return;
+  const r = S.runs.get(runId) ?? { events: [] };
+  S.runs.set(runId, r);
+  if (r.lastModel === usedModel) return;
+  if (usedModel === originalModel) {
+    if (r.lastModel) r.events.push(`Claude model is working fine again — back on \`${originalModel}\`.`);
+  } else {
+    const why = modelFailed.map((f) => `\`${f.model}\`: ${f.reason}`).join("; ");
+    r.events.push(`\`${originalModel}\` isn't working right now${why ? ` (${why})` : ""} — switched to \`${usedModel}\`. The investigation continues where it was, without delay.`);
+  }
+  r.lastModel = usedModel;
 }
 /** Messages for the investigation's timeline since the last call (Claude switched, or came back). */
 export function takeRouteEvents(runId: number): string[] {
@@ -301,6 +376,16 @@ function forUpstream(u: Upstream, body?: Uint8Array): Uint8Array | undefined {
   } catch { return body; }
 }
 
+/** Swap the request body's model for a fallback candidate — same JSON-patch shape as forUpstream's own prefixing. */
+function withModel(body: Uint8Array | undefined, model: string): Uint8Array | undefined {
+  if (!body) return body;
+  try {
+    const j = JSON.parse(Buffer.from(body).toString("utf8"));
+    j.model = model;
+    return new TextEncoder().encode(JSON.stringify(j));
+  } catch { return body; }
+}
+
 async function send(u: Upstream, user: string | null | undefined, r: { method: string; path: string; headers: Record<string, string>; body?: Uint8Array; headerMs: number; signal?: AbortSignal }): Promise<Sent> {
   const url = `${u.base}${r.path}`;
   const headers = authHeaders(u, r.headers);
@@ -331,79 +416,114 @@ const reasonFor = (status: number) =>
  * Send the agent's request along the chain: the first sign-in that works answers; a failure moves on at once.
  * Request problems (HTTP 400/404/413…) come back as they are — another sign-in would get the same answer.
  */
+// A model-specific rejection, as opposed to a generic upstream problem (bad key, network error, usage limit):
+// Bifrost's own request-translation bug for one model names it exactly this way ("failed to convert ... request
+// body"); anything else that names "model" in a 400/403/404/500 is almost always "this model isn't available here"
+// rather than "this sign-in is broken" — e.g. "model not found", "not allowed to use this model".
+const MODEL_ISSUE = (status: number, errText: string) =>
+  (status === 500 && /failed to convert .* request body/i.test(errText)) || ([400, 403, 404].includes(status) && /\bmodel\b/i.test(errText));
+
 export async function forward(req: Request, chain: Upstream[], opts: { user?: string | null; runId?: number | null; path: string }): Promise<Response> {
   const body = req.method === "POST" ? new Uint8Array(await req.arrayBuffer()) : undefined;
   const incoming: Record<string, string> = {};
   req.headers.forEach((v, k) => { incoming[k] = v; });
   let streaming = false;
-  try { streaming = !!body && JSON.parse(Buffer.from(body).toString("utf8")).stream === true; } catch { /* not JSON */ }
+  let requestedModel: string | null = null;
+  try {
+    const j = JSON.parse(Buffer.from(body ?? new Uint8Array()).toString("utf8"));
+    streaming = j.stream === true;
+    requestedModel = typeof j.model === "string" ? j.model : null;
+  } catch { /* not JSON */ }
   const failed: { u: Upstream; reason: string }[] = [];
   let last: Response | null = null;
   // Sign-ins marked down are skipped; if every one is down, try them anyway (one may just have come back).
   const ready = chain.filter((u) => usable(u, opts.user));
   const order = ready.length ? ready : chain.filter((u) => !u.viaExtension || gatewayCarrier(opts.user, { vpnChecked: true }));
-  for (const u of order) {
-    try {
-      // Temporary diagnostic: log the real outgoing thinking/effort/model fields for the main upstream, instead of
-      // inferring what was sent from the error response — three fixes aimed at this blind have each failed to stick.
-      if (u.id === "main" && body) {
-        try {
-          const j = JSON.parse(Buffer.from(body).toString("utf8"));
-          console.log(`[claude-debug] outgoing to ${u.label}: model=${j.model} thinking=${JSON.stringify(j.thinking)} effort(top-level)=${JSON.stringify(j.effort)} output_config=${JSON.stringify(j.output_config)} runId=${opts.runId} fullKeys=${Object.keys(j).join(",")}`);
-        } catch { /* not JSON, or not a messages body */ }
-      }
-      const r = await send(u, opts.user, { method: req.method, path: opts.path, headers: incoming, body, headerMs: streaming ? 45_000 : 600_000, signal: req.signal });
-      // Errors are small: read them, to tell a usage limit (429, or a gateway's "budget exceeded") from other failures.
-      let errText = "";
-      if (r.status >= 400) {
-        errText = r.body instanceof ReadableStream ? await new Response(r.body).text().catch(() => "") : r.body ? Buffer.from(r.body).toString("utf8") : "";
-        r.body = new TextEncoder().encode(errText);
-      }
-      const header = (k: string) => (r.headers instanceof Headers ? r.headers.get(k) : r.headers[k]) ?? null;
-      const isLimit = r.status === 429 || ([400, 402, 403].includes(r.status) && LIMIT_TEXT.test(errText));
-      if (isLimit) {
-        const reset = Number(header("anthropic-ratelimit-unified-reset")) * 1000 || (Number(header("retry-after")) ? Date.now() + Number(header("retry-after")) * 1000 : 0);
-        noteLimit(u, reset || null);
-      }
-      // A gateway refusing the request itself (unknown provider/model, no access to it): another sign-in can serve it.
-      const gatewayRefused = u.base !== ANTHROPIC && [400, 404].includes(r.status) && /provider|model|not (found|supported|allowed)|no access/i.test(errText);
-      const retryable = isLimit || gatewayRefused || r.status >= 500 || r.status === 401 || r.status === 403;
-      if (retryable && u !== order[order.length - 1]) {
-        const said = (() => { try { const j = JSON.parse(errText); return String(j?.error?.message || j?.message || ""); } catch { return errText; } })().replace(/\s+/g, " ").slice(0, 160);
-        const reason = isLimit ? "usage limit reached" : gatewayRefused ? `refused the request (${said})` : `${reasonFor(r.status)}${said && r.status < 500 ? `: ${said}` : ""}`;
-        const until = limits.get(u.id)?.until;
-        markDown(u, reason, { user: opts.user, runId: opts.runId, ...(isLimit && { forMs: Math.min(Math.max((until ?? 0) - Date.now(), 60_000), 5 * 3600_000) || 10 * 60_000 }) });
+  upstreamLoop: for (const u of order) {
+    // Per upstream: try the requested model first; if it specifically (not the upstream) is what's broken, retry the
+    // SAME upstream with the next candidate before ever moving on to a different sign-in (and so, possibly, someone's
+    // personal token) — a model broken on one gateway's translation layer may be perfectly fine on the next upstream,
+    // so every new upstream starts over from the originally-requested model rather than carrying a substitution across.
+    let model = requestedModel;
+    const triedModels = new Set<string>();
+    const modelFailed: { model: string; reason: string }[] = [];
+    modelLoop: for (;;) {
+      const attemptBody = model && model !== requestedModel ? withModel(body, model) : body;
+      try {
+        const r = await send(u, opts.user, { method: req.method, path: opts.path, headers: incoming, body: attemptBody, headerMs: streaming ? 45_000 : 600_000, signal: req.signal });
+        // Errors are small: read them, to tell a usage limit (429, or a gateway's "budget exceeded") from other failures.
+        let errText = "";
+        if (r.status >= 400) {
+          errText = r.body instanceof ReadableStream ? await new Response(r.body).text().catch(() => "") : r.body ? Buffer.from(r.body).toString("utf8") : "";
+          r.body = new TextEncoder().encode(errText);
+        }
+        const said = r.status >= 400
+          ? (() => { try { const j = JSON.parse(errText); return String(j?.error?.message || j?.message || ""); } catch { return errText; } })().replace(/\s+/g, " ").slice(0, 160)
+          : "";
+        const header = (k: string) => (r.headers instanceof Headers ? r.headers.get(k) : r.headers[k]) ?? null;
+        const isLimit = r.status === 429 || ([400, 402, 403].includes(r.status) && LIMIT_TEXT.test(errText));
+        if (isLimit) {
+          const reset = Number(header("anthropic-ratelimit-unified-reset")) * 1000 || (Number(header("retry-after")) ? Date.now() + Number(header("retry-after")) * 1000 : 0);
+          noteLimit(u, reset || null);
+        }
+        let modelExhausted = false;
+        if (model && !isLimit && MODEL_ISSUE(r.status, errText)) {
+          triedModels.add(model);
+          const reason = `${reasonFor(r.status)}${said ? `: ${said}` : ""}`;
+          markModelDown(u, model, reason, { user: opts.user, runId: opts.runId });
+          modelFailed.push({ model, reason });
+          const next = MODEL_FALLBACK_ORDER.find((m) => m !== model && !triedModels.has(m) && modelUsable(u, m));
+          if (next) { model = next; continue modelLoop; } // same upstream, next candidate model
+          modelExhausted = true; // every candidate failed on this upstream — fall through to the upstream-level retry below
+        }
+        // A gateway refusing the request itself (unknown provider/model, no access to it): another sign-in can serve it.
+        const gatewayRefused = u.base !== ANTHROPIC && [400, 404].includes(r.status) && /provider|model|not (found|supported|allowed)|no access/i.test(errText);
+        const retryable = isLimit || gatewayRefused || modelExhausted || r.status >= 500 || r.status === 401 || r.status === 403;
+        if (retryable && u !== order[order.length - 1]) {
+          const reason = isLimit ? "usage limit reached" : gatewayRefused ? `refused the request (${said})`
+            : modelExhausted ? `no working model (${modelFailed.map((f) => `\`${f.model}\`: ${f.reason}`).join("; ")})`
+            : `${reasonFor(r.status)}${said && r.status < 500 ? `: ${said}` : ""}`;
+          const until = limits.get(u.id)?.until;
+          markDown(u, reason, { user: opts.user, runId: opts.runId, ...(isLimit && { forMs: Math.min(Math.max((until ?? 0) - Date.now(), 60_000), 5 * 3600_000) || 10 * 60_000 }) });
+          failed.push({ u, reason });
+          continue upstreamLoop;
+        }
+        // A streamed answer counts once it finished (one cut off halfway isn't "working again").
+        if (r.status < 400 && !(r.body instanceof ReadableStream)) {
+          noteRoute(opts.runId ?? null, chain, u, failed);
+          if (model) noteModelRoute(opts.runId ?? null, requestedModel, model, modelFailed);
+        }
+        const ct = (r.headers instanceof Headers ? r.headers.get("content-type") : r.headers["content-type"]) || "application/json";
+        const rid = r.headers instanceof Headers ? r.headers.get("request-id") : null;
+        let out = r.body;
+        // A stream that breaks halfway: mark this sign-in down so the agent's automatic retry goes to the next one.
+        if (out instanceof ReadableStream) {
+          const reader = out.getReader();
+          out = new ReadableStream<Uint8Array>({
+            async pull(c) {
+              try {
+                const { done, value } = await reader.read();
+                if (done) {
+                  if (r.status < 400) { noteRoute(opts.runId ?? null, chain, u, failed); if (model) noteModelRoute(opts.runId ?? null, requestedModel, model, modelFailed); }
+                  c.close();
+                } else c.enqueue(value);
+              } catch (e) {
+                if (!req.signal.aborted) markDown(u, `connection dropped mid-answer (${(e as Error).message})`, { user: opts.user, runId: opts.runId });
+                c.error(e);
+              }
+            },
+            cancel() { void reader.cancel().catch(() => {}); },
+          });
+        }
+        return new Response(out as BodyInit | null, { status: r.status, headers: { "content-type": ct, ...(rid && { "request-id": rid }) } });
+      } catch (e) {
+        if (req.signal.aborted) return new Response(null, { status: 499 });
+        const reason = /abort/i.test((e as Error).name + (e as Error).message) ? "no answer in time" : (e as Error).message.replace(/^CONNECTOR_OFFLINE: /, "");
+        markDown(u, reason, { user: opts.user, runId: opts.runId });
         failed.push({ u, reason });
-        continue;
+        last = Response.json({ type: "error", error: { type: "api_error", message: `${u.label}: ${reason}` } }, { status: 503 });
+        continue upstreamLoop;
       }
-      // A streamed answer counts once it finished (one cut off halfway isn't "working again").
-      if (r.status < 400 && !(r.body instanceof ReadableStream)) noteRoute(opts.runId ?? null, chain, u, failed);
-      const ct = (r.headers instanceof Headers ? r.headers.get("content-type") : r.headers["content-type"]) || "application/json";
-      const rid = r.headers instanceof Headers ? r.headers.get("request-id") : null;
-      let out = r.body;
-      // A stream that breaks halfway: mark this sign-in down so the agent's automatic retry goes to the next one.
-      if (out instanceof ReadableStream) {
-        const reader = out.getReader();
-        out = new ReadableStream<Uint8Array>({
-          async pull(c) {
-            try {
-              const { done, value } = await reader.read();
-              if (done) { if (r.status < 400) noteRoute(opts.runId ?? null, chain, u, failed); c.close(); } else c.enqueue(value);
-            } catch (e) {
-              if (!req.signal.aborted) markDown(u, `connection dropped mid-answer (${(e as Error).message})`, { user: opts.user, runId: opts.runId });
-              c.error(e);
-            }
-          },
-          cancel() { void reader.cancel().catch(() => {}); },
-        });
-      }
-      return new Response(out as BodyInit | null, { status: r.status, headers: { "content-type": ct, ...(rid && { "request-id": rid }) } });
-    } catch (e) {
-      if (req.signal.aborted) return new Response(null, { status: 499 });
-      const reason = /abort/i.test((e as Error).name + (e as Error).message) ? "no answer in time" : (e as Error).message.replace(/^CONNECTOR_OFFLINE: /, "");
-      markDown(u, reason, { user: opts.user, runId: opts.runId });
-      failed.push({ u, reason });
-      last = Response.json({ type: "error", error: { type: "api_error", message: `${u.label}: ${reason}` } }, { status: 503 });
     }
   }
   if (last) return last;

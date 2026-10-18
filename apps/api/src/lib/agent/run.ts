@@ -16,7 +16,11 @@ import { agentAttachmentBlocks, listAttachments, uploadedFileBlocks, withEmailSe
 import { buildToolServer } from "./tools";
 import { appLogConfigDir, appLogProjects, ensureAppLogAuth, indexAllowed } from "../applog";
 
-export const DEFAULT_MODEL = "claude-opus-5-5";
+// claude-opus-5-5 500s on Bifrost's own request-translation layer for every valid request shape (confirmed by hand
+// against the gateway directly) — claude-sonnet-5-5 works fine with the identical payload, hence the default here.
+// Automatic model fallback (claudeRoute.ts) covers this live regardless, but there's no reason to default to the
+// one we know is broken.
+export const DEFAULT_MODEL = "claude-sonnet-5-5";
 /** Model and Claude sign-in: values saved in Admin → Connections → Claude win over the server variables. */
 export const agentModel = () => adminSetting("DEV_RESOLVE_MODEL") || DEFAULT_MODEL;
 /**
@@ -29,12 +33,11 @@ function claudeEnv(user?: string, runId?: number): Record<string, string | undef
   const main = chain[0];
   if (!main) return { ...process.env, ANTHROPIC_BASE_URL: undefined }; // this computer's own Claude Code login (local setups)
   const clean = { ...process.env, ANTHROPIC_BASE_URL: undefined, ANTHROPIC_API_KEY: undefined, CLAUDE_CODE_OAUTH_TOKEN: undefined };
-  if (chain.length === 1 && !main.viaExtension && main.base === "https://api.anthropic.com") {
-    // One way only: straight there. Gateways read the key from x-api-key; Bifrost virtual keys (sk-bf-…) also as x-bf-vk.
-    if (main.auth === "oauth") return { ...clean, CLAUDE_CODE_OAUTH_TOKEN: main.secret };
-    return { ...clean, ANTHROPIC_API_KEY: main.secret, ...(main.base !== "https://api.anthropic.com" && { ANTHROPIC_BASE_URL: main.base }),
-      ...(main.secret.startsWith("sk-bf-") && { ANTHROPIC_CUSTOM_HEADERS: `x-bf-vk: ${main.secret}` }) };
-  }
+  // Always through the relay, even for a single sign-in: that's the only place a model-specific failure (one model
+  // broken on this particular gateway) can be caught and quietly retried with a different model (claudeRoute.ts's
+  // forward()) — a direct connection here would make that invisible to Dev Resolve entirely, the same way a bad
+  // model used to look exactly like a real outage before this existed. The relay is already what every multi-sign-in
+  // or gateway setup used anyway, so this isn't new, untested surface — just applying it universally.
   // The agent signs as a login token when any in the chain is one (requests then carry what login tokens need); the relay
   // re-signs every request for whichever sign-in answers it.
   const oauth = chain.find((u) => u.auth === "oauth");

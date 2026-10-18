@@ -271,10 +271,16 @@ async function checkMainClaude(): Promise<ConnectionHealth> {
     let res = await call(`${api}/v1/models?limit=1`, { headers, ms: 15_000 });
     // Some gateways don't list models: try the smallest possible request instead.
     if (gateway && (res.status === 404 || res.status === 405)) {
-      // thinking: disabled — explicit, not omitted: Bifrost rejects claude-opus-5-5 requests that don't say one way or
-      // the other, and a 1-token ping leaves no room for the model to actually think anyway.
-      res = await call(`${api}/v1/messages`, { method: "POST", ms: 30_000, headers: { ...headers, "content-type": "application/json" },
-        body: JSON.stringify({ model: adminSetting("DEV_RESOLVE_MODEL") || "claude-opus-5-5", max_tokens: 1, thinking: { type: "disabled" }, messages: [{ role: "user", content: "ping" }] }) });
+      const model = adminSetting("DEV_RESOLVE_MODEL") || "claude-opus-5-5";
+      const ping = (thinking: Record<string, unknown>, maxTokens: number, effort?: string) =>
+        call(`${api}/v1/messages`, { method: "POST", ms: 30_000, headers: { ...headers, "content-type": "application/json" },
+          body: JSON.stringify({ model, max_tokens: maxTokens, thinking, ...(effort && { output_config: { effort } }), messages: [{ role: "user", content: "ping" }] }) });
+      // thinking: disabled — explicit, not omitted: most models need it said one way or the other. The newest ones
+      // (the "5.5" generation) reject "disabled" outright and name their own required shape in the error, so retry
+      // once with the shape real investigation traffic already uses — confirmed by hand against Bifrost for both
+      // claude-opus-5-5 and claude-sonnet-5-5 — rather than reporting a model that actually works as broken.
+      res = await ping({ type: "disabled" }, 1);
+      if (res.status === 400) res = await ping({ type: "adaptive" }, 32, "high");
     }
     if (res.status === 401 || res.status === 403) return { ...base, ...(gateway && { host: new URL(gateway).host }), status: "auth_failed", message: `HTTP ${res.status}${where}`, fix: `The ${gateway ? "gateway" : "API"} refused the key — paste a valid one in Admin → Connections → Claude` };
     if (!res.ok) return { ...base, ...(gateway && { host: new URL(gateway).host }), status: "error", message: `HTTP ${res.status}${where}${gateway ? " — check the gateway address (it usually ends in /anthropic)" : ""}` };

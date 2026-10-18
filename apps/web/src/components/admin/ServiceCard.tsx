@@ -8,7 +8,7 @@ import { Collapse as MotionCollapse } from "@/components/Motion";
 
 interface Svc { status: string; message: string; fix?: string; host?: string }
 interface Data {
-  claude: Svc & { method: string; model: string; defaultModel: string; gatewayUrl: string | null; gatewayViaConnector?: boolean;
+  claude: Svc & { method: string; model: string; modelHealth: { ok: true } | { ok: false; reason: string; since: string | number }; gatewayUrl: string | null; gatewayViaConnector?: boolean;
     fallback?: { personal: boolean; server: boolean; now: string | null; mainDown: boolean };
     queue?: { parallel: number; perPerson: number; running: number; waiting: number };
     carriers?: { user: string; email: string | null; vpnUp: boolean | null }[] | null; usage30: { runs: number; cost: number; tokens: number };
@@ -223,7 +223,7 @@ export function Block({ title, hint, children, className = "" }: { title: string
   );
 }
 const MODELS = [
-  { value: "claude-opus-5-5", label: "Claude Opus 5.5", hint: "most capable — default" },
+  { value: "claude-opus-5-5", label: "Claude Opus 5.5", hint: "most capable" },
   { value: "claude-sonnet-5-5", label: "Claude Sonnet 5.5", hint: "faster and cheaper" },
   { value: "claude-fable-5-1", label: "Claude Fable 5.1" },
   { value: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5", hint: "fastest, for light tickets" },
@@ -295,6 +295,14 @@ function ClaudeCard() {
         </div>
       )}
 
+      {/* The connection itself can be fine while the specific chosen model isn't — a separate signal from the box above. */}
+      {!c.modelHealth.ok && (
+        <div className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm ring-1 ring-amber-200">
+          <div className="font-semibold text-warn">{c.model} isn&apos;t working right now</div>
+          <div className="mt-1 text-muted">{c.modelHealth.reason}. Investigations automatically switch to a different model meanwhile, and switch back once this one works again.</div>
+        </div>
+      )}
+
       {edit ? (
         <div className="mt-4 space-y-4 rounded-xl bg-bg p-4">
           <Block title="1 · Sign-in" hint="What the agent uses to reach Claude">
@@ -333,7 +341,7 @@ function ClaudeCard() {
                   <input className={input} type="password" autoComplete="off" value={f.secret} onChange={(e) => setF({ ...f, secret: e.target.value })} />
                 </Field>
               )}
-              <Field label="Model" hint={`Default ${c.defaultModel}`}>
+              <Field label="Model">
                 <Select value={f.model} onChange={(v) => setF({ ...f, model: v })} options={[...MODELS,
                   ...(models?.tried ?? []).filter((m) => m.ok && !MODELS.some((x) => x.value === m.model)).map((m) => ({ value: m.model, label: m.model, hint: "allowed for this key" }))]} />
               </Field>
