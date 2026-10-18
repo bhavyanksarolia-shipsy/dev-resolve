@@ -373,7 +373,10 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
         {connErrors.map((s) => (
           <div key={s.seq} className="mb-2 rounded-md border border-bad/40 bg-bad/5 px-3 py-2 text-sm">
             <b className="text-bad">{s.input?.tag === "VPN_REQUIRED" ? "Connect VPN" : s.input?.tag === "AUTH_FAILED" ? "Fix credentials" : "Not configured"}: {String(s.input?.connection)}</b>
-            <div className="text-muted">during “{describeCall(s.tool, null)}” — the agent was told this check did not happen.</div>
+            <div className="text-muted">
+              during “{describeCall(s.tool, null)}”, {new Date(s.created_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })} —
+              the agent was told this check did not happen. This is a point-in-time record from when the investigation ran; it may already be fixed — check the Connector page for current status.
+            </div>
           </div>
         ))}
 

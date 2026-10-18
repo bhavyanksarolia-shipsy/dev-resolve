@@ -588,7 +588,14 @@ async function runSessionNow(opts: SessionOpts) {
   const appLogProject = appLogAccounts.length ? appLogProjects().find((p) => p.name === appLogAccounts[0].app_log!.project) : undefined;
   let appLogReady = false;
   if (appLogProject) {
-    const auth = await ensureAppLogAuth(appLogProject, opts.by);
+    let auth = await ensureAppLogAuth(appLogProject, opts.by);
+    // This check only ever runs once, here, at the very start — if it fails, the tool is unavailable for the whole
+    // investigation, however many turns that ends up being. A transient blip right at this exact moment (e.g. a
+    // token mid-refresh) shouldn't cost an entire investigation its log access, so give it one real second try.
+    if (!auth.ok) {
+      await new Promise((r) => setTimeout(r, 3000));
+      auth = await ensureAppLogAuth(appLogProject, opts.by, true);
+    }
     appLogReady = auth.ok;
     if (!auth.ok) await step(id, seq++, "connection_error", `mcp__${APP_LOG}__login`, { connection: `opensearch_mcp:${appLogProject.name}`, tag: "AUTH_FAILED" }, auth.message);
   }

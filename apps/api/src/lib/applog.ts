@@ -79,15 +79,19 @@ const lastGood = new Map<string, number>();
 // A failed check is remembered for 30 s, so pages that ask often (Connector page, every 5 s) don't hammer the gateway.
 const lastBad = new Map<string, { at: number; res: AppLogAuth }>();
 
-/** Make sure the saved login works (refreshing it silently if needed). Never opens a browser. */
-export async function ensureAppLogAuth(p: AppLogProject, user?: string | null): Promise<AppLogAuth> {
+/**
+ * Make sure the saved login works (refreshing it silently if needed). Never opens a browser.
+ * `force` skips the cached-failure short-circuit below (still bad for 30 s) for a deliberate retry — a plain second
+ * call within that window would just replay the same stale result without actually checking anything again.
+ */
+export async function ensureAppLogAuth(p: AppLogProject, user?: string | null, force = false): Promise<AppLogAuth> {
   const dir = appLogConfigDir(p, user);
   const signIn = connectorMode() ? "sign in to app logs from your local connector (Connector page)" : `run \`${p.login_command}\``;
-  if (Date.now() - (lastGood.get(dir) ?? 0) < 60_000) return { ok: true, message: "Signed in (checked <1 min ago)" };
+  if (!force && Date.now() - (lastGood.get(dir) ?? 0) < 60_000) return { ok: true, message: "Signed in (checked <1 min ago)" };
   const bad = lastBad.get(dir);
   const f = tokenFile(p, user);
   if (!f) return { ok: false, status: "not_configured", message: `No saved login yet — ${signIn}` };
-  if (bad && Date.now() - bad.at < 30_000 && statSync(f).mtimeMs < bad.at) return bad.res; // unless a new login arrived since
+  if (!force && bad && Date.now() - bad.at < 30_000 && statSync(f).mtimeMs < bad.at) return bad.res; // unless a new login arrived since
   const res = await check(p, f, dir, signIn);
   if (res.ok) lastBad.delete(dir); else lastBad.set(dir, { at: Date.now(), res });
   return res;
