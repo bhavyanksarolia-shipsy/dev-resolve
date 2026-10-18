@@ -634,7 +634,7 @@ function CommentCard({ c, attachments, defaultOpen }: {
               <span className="truncate text-sm font-medium">{who}</span>
               {email && (
                 <span onClick={(e) => e.stopPropagation()} className="opacity-0 transition-opacity group-hover/email:opacity-100 group-has-[:focus-visible]/email:opacity-100">
-                  <CopyButton text={email} label="Copy email address" className="grid h-5 w-5 shrink-0 place-items-center rounded text-muted hover:bg-accent-soft hover:text-accent-strong" />
+                  <CopyButton text={email} label="Copy email address" tooltipSide="bottom" className="grid h-5 w-5 shrink-0 place-items-center rounded text-muted hover:bg-accent-soft hover:text-accent-strong" />
                 </span>
               )}
             </span>
