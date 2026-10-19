@@ -14,8 +14,8 @@ interface Form {
   devrev: { id: string; name: string }[];
   /** Logs: the OpenSearch connection ("" = none) and the index pattern picked for each slot. */
   logConn: string; patterns: Record<string, string>; company: string; warehouses: string;
-  /** Database: the Metabase connection ("" = none), its main database id and optional extra ones (postgres / mongo). */
-  dbConn: string; database: string; databases: Record<string, string>; shared: boolean;
+  /** Database: the Metabase connection ("" = none), its main database id and any number of named extra ones. */
+  dbConn: string; database: string; extraDbs: { key: string; dbId: string }[]; shared: boolean;
 }
 
 function toForm(a: Acc | null, cfg: AdminConfig): Form {
@@ -33,7 +33,7 @@ function toForm(a: Acc | null, cfg: AdminConfig): Form {
     logConn: a?.app_log?.project ?? osConn?.name ?? "", patterns,
     company: Array.isArray(comp) ? comp.join(", ") : comp ?? "", warehouses: (a?.app_log?.warehouses ?? []).join(", "),
     dbConn: a?.metabase_project ?? "", database: a?.metabase_database ? String(a.metabase_database) : "",
-    databases: Object.fromEntries(Object.entries(a?.metabase_databases ?? {}).map(([k, v]) => [k, String(v)])), shared: !!a?._shared_db_note,
+    extraDbs: Object.entries(a?.metabase_databases ?? {}).map(([key, v]) => ({ key, dbId: String(v) })), shared: !!a?._shared_db_note,
   };
 }
 
@@ -75,7 +75,7 @@ export function ClientsTab({ cfg, reload }: { cfg: AdminConfig; reload: () => vo
       devrev: { account_ids: form.devrev.map((d) => d.id), names: form.devrev.map((d) => d.name) },
       logs: logsPayload(),
       db: form.dbConn ? { kind: "metabase", project: form.dbConn, database: Number(form.database), shared: form.shared,
-        databases: Object.fromEntries(Object.entries(form.databases).filter(([k, v]) => k && v).map(([k, v]) => [k, Number(v)])) } : { kind: "none" },
+        databases: Object.fromEntries(form.extraDbs.filter((r) => r.key.trim() && r.dbId).map((r) => [r.key.trim(), Number(r.dbId)])) } : { kind: "none" },
     };
     const r = await post("/api/admin/accounts", { originalSlug: form.originalSlug, account });
     setBusy(false);
@@ -162,17 +162,25 @@ export function ClientsTab({ cfg, reload }: { cfg: AdminConfig; reload: () => vo
 
           <Section title="Database">
             <Field label="Connection">
-              <Select value={form.dbConn} onChange={(v) => set({ dbConn: v, database: v === form.dbConn ? form.database : String(conn(v)?.metabase?.defaultDatabase ?? ""), databases: v === form.dbConn ? form.databases : {} })}
+              <Select value={form.dbConn} onChange={(v) => set({ dbConn: v, database: v === form.dbConn ? form.database : String(conn(v)?.metabase?.defaultDatabase ?? ""), extraDbs: v === form.dbConn ? form.extraDbs : [] })}
                 options={[{ value: "", label: "No database" }, ...mbConns.map((c) => ({ value: c.name, label: c.metabase!.displayName, hint: [c.metabase?.host, c.metabase?.auth === "google" && "Google login", c.metabase?.vpn && "VPN"].filter(Boolean).join(" · ") }))]} />
             </Field>
             {form.dbConn && (() => {
               const dbs = Object.entries(conn(form.dbConn)?.metabase?.databases ?? {}).map(([id, n]) => ({ value: id, label: n || `Database ${id}`, hint: `id ${id}` }));
+              const updExtra = (i: number, p: Partial<{ key: string; dbId: string }>) => set({ extraDbs: form.extraDbs.map((r, j) => (j === i ? { ...r, ...p } : r)) });
               return (
                 <>
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <Field label="Main database"><Select value={form.database} onChange={(v) => set({ database: v })} options={dbs} /></Field>
-                    <Field label="Postgres (optional)"><Select value={form.databases.postgres ?? ""} placeholder="—" onChange={(v) => set({ databases: { ...form.databases, postgres: v } })} options={[{ value: "", label: "—", hint: "not used" }, ...dbs]} /></Field>
-                    <Field label="Mongo (optional)"><Select value={form.databases.mongo ?? ""} placeholder="—" onChange={(v) => set({ databases: { ...form.databases, mongo: v } })} options={[{ value: "", label: "—", hint: "not used" }, ...dbs]} /></Field>
+                  <Field label="Main database"><Select value={form.database} onChange={(v) => set({ database: v })} options={dbs} /></Field>
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium text-muted">Extra databases (optional) — any number, each with a name the agent can pass as &quot;database&quot;</div>
+                    {form.extraDbs.map((r, i) => (
+                      <div key={i} className="grid grid-cols-[1fr_1.5fr_auto] items-end gap-2">
+                        <Field label="Name"><input className={input} placeholder="e.g. api_logger" value={r.key} onChange={(e) => updExtra(i, { key: e.target.value })} /></Field>
+                        <Field label="Database"><Select value={r.dbId} placeholder="—" onChange={(v) => updExtra(i, { dbId: v })} options={dbs} /></Field>
+                        <button type="button" aria-label="Remove database" className={`${btn} text-bad`} onClick={() => set({ extraDbs: form.extraDbs.filter((_, j) => j !== i) })}>Remove</button>
+                      </div>
+                    ))}
+                    <button type="button" className="text-xs font-medium text-accent-strong hover:underline" onClick={() => set({ extraDbs: [...form.extraDbs, { key: "", dbId: "" }] })}>+ Add database</button>
                   </div>
                   <Switch on={form.shared} onChange={(v) => set({ shared: v })} label="Shared by several clients (the agent filters every query to this client)" />
                 </>
