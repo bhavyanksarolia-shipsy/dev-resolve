@@ -169,10 +169,12 @@ bullet lists with **bold labels**, one fact per line, identifiers in \`code\`. P
    recovered automatically / partially — with the query result that shows it, and whether it can recur)
 ## Fix / next step  (data fix / code fix / config / upstream team, and owner)
 ## Confidence  (high/medium/low + what could not be verified)
-## Suggested customer reply  (brief — under 120 words, 3-5 sentences. State facts and current status only, in plain
-   prose, no bullet list. No internal system names. NEVER mention or imply fixes, improvements, product changes,
-   alerts or timelines ("we're improving…", "we'll add…", "this will be fixed") — those need team sign-off first.
-   Recommended fixes belong only in the internal "Fix / next step" section.)
+## Suggested customer reply  (brief — under 120 words, 3-5 sentences. Open with "Hi <name>," using the "Reported by"
+   name above if it reads like a real person (skip it, or use "Hi team,", if it looks like a system/integration
+   account instead). Close with "Regards,". In between: state facts and current status only, in plain prose, no
+   bullet list. No internal system names. NEVER mention or imply fixes, improvements, product changes, alerts or
+   timelines ("we're improving…", "we'll add…", "this will be fixed") — those need team sign-off first. Recommended
+   fixes belong only in the internal "Fix / next step" section.)
 
 ${scope.some((a) => a.extra_sources?.length) ? `# Other sources for this client (added by admins — reference only; you can't open these, but name them in "Fix / next step" when a person should check one)
 ${scope.flatMap((a) => (a.extra_sources ?? []).map((x) => `- **${x.name}**${x.url ? ` — ${x.url}` : ""}${x.notes ? `: ${x.notes}` : ""}`)).join("\n")}
@@ -191,9 +193,11 @@ function ticketPrompt(t: Awaited<ReturnType<typeof getTicket>>, comments: Awaite
     .reverse()
     .map((c) => `[${c.created_date}] (${c.visibility}) ${c.created_by?.display_name || c.created_by?.email || "?"}: ${clip(c.body || "", 15000)}`)
     .join("\n\n");
+  const reporter = t.reported_by?.[0];
   return `Investigate DevRev ticket ${t.display_id}: "${t.title}"
 Created: ${t.created_date}   Stage: ${t.stage?.name}   Severity: ${t.severity}
 Account: ${t.account?.display_name}
+Reported by: ${reporter?.full_name || reporter?.display_name || "unknown"}
 
 ## Ticket body
 ${t.body || "(empty)"}
