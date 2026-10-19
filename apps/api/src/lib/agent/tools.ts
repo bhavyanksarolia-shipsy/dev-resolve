@@ -12,6 +12,7 @@ import { q } from "../db";
 import { proposeKnowledge, similarCases } from "../knowledge";
 import { pastTickets } from "../pastTickets";
 import { readSkill, skillsFor } from "../skills";
+import { postRca } from "./rcaPost";
 
 const MAX_OUT = 15000;
 const clip = (s: string) => (s.length > MAX_OUT ? s.slice(0, MAX_OUT) + `\n…[truncated ${s.length - MAX_OUT} chars — narrow the query]` : s);
@@ -179,7 +180,7 @@ export function buildToolServer(opts: { investigationId: number; account: Accoun
 
   const submit = tool(
     "submit_rca",
-    "Submit the final RCA (full text, all sections). Call once at the end of an investigation, and again during a follow-up chat only if the new findings change the RCA — each call creates a new draft version. The human reviews/edits it before it is posted as an INTERNAL comment.",
+    "Submit the final RCA (full text, all sections). Call once at the end of an investigation, and again during a follow-up chat only if the new findings change the RCA — each call creates a new draft version and posts it as an INTERNAL comment right away (clearly labeled as not yet human-reviewed). A human can still review, edit and re-post afterward.",
     {
       rca_markdown: z.string().describe("Full RCA in markdown, using the required sections"),
       category: z.string().describe("snake_case issue category, e.g. pgi_failure"),
@@ -215,7 +216,12 @@ export function buildToolServer(opts: { investigationId: number; account: Accoun
             AND p.status = 'pending'`,
         [investigationId, `newer investigation #${investigationId}`],
       );
-      return text("RCA saved as a new draft version for human review. Stop here and give the reviewer a short summary of what changed (if anything).");
+      // Post it now rather than waiting on a human to remember to click "Approve & post" — every new version posts
+      // itself (clearly labeled unreviewed); a human can still edit and re-post later through the normal UI.
+      const posted = await postRca(investigationId, a.rca_markdown, { by: "Dev Resolve", auto: true }).catch((e: Error) => ({ ok: false as const, error: e.message, status: 500 }));
+      return text(posted.ok
+        ? "RCA saved as a new draft version and posted internally. Stop here and give the reviewer a short summary of what changed (if anything)."
+        : `RCA saved as a new draft version, but posting it internally failed (${posted.error}) — it still needs a manual "Approve & post" from the ticket page. Stop here and give the reviewer a short summary of what changed (if anything).`);
     },
   );
 
