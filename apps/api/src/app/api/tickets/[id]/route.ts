@@ -1,4 +1,4 @@
-import { getTicket, devrevUrl } from "@/lib/devrev";
+import { getTicket, devrevUrl, resolveMentions } from "@/lib/devrev";
 import { apiError } from "@/lib/apiError";
 import { investigable, resolveDevrevAccount } from "@/lib/config";
 import { conversation } from "@/lib/conversation";
@@ -13,6 +13,7 @@ export async function GET(req: Request, ctx: RouteContext<"/api/tickets/[id]">) 
   const sp = new URL(req.url).searchParams;
   try {
     const ticket = await getTicket(id);
+    if (ticket.body) ticket.body = await resolveMentions(ticket.body).catch(() => ticket.body);
     const modified = ticket.modified_date ?? "";
     if (sp.get("part") === "conversation") return Response.json(await conversation(ticket.id, modified, sp.get("refresh") === "1", ticket));
     // Start loading the conversation now so it's ready (or nearly) when the page asks for it.

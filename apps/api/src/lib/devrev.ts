@@ -359,6 +359,26 @@ export async function revUser(id: string) {
   return u;
 }
 
+/** DevRev stores an @mention in comment/body text as a bare "<don:identity:...:devu/ID>" (or revu/ID) token — its
+ * own UI resolves these to "@Name"; the raw API gives back just the id, which otherwise renders as a dead link. */
+const MENTION = /<(don:identity:[^\s)<>\]]+:(?:devu|revu)\/[A-Za-z0-9]+)>/g;
+export async function resolveMentions(body: string): Promise<string> {
+  const unique = [...new Set([...body.matchAll(MENTION)].map((m) => m[1]))];
+  if (!unique.length) return body;
+  const names = new Map<string, string>();
+  const devList = unique.some((d) => d.includes(":devu/")) ? await devUsers().catch(() => []) : [];
+  await Promise.all(unique.map(async (don) => {
+    if (don.includes(":devu/")) {
+      const u = devList.find((x) => x.id === don);
+      if (u) names.set(don, u.name);
+    } else {
+      const u = await revUser(don);
+      if (u.name) names.set(don, u.name);
+    }
+  }));
+  return body.replace(MENTION, (whole, don) => (names.has(don) ? `@${names.get(don)}` : whole));
+}
+
 export interface DevUser { id: string; name: string; email?: string }
 let devUserCache: { at: number; list: DevUser[] } | null = null;
 /** Active DevRev users (for picking a CX Lead). ~hundreds, so loaded once and searched in the browser. Cached 1 h. */

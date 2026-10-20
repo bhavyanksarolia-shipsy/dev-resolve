@@ -2,7 +2,7 @@ import "server-only";
 import { simpleParser, type ParsedMail } from "mailparser";
 import { spawn } from "node:child_process";
 import path from "node:path";
-import { locateArtifact, revUser, type TicketSummary, type TimelineEntry } from "./devrev";
+import { locateArtifact, resolveMentions, revUser, type TicketSummary, type TimelineEntry } from "./devrev";
 
 export interface Attachment {
   artifact_id: string;          // DevRev artifact DON
@@ -309,27 +309,32 @@ const addr = (x: unknown) => [x].flat().filter(Boolean).map((v) => (v as { text:
  */
 export async function withEmailSenders(comments: TimelineEntry[]) {
   await Promise.all(comments.map(async (c) => {
-    if (c.created_by?.type !== "service_account" || !/email/i.test(c.created_by.display_name || "")) return;
-    const eml = c.artifacts?.find((a) => kindOf(a.file?.type || "", a.file?.name || "") === "email");
-    try {
-      if (eml) {
-        const m = await parseEmail(eml.id);
-        const f = m.from?.value?.[0];
-        if (f?.address || f?.name) {
-          c.created_by = { ...c.created_by, display_name: f.name && f.name !== f.address ? f.name : f.address, email: f.address };
-          c.via_email = { from: m.from?.text ?? "", to: addr(m.to), cc: addr(m.cc) };
-          return;
+    if (c.created_by?.type === "service_account" && /email/i.test(c.created_by.display_name || "")) {
+      const eml = c.artifacts?.find((a) => kindOf(a.file?.type || "", a.file?.name || "") === "email");
+      try {
+        if (eml) {
+          const m = await parseEmail(eml.id);
+          const f = m.from?.value?.[0];
+          if (f?.address || f?.name) {
+            c.created_by = { ...c.created_by, display_name: f.name && f.name !== f.address ? f.name : f.address, email: f.address };
+            c.via_email = { from: m.from?.text ?? "", to: addr(m.to), cc: addr(m.cc) };
+          }
         }
-      }
-      const revu = c.body?.match(/(don:identity:[^\s)<>\]]+:revu\/[A-Za-z0-9]+)/)?.[1];
-      if (revu) {
-        const u = await revUser(revu);
-        if (u.name || u.email) {
-          c.created_by = { ...c.created_by, display_name: u.name || u.email, email: u.email };
-          c.via_email = { from: u.email ? `${u.name ?? u.email} <${u.email}>` : u.name!, to: "", cc: "" };
+        if (!c.via_email) {
+          const revu = c.body?.match(/(don:identity:[^\s)<>\]]+:revu\/[A-Za-z0-9]+)/)?.[1];
+          if (revu) {
+            const u = await revUser(revu);
+            if (u.name || u.email) {
+              c.created_by = { ...c.created_by, display_name: u.name || u.email, email: u.email };
+              c.via_email = { from: u.email ? `${u.name ?? u.email} <${u.email}>` : u.name!, to: "", cc: "" };
+            }
+          }
         }
-      }
-    } catch { /* keep the bot name */ }
+      } catch { /* keep the bot name */ }
+    }
+    // Independent of the sender-identification above: resolve any "<don:identity:...>" @mention tokens in the body
+    // itself (DevRev's own UI shows these as "@Name"; the raw API leaves the bare id, which rendered as a dead link).
+    if (c.body) c.body = await resolveMentions(c.body).catch(() => c.body!);
   }));
   return comments;
 }
