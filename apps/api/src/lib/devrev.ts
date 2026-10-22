@@ -150,9 +150,11 @@ export interface LinkedIssue { id: string; display_id: string; title: string; ow
  * ticket row's issue dropdown, only when it's opened. Cached 5 min per ticket.
  */
 const issueCache = new Map<string, { at: number; value: LinkedIssue[] }>();
-export async function linkedIssues(ticketId: string): Promise<LinkedIssue[]> {
+/** `force` skips the 5-min cache (the ticket row's dropdown always wants the live state when a person opens it);
+ * other callers (e.g. the Excel export, covering up to 300 tickets at once) keep the cheap cached read. */
+export async function linkedIssues(ticketId: string, opts: { force?: boolean } = {}): Promise<LinkedIssue[]> {
   const hit = issueCache.get(ticketId);
-  if (hit && Date.now() - hit.at < 5 * 60_000) return hit.value;
+  if (!opts.force && hit && Date.now() - hit.at < 5 * 60_000) return hit.value;
   type End = { id: string; type?: string; display_id?: string };
   const links: { source?: End; target?: End }[] = [];
   for (let cursor: string | undefined, i = 0; i < 5; i++) {

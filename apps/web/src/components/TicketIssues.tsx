@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 
 interface Issue { id: string; display_id: string; title: string; owner: string | null; stage: string | null; state: string | null; priority: string | null; url: string }
 
-// Answers kept for this page visit, so opening a row again is instant (the server also keeps them 5 min).
+// The last answer for this page visit, shown instantly on re-open while a live refresh runs behind it — never
+// the final word, since every open re-asks DevRev (see the effect below).
 const cache = new Map<string, Issue[] | { error: string }>();
 
 /** The row's issue button: the same for every ticket — nothing is asked from DevRev until it's opened. */
@@ -36,9 +37,10 @@ export function IssuesPanel({ ticket, open, cols }: { ticket: string; open: bool
   }, [open]);
 
   useEffect(() => {
-    if (!open || cache.has(ticket)) return;
+    if (!open) return;
     let live = true;
-    fetch(`/api/tickets/${encodeURIComponent(ticket)}/issues`, { cache: "no-store" })
+    // ?refresh=1 skips the server's own cache too — opening this is a deliberate "show me the live state" action.
+    fetch(`/api/tickets/${encodeURIComponent(ticket)}/issues?refresh=1`, { cache: "no-store" })
       .then(async (r) => { const d = await r.json().catch(() => ({})); return r.ok ? (d.issues as Issue[]) : { error: d.error || `HTTP ${r.status}` }; })
       .catch(() => ({ error: "Couldn't reach DevRev" }))
       .then((v) => { if (!("error" in v)) cache.set(ticket, v); if (live) setData(v); });
