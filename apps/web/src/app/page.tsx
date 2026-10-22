@@ -11,7 +11,7 @@ import { usePresence } from "@/components/Motion";
 interface Count { value: string; count: number }
 interface Brief { display_id: string; title: string; created: string; closed: string | null; stage: string; owner: string | null; pod: string | null }
 interface Dash {
-  inactive?: boolean; error?: string;
+  inactive?: boolean; error?: string; detail?: string;
   account: { slug: string; name: string }; days: number; from: string; to: string; step: number;
   counts: { account: { total: number; wms: number; default_part: number }; org: { total: number; wms: number } };
   open: { total: number; by_stage: Count[]; by_pod: Count[]; by_owner: Count[]; by_age: { label: string; min: number; max: number | null; count: number }[]; oldest: Brief[];
@@ -73,7 +73,7 @@ function Dashboard() {
       ? "The server didn't answer in time — it may be restarting. Try again in a moment."
       : `HTTP ${status}`);
     fetch(`/api/dashboard?account=${account}&from=${range.from}&to=${range.to}${podParam != null ? `&pod=${encodeURIComponent(podParam)}` : ""}${tick ? "&refresh=1" : ""}`, { cache: "no-store" })
-      .then(async (r) => { const d = await r.json().catch(() => ({})); if (live) setData({ key, tick, d: r.ok ? d : { error: failed(r.status, d.error) } as Dash }); })
+      .then(async (r) => { const d = await r.json().catch(() => ({})); if (live) setData({ key, tick, d: r.ok ? d : { error: failed(r.status, d.error), detail: d.detail } as Dash }); })
       .catch(() => live && setData({ key, tick, d: { error: "Couldn't reach the server — check your connection and try again." } as Dash }));
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -102,12 +102,15 @@ function Dashboard() {
 
       {d?.inactive && <div className="card p-5 text-sm">This client is marked <b>inactive</b> — nothing is fetched for it. <Link href={t("")} className="text-accent-strong underline">Open its tickets anyway</Link>.</div>}
       {d?.error && (
-        <div className="flex flex-wrap items-center gap-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-bad ring-1 ring-red-200">
-          <span>{d.error}</span>
-          <button type="button" onClick={() => setTick((n) => n + 1)} disabled={refreshing}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-panel px-3 py-1.5 text-xs font-medium text-fg ring-1 ring-red-200 hover:ring-bad disabled:opacity-60">
-            <span className={`inline-block ${refreshing ? "spin" : ""}`}>↻</span>{refreshing ? "Trying…" : "Try again"}
-          </button>
+        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-bad ring-1 ring-red-200">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="font-semibold">{d.error}</span>
+            <button type="button" onClick={() => setTick((n) => n + 1)} disabled={refreshing}
+              className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-panel px-3 py-1.5 text-xs font-medium text-fg ring-1 ring-red-200 hover:ring-bad disabled:opacity-60">
+              <span className={`inline-block ${refreshing ? "spin" : ""}`}>↻</span>{refreshing ? "Trying…" : "Try again"}
+            </button>
+          </div>
+          {d.detail && <details className="mt-1.5 text-xs text-muted"><summary className="cursor-pointer">Technical detail</summary><p className="mt-1 break-words font-mono">{d.detail}</p></details>}
         </div>
       )}
       {!d && <Skeleton />}
