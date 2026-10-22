@@ -60,6 +60,10 @@ function sessionOnDisk(sid: string) {
 const OS_SERVER = "opensearch-logs";
 const APP_LOG = "shipsy-app-log";
 const running = new Map<number, AbortController>();
+// Who deliberately cancelled a run, set right when the DELETE route fires — so whichever catch block ends up
+// reporting the abort (the initial investigation's or a later chat turn's) says "Cancelled by X" instead of
+// whatever generic error message the aborted SDK stream happens to surface.
+const cancelledBy = new Map<number, string>();
 
 async function step(investigationId: number, seq: number, kind: string, tool: string | null, input: unknown, output: string | null) {
   await q(`INSERT INTO investigation_steps (investigation_id, seq, kind, tool, input, output) VALUES ($1,$2,$3,$4,$5,$6)`, [
@@ -280,8 +284,9 @@ export async function startInvestigation(ticketRef: string, startedBy = "unknown
     noteFiles.push({ ...f, id: Number(r.id) });
   }
   void runAgent(row.id, ticket, account, candidates, startedBy, notes && (notes.text || noteFiles.length) ? { text: notes.text, files: noteFiles } : undefined).catch(async (e) => {
-    await q(`UPDATE investigations SET status='failed', error=$2, finished_at=now() WHERE id=$1`, [row.id, String(e?.message || e)]);
-  });
+    const who = cancelledBy.get(row.id);
+    await q(`UPDATE investigations SET status='failed', error=$2, finished_at=now() WHERE id=$1`, [row.id, who ? `Cancelled by ${who}` : String(e?.message || e)]);
+  }).finally(() => cancelledBy.delete(row.id));
   return row.id;
 }
 
@@ -290,7 +295,8 @@ export function isLive(id: number) {
   return running.has(id) || Q.active.has(id) || Q.waiting.some((w) => w.id === id);
 }
 
-export function cancelInvestigation(id: number) {
+export function cancelInvestigation(id: number, by?: string) {
+  if (by) cancelledBy.set(id, by);
   running.get(id)?.abort();
 }
 
@@ -451,11 +457,14 @@ export async function sendChatMessage(id: number, text: string, by = "unknown", 
         await runSession({ id, account: account!, candidates, seq: Math.max(seq, n), message: await reseeded(), kind: "chat", by });
       }
     } catch (e) {
-      await step(id, next + 1, "system", null, { error: true }, `Chat failed: ${(e as Error).message}`).catch(() => {});
-      await q(`UPDATE investigations SET chat_error=$2 WHERE id=$1`, [id, (e as Error).message.slice(0, 500)]).catch(() => {});
+      const who = cancelledBy.get(id);
+      const message = who ? `Cancelled by ${who}` : (e as Error).message;
+      await step(id, next + 1, "system", null, { error: true }, who ? `Chat cancelled by ${who}` : `Chat failed: ${message}`).catch(() => {});
+      await q(`UPDATE investigations SET chat_error=$2 WHERE id=$1`, [id, message.slice(0, 500)]).catch(() => {});
     } finally {
       // chat_finished_at: the asker gets a notification that the reply is ready.
       await q(`UPDATE investigations SET chat_running=false, chat_finished_at=now() WHERE id=$1`, [id]);
+      cancelledBy.delete(id);
     }
   })();
 }

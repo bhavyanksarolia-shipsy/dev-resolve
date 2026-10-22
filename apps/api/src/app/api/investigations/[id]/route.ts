@@ -32,11 +32,16 @@ export async function GET(req: Request, ctx: RouteContext<"/api/investigations/[
   return Response.json({ investigation: inv, steps: full ? steps : summarize(steps), trail: full ? "full" : "summary", proposals: viewer?.isAdmin ? proposals : [], runs });
 }
 
+/** Stops whichever agent run is currently live for this investigation — the initial investigation, or (just as
+ * often) a follow-up chat turn still working on it. */
 export async function DELETE(req: Request, ctx: RouteContext<"/api/investigations/[id]">) {
   const { id } = await ctx.params;
   const who = (await sessionUser(req))?.name ?? "someone";
-  cancelInvestigation(Number(id));
-  // "Cancelled by <name>" — the page shows this as a neutral "stopped" card, not an error.
+  cancelInvestigation(Number(id), who);
+  // Optimistic — the agent's own run.ts cleanup writes this same "Cancelled by <name>" message once the abort
+  // actually lands, so this is for instant feedback, not the only place it's ever set. The page shows it as a
+  // neutral "stopped" card, not an error.
   await q(`UPDATE investigations SET status='failed', error=$2, finished_at=now() WHERE id=$1 AND status='running'`, [id, `Cancelled by ${who}`]);
+  await q(`UPDATE investigations SET chat_error=$2 WHERE id=$1 AND chat_running`, [id, `Cancelled by ${who}`]);
   return Response.json({ ok: true });
 }
