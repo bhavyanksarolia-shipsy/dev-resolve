@@ -10,6 +10,7 @@ import { toastIfQueued } from "@/lib/queueToast";
 import { InvestigationProgress } from "./InvestigationProgress";
 import { ChatPanel } from "./ChatPanel";
 import { TicketControls } from "./TicketActions";
+import { IssuesBlock } from "./TicketIssues";
 import { CopyButton } from "./CopyButton";
 import { EmptyState } from "./EmptyState";
 import { Collapse } from "@/components/Motion";
@@ -293,7 +294,10 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
               : <>{data.routing.kind}: this DevRev account isn&apos;t linked to a client yet (Admin → Clients)</>}
           </div>
         )}
-        <div className="mb-3"><TicketControls ticket={t.display_id} onChanged={() => setTicketReload((n) => n + 1)} /></div>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <TicketControls ticket={t.display_id} onChanged={() => setTicketReload((n) => n + 1)} />
+          <IssuesBlock ticket={t.display_id} />
+        </div>
         <HealthBanner account={data.routing.account} compact />
         {t.body && (
           <div className="card mb-5 p-4">
@@ -347,7 +351,7 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
               {inv.num_turns != null && <> · {inv.num_turns} turns</>}
             </span>
           )}
-          {running && <button onClick={() => fetch(`/api/investigations/${inv!.id}`, { method: "DELETE" }).then(poll)} className="text-sm text-bad">cancel</button>}
+          {agentBusy && <button onClick={() => fetch(`/api/investigations/${inv!.id}`, { method: "DELETE" }).then(poll)} className="text-sm text-bad" title="Stop the agent where it is right now">cancel</button>}
           {canChat && (
             <div className="ml-auto inline-flex rounded-lg border border-line bg-bg p-0.5 text-sm font-medium" role="tablist">
               {([["rca", `RCA v${inv!.rca_version}`], ["chat", "Chat"]] as const).map(([m, l]) => (
