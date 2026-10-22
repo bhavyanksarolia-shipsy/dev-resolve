@@ -85,6 +85,7 @@ function Inbox() {
   const seen = useRef<{ account: string; ids: Set<string> }>({ account, ids: new Set() });
   const refreshing = useRef(false);
   const [starting, setStarting] = useState<Set<string>>(new Set());
+  const [exporting, setExporting] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set()); // tickets ticked for a bulk resolve
   const [issuesOpen, setIssuesOpen] = useState<string | null>(null); // the one row whose linked issues are showing
   // Opening a ticket from the table: a sheet slides up over it (the table stays as it is). The address bar shows
@@ -192,6 +193,35 @@ function Inbox() {
 
   const setAccount = (slug: string) => router.replace(`/tickets?account=${slug}`);
   const refresh = () => { refreshing.current = true; setTick((n) => n + 1); };
+
+  // Exports exactly what's in `view` — the page's own already-filtered/sorted list — so the download always
+  // matches what's on screen under whatever account/Pod/column filters are active, with no filter logic to
+  // duplicate server-side.
+  const downloadExcel = async () => {
+    setExporting(true);
+    try {
+      const r = await fetch("/api/tickets/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tickets: view.map((t) => ({
+          id: t.id, display_id: t.display_id, title: t.title, created_date: t.created_date,
+          stage: t.stage, account: t.account, pod: t.pod, owner: t.owner,
+        })) }),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        return notify({ title: "Couldn't build the export", message: d.error || `HTTP ${r.status}`, tone: "error" });
+      }
+      const blob = await r.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `dev-resolve-tickets-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // Sort / filter / page on the client (all tickets are loaded).
   const valueOf = (t: Ticket, col: Col) => (col === "pod" ? t.pod || "" : col === "owner" ? t.owner || "" : t.stage || "");
@@ -343,6 +373,10 @@ function Inbox() {
           </div>
           {marked.size > 0 && <span className="rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent-strong">{marked.size} new since last refresh</span>}
           <div className="ml-auto flex items-center gap-2 text-sm">
+            <button onClick={downloadExcel} disabled={exporting || !view.length} title={!view.length ? "Nothing to export under the current filters" : "Download exactly what's shown below, plus each ticket's linked issues"}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-3 py-1.5 font-medium hover:border-accent hover:text-accent-strong disabled:opacity-70">
+              <span className={`inline-block ${exporting ? "spin" : ""}`}>⬇</span>{exporting ? "Preparing…" : "Download Excel"}
+            </button>
             <button onClick={refresh} disabled={fetching}
               className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-3 py-1.5 font-medium hover:border-accent hover:text-accent-strong disabled:opacity-70">
               <span className={`inline-block ${fetching ? "spin" : ""}`}>↻</span>{fetching ? "Refreshing…" : "Refresh"}

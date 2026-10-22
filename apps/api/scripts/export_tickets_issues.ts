@@ -10,25 +10,21 @@
  *
  * `railway run` injects the real DEVREV_TOKEN so this matches production data; it's never read from a local file
  * or printed. Needs a `railway run`-capable shell (linked to the dev-resolve service).
+ *
+ * The actual row/workbook building (and the in-app "Download Excel" button on the Tickets page) share the same
+ * logic — see apps/api/src/lib/ticketExport.ts. This script is just a different way of assembling the ticket list
+ * (DevRev query + scope rules, for when there's no browser session to read it from).
  */
-import { listTickets, linkedIssues, getTicket } from "../src/lib/devrev";
+import { listTickets } from "../src/lib/devrev";
 import { ticketScope, inTicketScope, ALL_CLIENTS, accountRole, investigable } from "../src/lib/config";
-import * as XLSX from "xlsx";
+import { buildExportRows, buildWorkbook, type ExportTicket } from "../src/lib/ticketExport";
+import { writeFileSync } from "node:fs";
 
 const DEFAULT_PODS = ["WMS", "WMS Inbound", "WMS Outbound"];
 
 function arg(name: string): string | undefined {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
   return hit?.slice(name.length + 3);
-}
-
-function ownerNames(ownedBy?: { full_name?: string; display_name?: string }[]) {
-  const names = (ownedBy ?? []).map((o) => o.full_name || o.display_name).filter((n): n is string => !!n && !/^unassigned$/i.test(n));
-  return names.length ? names.join(", ") : "Unassigned";
-}
-function ageDays(created?: string | null) {
-  if (!created) return null;
-  return Math.round(((Date.now() - new Date(created).getTime()) / 86400000) * 10) / 10;
 }
 
 async function main() {
@@ -51,46 +47,29 @@ async function main() {
   const activeClientTickets = inScope
     .filter((w) => accountRole(w.account?.id).kind === "client")
     .filter((w) => investigable(w.account?.id).ok);
-  const tickets = pods.length
+  const scoped = pods.length
     ? activeClientTickets.filter((w) => typeof w.custom_fields?.tnt__pod === "string" && pods.includes(w.custom_fields.tnt__pod as string))
     : activeClientTickets;
 
-  console.error(`org-wide: ${works.length} -> active-client: ${activeClientTickets.length} -> pod-filtered (${pods.join("/") || "all"}): ${tickets.length}`);
+  console.error(`org-wide: ${works.length} -> active-client: ${activeClientTickets.length} -> pod-filtered (${pods.join("/") || "all"}): ${scoped.length}`);
 
-  const headers = [
-    "Client", "Pod", "Ticket ID", "Ticket Title", "Ticket Creation Date", "Ticket Status", "Ticket Assigned To", "Age of Ticket (days)",
-    "Issue ID", "Issue Title", "Issue Creation Date", "Issue Status", "Issue Assigned To", "Age of Issue (days)",
-  ];
-  const rows: (string | number | null)[][] = [headers];
+  const tickets: ExportTicket[] = scoped.map((w) => {
+    const t = w as typeof w & { stage?: { name?: string; display_name?: string }; owned_by?: { full_name?: string; display_name?: string }[] };
+    const owners = (t.owned_by ?? []).map((o) => o.full_name || o.display_name).filter((n): n is string => !!n && !/^unassigned$/i.test(n));
+    return {
+      id: t.id, display_id: t.display_id, title: t.title, created_date: t.created_date,
+      stage: t.stage?.display_name || t.stage?.name || "",
+      account: t.account?.display_name || "",
+      pod: typeof t.custom_fields?.tnt__pod === "string" ? (t.custom_fields.tnt__pod as string) : "",
+      owner: owners.length ? owners.join(", ") : "Unassigned",
+    };
+  });
 
-  for (let i = 0; i < tickets.length; i++) {
-    const t = tickets[i] as typeof tickets[number] & { stage?: { name?: string; display_name?: string }; owned_by?: { full_name?: string; display_name?: string }[] };
-    console.error(`[${i + 1}/${tickets.length}] ${t.display_id} - fetching issues...`);
-    const client = t.account?.display_name || "";
-    const stage = t.stage?.display_name || t.stage?.name || "";
-    const owner = ownerNames(t.owned_by);
-    const tAge = ageDays(t.created_date);
-    const pod = typeof t.custom_fields?.tnt__pod === "string" ? (t.custom_fields.tnt__pod as string) : "";
-    let issues: Awaited<ReturnType<typeof linkedIssues>> = [];
-    try { issues = await linkedIssues(t.id); } catch { /* no linked issues, or the lookup failed -- ticket still gets its own row */ }
-    if (!issues.length) {
-      rows.push([client, pod, t.display_id, t.title, t.created_date, stage, owner, tAge, "", "", "", "", "", ""]);
-    } else {
-      for (const iss of issues) {
-        let issCreated: string | null = null;
-        try { issCreated = (await getTicket(iss.id)).created_date; } catch { /* leave blank */ }
-        rows.push([client, pod, t.display_id, t.title, t.created_date, stage, owner, tAge, iss.display_id, iss.title, issCreated, iss.stage ?? "", iss.owner ?? "Unassigned", ageDays(issCreated)]);
-      }
-    }
-  }
-
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws["!cols"] = [22, 16, 12, 45, 20, 22, 20, 12, 12, 45, 20, 22, 20, 12].map((wch) => ({ wch }));
-  ws["!freeze"] = { xSplit: 0, ySplit: 1 };
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Tickets + Issues");
-  XLSX.writeFile(wb, outPath);
-  console.error(`Saved ${outPath} -- ${tickets.length} tickets, ${rows.length - 1} rows`);
+  console.error(`Fetching linked issues for ${tickets.length} tickets...`);
+  const rows = await buildExportRows(tickets);
+  const buffer = buildWorkbook(rows);
+  writeFileSync(outPath, buffer);
+  console.error(`Saved ${outPath} -- ${tickets.length} tickets, ${rows.length} rows`);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
