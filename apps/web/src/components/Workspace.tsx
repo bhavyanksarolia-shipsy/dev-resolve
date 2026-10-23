@@ -92,6 +92,18 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
   }
   const timeline = conv?.id === ticketId ? conv.timeline : null;
   const attachments = conv?.id === ticketId ? conv.attachments : [];
+  // Live connection status, to drop a connection_error step's card once that connection is actually working again
+  // — the card itself used to say "it may already be fixed", but a live, no-longer-true warning helps no one.
+  const [okConnections, setOkConnections] = useState<Set<string> | null>(null);
+  useEffect(() => {
+    const account = data?.routing.account;
+    if (!account) return;
+    let live = true;
+    fetch(`/api/health?account=${encodeURIComponent(account)}`, { cache: "no-store" })
+      .then((r) => r.json()).then((d) => { if (live) setOkConnections(new Set((d.checks ?? []).filter((c: { status: string }) => c.status === "ok").map((c: { id: string }) => c.id))); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [data?.routing.account]);
   const router = useRouter();
   // Back (and Esc): to where you came from (inbox / dashboard, with its filters); the inbox if the ticket was opened directly.
   const close = () => {
@@ -262,7 +274,9 @@ export function Workspace({ ticketId, onClose }: { ticketId: string; onClose?: (
   }
   if (!data) return <WorkspaceSkeleton />;
   const t = data.ticket;
-  const connErrors = steps.filter((s) => s.kind === "connection_error");
+  // The connection id ("metabase:bi_neo") is the part before the first " (" — connectionFor() in agent/run.ts
+  // always wraps the extra detail (db id, index, log_type) in parens after it.
+  const connErrors = steps.filter((s) => s.kind === "connection_error" && !okConnections?.has(String(s.input?.connection ?? "").split(" (")[0]));
   const running = inv?.status === "running";
   const currentPosted = !!inv?.posted_at && inv.posted_version >= inv.rca_version;
   const canChat = !!inv && !running && !!inv.draft_rca;
