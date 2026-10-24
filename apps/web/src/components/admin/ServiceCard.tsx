@@ -356,7 +356,12 @@ function ClaudeCard() {
                         <li key={m.model} className="flex items-center gap-3 px-3 py-1.5 text-xs">
                           <span className={`grid h-4 w-4 shrink-0 place-items-center rounded-full text-[10px] text-white ${m.ok ? "bg-ok" : "bg-bad"}`}>{m.ok ? "✓" : "✕"}</span>
                           <code className="font-mono">{m.model}</code>
-                          <span className="min-w-0 flex-1 truncate text-muted" title={m.error}>{m.ok ? "allowed" : m.error || `HTTP ${m.status}`}</span>
+                          <span className="min-w-0 flex-1 truncate text-muted" title={m.error}>
+                            {m.ok ? "allowed" : m.error || `HTTP ${m.status}`}
+                            {m.ok && /^claude-opus-5(-5)?$/.test(m.model) && (
+                              <span className="ml-1 text-warn" title="This ping succeeds, but live investigations go through a different code path (the Claude Agent SDK) whose bundled binary doesn't yet know this model's thinking format — it still fails there and falls back to Sonnet 5.5 automatically. Not something Dev Resolve can fix; fine to pick, just won't actually be used until that's updated upstream.">— may still fall back live</span>
+                            )}
+                          </span>
                           {m.ok && <button type="button" className="font-medium text-accent-strong hover:underline" onClick={() => setF({ ...f, model: m.model })}>{f.model === m.model ? "selected" : "Use this"}</button>}
                         </li>
                       ))}
