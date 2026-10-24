@@ -28,11 +28,18 @@ export const agentModel = () => adminSetting("DEV_RESOLVE_MODEL") || DEFAULT_MOD
  * a login token). With a fallback (the person's own Claude token, the server's login) or a VPN-only gateway, the agent
  * talks to this server's /api/llm-relay, which tries each in turn per request (lib/claudeRoute.ts).
  */
+// The spawned Claude Code binary decides per-model whether thinking.type:"adaptive" is even allowed from its own
+// baked-in capability table, before anything we pass in `options.thinking` is considered — that table doesn't know
+// about claude-opus-5/claude-opus-5-5 yet, so it silently downgrades to the legacy thinking.type:"enabled" shape for
+// them regardless, and Bifrost then 400s. This env var is the binary's own documented override hook (pattern=cap
+// pairs, "*" prefix-matches) — forcing it here is the actual fix; everything above was addressing the wrong layer.
+const MODEL_CAPABILITY_OVERRIDE = "claude-opus-5*=adaptive_thinking";
 function claudeEnv(user?: string, runId?: number): Record<string, string | undefined> {
   const chain = chainFor(user);
   const main = chain[0];
-  if (!main) return { ...process.env, ANTHROPIC_BASE_URL: undefined }; // this computer's own Claude Code login (local setups)
-  const clean = { ...process.env, ANTHROPIC_BASE_URL: undefined, ANTHROPIC_API_KEY: undefined, CLAUDE_CODE_OAUTH_TOKEN: undefined };
+  // this computer's own Claude Code login (local setups)
+  if (!main) return { ...process.env, ANTHROPIC_BASE_URL: undefined, CLAUDE_CODE_MODEL_CAPABILITIES: MODEL_CAPABILITY_OVERRIDE };
+  const clean = { ...process.env, ANTHROPIC_BASE_URL: undefined, ANTHROPIC_API_KEY: undefined, CLAUDE_CODE_OAUTH_TOKEN: undefined, CLAUDE_CODE_MODEL_CAPABILITIES: MODEL_CAPABILITY_OVERRIDE };
   // Always through the relay, even for a single sign-in: that's the only place a model-specific failure (one model
   // broken on this particular gateway) can be caught and quietly retried with a different model (claudeRoute.ts's
   // forward()) — a direct connection here would make that invisible to Dev Resolve entirely, the same way a bad
