@@ -3,6 +3,7 @@ import { cfgValue, getConnectionProjects } from "./config";
 import { appLogProjects, ensureAppLogAuth } from "./applog";
 import { settings } from "./settings";
 import { gatewayHost, gatewayViaConnector, needsRelay, ssoMetabaseProjects, metabaseSession, appLogUserConfigDir } from "./connector";
+import { checkMetabase } from "./health";
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 
@@ -43,7 +44,15 @@ export function appLogInfo() {
  * works (and couldn't be renewed) counts as missing, with expired: true — the same check the connection banner uses.
  */
 export async function signinsFor(user: string) {
-  const metabase = ssoMetabaseProjects().map((p) => ({ project: p.name, label: getConnectionProjects()[p.name]?.metabase?.display_name || p.name, baseUrl: p.baseUrl, signedIn: !!metabaseSession(user, p.name) }));
+  // A saved session file isn't proof it still works (Metabase sessions expire after ~14 days, and this server can't
+  // auto-refresh someone's own Google sign-in) — verify it live, the same check the Tickets page's connection
+  // banner uses, so this page doesn't keep saying "connected" for a session that's actually dead.
+  const metabase = await Promise.all(ssoMetabaseProjects().map(async (p) => {
+    const saved = !!metabaseSession(user, p.name);
+    const cfg = getConnectionProjects()[p.name]?.metabase;
+    const works = saved && cfg ? (await checkMetabase(p.name, cfg, user)).status === "ok" : false;
+    return { project: p.name, label: cfg?.display_name || p.name, baseUrl: p.baseUrl, signedIn: works, expired: saved && !works };
+  }));
   const dir = path.join(appLogUserConfigDir(user), "mcp-remote-v1");
   const saved = existsSync(dir) && readdirSync(dir).some((f) => f.endsWith("_tokens.json"));
   const p = appLogProjects()[0];

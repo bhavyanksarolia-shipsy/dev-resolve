@@ -133,20 +133,27 @@ def _save_json(path, data, mode=0o600):
 
 
 def _load_config_env():
-    if not os.path.exists(CONFIG_ENV_FILE):
-        return {}
-    out = {}
-    with open(CONFIG_ENV_FILE) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            out[k.strip()] = v.strip()
+    # Every project's base_url/username/password/api_key env keys (e.g. BI_NEO_METABASE_BASE_URL) are set as real
+    # host env vars (Railway variables), not written into CONFIG_ENV_FILE — only Claude/Bifrost settings and
+    # anything set via this script's own set-credentials/set-session/set-base-url commands land in that file. This
+    # used to read ONLY the file for everything except *_METABASE_SESSION_TOKEN, so get_base_url()/
+    # _get_metabase_credentials() silently returned None for every project configured via host env vars, and
+    # _request() crashed with "'NoneType' object has no attribute 'rstrip'" instead of a clear error. Merging
+    # os.environ in first (file still overrides when a key is set in both, so an explicit override here keeps
+    # winning) fixes that without changing how/where anything gets written.
+    out = dict(os.environ)
+    if os.path.exists(CONFIG_ENV_FILE):
+        with open(CONFIG_ENV_FILE) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                out[k.strip()] = v.strip()
     if PER_USER_SESSIONS:
         for k, v in os.environ.items():
             if k.endswith("_METABASE_SESSION_TOKEN"):
-                out[k] = v
+                out[k] = v  # this run's own session always wins, even over a shared one left in the file
     return out
 
 

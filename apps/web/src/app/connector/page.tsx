@@ -9,7 +9,7 @@ interface Status {
   vpn: Record<string, boolean>; vpnHosts: string[];
   /** The two different VPNs: the client's (Cisco AnyConnect) and the company's (Pritunl, for the Claude gateway). */
   vpns?: { id: string; name: string; app: string; purpose: string; hosts: string[] }[];
-  signins: { metabase: { project: string; label?: string; baseUrl?: string; signedIn: boolean }[]; appLog: { project: string; label?: string; signedIn: boolean; expired?: boolean } | null };
+  signins: { metabase: { project: string; label?: string; baseUrl?: string; signedIn: boolean; expired?: boolean }[]; appLog: { project: string; label?: string; signedIn: boolean; expired?: boolean } | null };
 }
 type Tone = "ok" | "bad" | "wait";
 
@@ -98,7 +98,7 @@ export default function ConnectorPage() {
   const installedHere = !!ext || viaExt;
   // Each Google-login connection as "name — tool" (e.g. "Neo — OpenSearch", "Bi Neo — Metabase").
   const signins = [...(s.signins.appLog ? [{ key: "app_log", name: s.signins.appLog.label || "App logs", tool: "OpenSearch", ok: s.signins.appLog.signedIn, expired: s.signins.appLog.expired }] : []),
-    ...s.signins.metabase.map((m) => ({ key: m.project, name: m.label ?? m.project, tool: "Metabase", ok: m.signedIn }))] as { key: string; name: string; tool: string; ok: boolean; expired?: boolean }[];
+    ...s.signins.metabase.map((m) => ({ key: m.project, name: m.label ?? m.project, tool: "Metabase", ok: m.signedIn, expired: m.expired }))] as { key: string; name: string; tool: string; ok: boolean; expired?: boolean }[];
   const label = (x: { name: string; tool: string }) => `${x.name} — ${x.tool}`;
   const signedIn = signins.filter((x) => x.ok).length;
   const openSignins = showSignins;

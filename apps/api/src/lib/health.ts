@@ -133,7 +133,7 @@ async function checkOpenSearch(project: string, cfg: NonNullable<ReturnType<type
   }
 }
 
-function checkMetabase(project: string, cfg: NonNullable<ReturnType<typeof getConnectionProjects>[string]["metabase"]>, viewer?: string): Promise<ConnectionHealth> {
+export function checkMetabase(project: string, cfg: NonNullable<ReturnType<typeof getConnectionProjects>[string]["metabase"]>, viewer?: string): Promise<ConnectionHealth> {
   const url = cfgValue(cfg.base_url_env);
   const host = hostOf(url);
   const base: Omit<ConnectionHealth, "status" | "message"> = {
