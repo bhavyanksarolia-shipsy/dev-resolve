@@ -126,10 +126,17 @@ def _load_json(path, default):
 
 
 def _save_json(path, data, mode=0o600):
+    # Several investigations can hit the same project (and so the same rate-limit file) at once — write-in-place here
+    # let two concurrent writers interleave and leave a corrupted file behind (confirmed live: a rate-limit file with
+    # two JSON arrays concatenated back to back, "Extra data" from json.load, crashing every Metabase query for that
+    # project until something rewrote the file). Writing to a sibling temp file and renaming it into place is atomic
+    # on this filesystem, so a reader only ever sees a complete write, never a partial/interleaved one.
     _ensure_tool_dir()
-    with open(path, "w") as f:
+    tmp = f"{path}.{os.getpid()}.{int(time.time() * 1e6)}.tmp"
+    with open(tmp, "w") as f:
         json.dump(data, f)
-    os.chmod(path, mode)
+    os.chmod(tmp, mode)
+    os.replace(tmp, path)
 
 
 def _load_config_env():
@@ -265,7 +272,11 @@ def _limit_reached(project, until, why):
 def _check_rate_limit(project):
     now = time.time()
     rate_file = _rate_file(project)
-    events = [t for t in _load_json(rate_file, []) if now - t < SUSTAINED_WINDOW]
+    try:
+        stored = _load_json(rate_file, [])
+    except (json.JSONDecodeError, OSError):
+        stored = []  # a file written before the atomic-rename fix, or any other on-disk corruption — start fresh
+    events = [t for t in stored if now - t < SUSTAINED_WINDOW]
     burst = [t for t in events if now - t < BURST_WINDOW]
     who = "for you" if os.environ.get("DEV_RESOLVE_RELAY_USER") else "here"
     if len(events) >= SUSTAINED_LIMIT:
