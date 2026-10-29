@@ -103,16 +103,23 @@ async function checkVpn(hosts) {
 // ── Google sign-ins ────────────────────────────────────────────────────────────────────────────────────────
 async function syncMetabase(m, { openIfMissing }) {
   if (!/^https?:\/\//.test(m.baseUrl || "")) return false; // server config has no address for it (yet)
-  const c = await chrome.cookies.get({ url: m.baseUrl, name: "metabase.SESSION" });
-  if (c?.value) {
-    await api("/api/connector/signin", { method: "POST", body: { kind: "metabase", project: m.project, session: c.value } });
-    return true;
-  }
   if (openIfMissing) {
+    // An explicit "Sign in" / "Sign in again" click: Dev Resolve already told us the stored session doesn't work
+    // (that's the only time this button shows), so a cookie still sitting in Chrome for this host isn't proof of
+    // anything — Metabase's session cookie keeps its own long browser-side expiry even after the server invalidates
+    // the session (~14 days), so reusing it here would just resend the exact same dead value and silently do
+    // nothing, which is exactly why clicking this used to look like it had no effect. Clear it and force a real
+    // Google login instead of trusting it.
+    await chrome.cookies.remove({ url: m.baseUrl, name: "metabase.SESSION" }).catch(() => {});
     const t = await chrome.tabs.create({ url: `${m.baseUrl.replace(/\/$/, "")}/auth/login`, active: true });
     await store.set("openedTabs", [...((await store.get("openedTabs")) || []).slice(-20), t.id]);
+    return false; // the cookie listener below uploads it once they've actually signed in
   }
-  return false; // the cookie listener below uploads it once they've signed in
+  // Background sync (no explicit click): only ever upload a cookie that's already there — never prompt.
+  const c = await chrome.cookies.get({ url: m.baseUrl, name: "metabase.SESSION" });
+  if (!c?.value) return false;
+  await api("/api/connector/signin", { method: "POST", body: { kind: "metabase", project: m.project, session: c.value } });
+  return true;
 }
 
 // Whenever the person signs in to one of the Google-login Metabase instances in Chrome, keep Dev Resolve in sync.
@@ -120,7 +127,17 @@ chrome.cookies.onChanged.addListener(async ({ cookie, removed }) => {
   if (removed || cookie.name !== "metabase.SESSION" || !hello) return;
   const m = hello.signins.metabase.find((x) => new URL(x.baseUrl).hostname.endsWith(cookie.domain.replace(/^\./, "")));
   if (!m) return;
-  await api("/api/connector/signin", { method: "POST", body: { kind: "metabase", project: m.project, session: cookie.value } }).catch(() => {});
+  try {
+    await api("/api/connector/signin", { method: "POST", body: { kind: "metabase", project: m.project, session: cookie.value } });
+    markOk();
+  } catch (e) {
+    // Don't silently pretend this worked — a save that failed here (e.g. Dev Resolve rejecting the cookie's shape)
+    // used to vanish into a swallowed catch while the tab closed right after anyway, so a broken sign-in looked
+    // identical to a successful one. Surface it and leave the tab open — closing it would hide the one place the
+    // person could see what actually went wrong.
+    markErr(`${m.project} sign-in didn't save: ${e.message}`);
+    return;
+  }
   // Close the sign-in tab we opened, if it's sitting on that Metabase now.
   const tabs = await chrome.tabs.query({ url: `${new URL(m.baseUrl).origin}/*` });
   for (const t of tabs) if ((await store.get("openedTabs") || []).includes(t.id)) chrome.tabs.remove(t.id).catch(() => {});
