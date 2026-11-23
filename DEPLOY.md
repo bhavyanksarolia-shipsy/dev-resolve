@@ -1,6 +1,5 @@
 # Deploying Dev Resolve — frontend on Vercel, backend on Railway
 
-> Moving the backend to a free Oracle Cloud VM (Postgres on the VM, nightly copy to Neon): see [deploy/oracle/README.md](deploy/oracle/README.md).
 
 ```
 browser ──► Vercel  (apps/web: pages only)

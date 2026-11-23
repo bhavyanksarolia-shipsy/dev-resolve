@@ -12,6 +12,11 @@ Two apps in one repo, deployed separately (see `DEPLOY.md`):
 | **`apps/web`** | Vercel | The UI — pages and components only. Forwards every `/api` request to the backend (`BACKEND_URL`), so the browser sees one domain. |
 | **`apps/api`** | Railway (Docker) | Everything else: API routes, the investigation agent, connector relay, OpenSearch MCP server, Metabase tool, migrations, private config and knowledge. |
 
+## Local Claude Code (CLI) setup
+
+To run the same kind of investigation from Claude Code on your own laptop, see `ONBOARDING.md` in the private
+`devresolve-cli` repo (ask the maintainer for access).
+
 ## Run locally
 
 ```bash
