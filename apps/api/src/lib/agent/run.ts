@@ -14,6 +14,7 @@ import { accountKnowledge } from "../knowledge";
 import { skillsFor } from "../skills";
 import { agentAttachmentBlocks, listAttachments, uploadedFileBlocks, withEmailSenders } from "../attachments";
 import { buildToolServer } from "./tools";
+import { clearStopped, isStopped, markStopped } from "./cancel";
 import { appLogConfigDir, appLogProjects, ensureAppLogAuth, indexAllowed } from "../applog";
 
 // claude-opus-5-5 500s on Bifrost's own request-translation layer for every valid request shape (confirmed by hand
@@ -293,7 +294,7 @@ export async function startInvestigation(ticketRef: string, startedBy = "unknown
   void runAgent(row.id, ticket, account, candidates, startedBy, notes && (notes.text || noteFiles.length) ? { text: notes.text, files: noteFiles } : undefined).catch(async (e) => {
     const who = cancelledBy.get(row.id);
     await q(`UPDATE investigations SET status='failed', error=$2, finished_at=now() WHERE id=$1`, [row.id, who ? `Cancelled by ${who}` : String(e?.message || e)]);
-  }).finally(() => cancelledBy.delete(row.id));
+  }).finally(() => { cancelledBy.delete(row.id); clearStopped(row.id); });
   return row.id;
 }
 
@@ -304,6 +305,9 @@ export function isLive(id: number) {
 
 export function cancelInvestigation(id: number, by?: string) {
   if (by) cancelledBy.set(id, by);
+  // Remember the stop for the rest of this run: if it lands during setup (no AbortController registered yet), the
+  // run must still stop before the agent starts, and must never post its RCA.
+  markStopped(id);
   running.get(id)?.abort();
 }
 
@@ -385,6 +389,8 @@ export async function sendChatMessage(id: number, text: string, by = "unknown", 
   }>(`SELECT * FROM investigations WHERE id=$1`, [id]);
   if (!inv) throw new Error("investigation not found");
   if (inv.status === "running" || inv.chat_running) throw new LockedError("The agent is still working on this ticket — wait for it to finish.");
+  // A new chat turn on a previously stopped investigation is a fresh run: forget the old stop.
+  clearStopped(id);
   let account = getAccount(inv.account_slug);
   let candidates = (inv.candidate_slugs || []).map((s) => getAccount(s)).filter(Boolean) as Account[];
   // The ticket's DevRev account may have been changed since (e.g. moved from VF to QC): follow it.
@@ -472,6 +478,7 @@ export async function sendChatMessage(id: number, text: string, by = "unknown", 
       // chat_finished_at: the asker gets a notification that the reply is ready.
       await q(`UPDATE investigations SET chat_running=false, chat_finished_at=now() WHERE id=$1`, [id]);
       cancelledBy.delete(id);
+      clearStopped(id);
     }
   })();
 }
@@ -602,6 +609,8 @@ async function runSession(opts: SessionOpts) {
 
 async function runSessionNow(opts: SessionOpts) {
   const { id, account, candidates } = opts;
+  // Stopped while the run was still being set up (before any AbortController existed): don't start the agent.
+  if (isStopped(id)) throw new Error("Cancelled before the agent started");
   let seq = opts.seq;
   const scope = [account, ...candidates];
   const allowedLogTypes = new Set(scope.flatMap((a) => Object.values(a.opensearch_log_types)));
@@ -627,6 +636,8 @@ async function runSessionNow(opts: SessionOpts) {
   if (chain.length && !chain.some((u) => !u.viaExtension || gatewayCarrier(opts.by, { vpnChecked: true }))) throw new Error(noRouteMessage(chain));
   const abort = new AbortController();
   running.set(id, abort);
+  // A stop that arrived during the app-log login / sign-in checks above would have found no controller to abort.
+  if (isStopped(id)) abort.abort();
   // A Metabase query limit hit mid-run: stop right here with the reason (the agent would only retry and wait).
   let stopReason: string | null = null;
   const stopForMetabase = (message: string) => { if (stopReason) return; stopReason = message; abort.abort(); };

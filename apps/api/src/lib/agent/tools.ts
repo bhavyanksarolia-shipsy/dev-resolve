@@ -13,6 +13,7 @@ import { proposeKnowledge, similarCases } from "../knowledge";
 import { pastTickets } from "../pastTickets";
 import { readSkill, skillsFor } from "../skills";
 import { postRca } from "./rcaPost";
+import { isStopped } from "./cancel";
 
 const MAX_OUT = 15000;
 const clip = (s: string) => (s.length > MAX_OUT ? s.slice(0, MAX_OUT) + `\n…[truncated ${s.length - MAX_OUT} chars — narrow the query]` : s);
@@ -196,6 +197,8 @@ export function buildToolServer(opts: { investigationId: number; account: Accoun
       resolved_account_slug: z.string().optional().describe("For ambiguous tickets: which account it turned out to be"),
     },
     async (a) => {
+      // A stopped run must never save over its "Cancelled" status or post an RCA to DevRev.
+      if (isStopped(investigationId)) return text("This investigation was stopped — the RCA was NOT saved or posted. Stop here.");
       const caseDraft = {
         symptoms: a.symptoms, root_cause: a.root_cause, resolution: a.resolution, evidence: a.evidence,
         current_status: a.current_status, current_status_detail: a.current_status_detail,
